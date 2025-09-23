@@ -1,0 +1,15 @@
+
+.venv/
+__pycache__
+.DS_Store
+.env
+__pycache__/
+copilot-instructions.md
+*.docx
+*.pdf
+node_modules/
+*.csv
+.secrets/
+tests/
+.next/
+.vscode/
