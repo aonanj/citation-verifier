@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 from eyecite import get_citations
 
+
 app = FastAPI(title="eyecite-extractor", version="0.1.0")
 
 class ExtractReq(BaseModel):
