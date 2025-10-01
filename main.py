@@ -1,52 +1,118 @@
-# main.py
-from fastapi import FastAPI
+import io
+import os
+from typing import Any, Dict, List
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict
-from eyecite import get_citations
+from werkzeug.datastructures import FileStorage
+
+from svc.doc_processor import extract_text
+from svc.citations_compiler import compile_citations
+
+
+class CitationOccurrence(BaseModel):
+	citation_category: str | None
+	matched_text: str | None
+	span: List[int] | None
+	pin_cite: str | None
+
+
+class CitationEntry(BaseModel):
+	resource_key: str
+	type: str
+	status: str
+	normalized_citation: str | None
+	resource: Dict[str, Any]
+	occurrences: List[CitationOccurrence]
+
+
+class VerificationResponse(BaseModel):
+	citations: List[CitationEntry]
+	extracted_text: str | None = None
 
 
 app = FastAPI(title="eyecite-extractor", version="0.1.0")
 
-class ExtractReq(BaseModel):
-    text: str
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=[
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+	],
+	allow_credentials=True,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
 
-class ExtractRespItem(BaseModel):
-    raw: str
-    idxStart: int
-    idxEnd: int
-    groups: Dict[str, Optional[str]]
 
-class ExtractResp(BaseModel):
-    citations: List[ExtractRespItem]
+def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
+	sanitized: List[CitationEntry] = []
+	for resource_key, payload in raw.items():
+		occurrences_payload = payload.get("occurrences", [])
+		occurrences: List[CitationOccurrence] = []
 
-def norm(c):
-    # Guard missing attrs; EyeCite object types vary
-    
-    g = c.groups or {}
-    plaintiff = getattr(c.metadata, "plaintiff", None) or getattr(c.metadata, "petitioner", None)
-    defendant = getattr(c.metadata, "defendant", None) or getattr(c.metadata, "respondent", None)
-    if plaintiff and defendant and "case_name" not in g:
-        g["case_name"] = f"{plaintiff} v. {defendant}"
-    return {
-        "case_name": g.get("case_name") or g.get("short_name") or None,
-        "volume": g.get("volume") or None,
-        "reporter": g.get("reporter") or None,
-        "page": g.get("page") or None,
-        "pin": getattr(c.metadata, "pin_cite", None) or None,
-        "court": getattr(c.metadata, "court", None) or None,
-        "year": str(getattr(c, "year", None) or getattr(c.metadata, "year", "") or ""),
-        "vendor_cite": g.get("westlaw_cite") or g.get("lexis_cite"),
-    }
+		for occurrence in occurrences_payload:
+			span = occurrence.get("span")
+			span_list = list(span) if isinstance(span, tuple) else span
+			occurrences.append(
+				CitationOccurrence(
+					citation_category=occurrence.get("citation_category"),
+					matched_text=occurrence.get("matched_text"),
+					span=span_list,
+					pin_cite=occurrence.get("pin_cite"),
+				)
+			)
 
-@app.post("/extract", response_model=ExtractResp)
-def extract(req: ExtractReq):
-    out = []
-    for m in get_citations(req.text or ""):
-        s, e = m.span()
-        out.append(ExtractRespItem(
-            raw=m.matched_text(),
-            idxStart=s,
-            idxEnd=e,
-            groups=norm(m)
-        ))
-    return ExtractResp(citations=out)
+		sanitized.append(
+			CitationEntry(
+				resource_key=resource_key,
+				type=payload.get("type", "unknown"),
+				status=payload.get("status", "unknown"),
+				normalized_citation=payload.get("normalized_citation"),
+				resource=payload.get("resource", {}),
+				occurrences=occurrences,
+			)
+		)
+
+	return sanitized
+
+
+@app.post("/api/verify", response_model=VerificationResponse)
+async def verify_document(document: UploadFile = File(..., alias="document")) -> VerificationResponse:
+	file = document
+
+	if not file.filename:
+		raise HTTPException(status_code=400, detail="Uploaded file is missing a filename.")
+
+	extension = os.path.splitext(file.filename)[1].lower()
+	if extension not in {".pdf", ".docx", ".txt"}:
+		raise HTTPException(status_code=400, detail=f"Unsupported file format: {extension}")
+
+	file_contents = await file.read()
+	if not file_contents:
+		raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+	storage = FileStorage(
+		stream=io.BytesIO(file_contents),
+		filename=file.filename,
+		content_type=file.content_type,
+	)
+
+	try:
+		extracted_text = extract_text(storage)
+	except ValueError as exc:
+		raise HTTPException(status_code=400, detail=str(exc)) from exc
+	except Exception as exc:  # pragma: no cover - unexpected failure
+		raise HTTPException(status_code=500, detail="Failed to extract text.") from exc
+
+	try:
+		compiled = compile_citations(extracted_text)
+	except Exception as exc:  # pragma: no cover - unexpected failure
+		raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
+
+	sanitized = _sanitize_citations(compiled)
+
+	return VerificationResponse(citations=sanitized, extracted_text=extracted_text)
+
+

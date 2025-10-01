@@ -241,17 +241,3 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
     return citation_db
 
-# --- Example -----------------------------------------------------------------
-if __name__ == "__main__":
-    
-    # sample = 'Heres some text. Here more. See also 28 U.S.C. § 1291 (2006). And even more text. Id.'
-    sample = """Here is some text. Here is more. Brown v. Board of Education, 347 U.S. 483 (1954). Here is some discussion.
-    Id. at 490.
-    """
-    # Smith v. Jones, 123 F.3d 45 (9th Cir. 1997).
-    # Smith, supra, at 47.
-    sample += """Alex Osterlind, Staking a Claim on the Building Blocks of Life, 75 Mo. L. Rev. 617 (2010)."""
-    #sample = "Cal. Penal Code § 13777 (2024)."
-
-    compiled = compile_citations(sample)
-    print(compiled)   

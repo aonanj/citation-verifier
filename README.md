@@ -24,6 +24,10 @@ To run the frontend in development mode, run:
 npm run dev
 ```
 
+By default the frontend sends verification requests to `http://localhost:8000`. If your Python
+backend runs elsewhere, set the environment variable `NEXT_PUBLIC_API_BASE_URL` before starting the
+frontend to point at the correct base URL.
+
 ---
 
 ## Backend
