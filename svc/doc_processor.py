@@ -4,29 +4,98 @@ This module provides functions to extract text from PDF, DOCX, and TXT files
 while preserving footnote citations and their content inline.
 """
 
-import io
 import os
 import re
 from typing import Final
 
 import fitz  # PyMuPDF
 import pytesseract
-from docx import Document
-from docx.document import Document as DocxDocument
-from lxml import etree # type: ignore
 from PIL import Image
 from werkzeug.datastructures import FileStorage
+from typing import Dict, Iterable, List
+from xml.etree import ElementTree as ET
+
+from docx import Document
+from docx.document import Document as DocxDocument
+from docx.text.paragraph import Paragraph
+from docx.table import _Cell, Table  # type: ignore
+from docx.oxml.ns import qn
+from docx.oxml.text.run import CT_R  # type: ignore
 
 _HYPHEN_WRAP_RE: Final = re.compile(r"(\w)-\n(\w)")
 _EXCESS_BREAKS_RE: Final = re.compile(r"\n{3,}")
 _SMART_QUOTES_RE: Final = re.compile("[\u201c\u201d]")
 _SMART_APOSTROPHES_RE: Final = re.compile("[\u2018\u2019]")
 
-# Namespace constants for Word XML
-_W_NAMESPACE: Final = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_NS = {"w": _W_NS}
 
 
-def normalize(text: str) -> str:
+def _load_footnotes_map(docx: DocxDocument) -> Dict[int, str]:
+    """Parse word/footnotes.xml and return {footnote_id: text}."""
+    mapping: Dict[int, str] = {}
+    package_part = getattr(docx, "part", None)
+    if package_part is None:
+        return mapping
+    package = getattr(package_part, "package", None)
+    if package is None:
+        return mapping
+    footnotes_part = None
+    for part in package.iter_parts():
+        if str(part.partname) == "/word/footnotes.xml":
+            footnotes_part = part
+            break
+    if footnotes_part is None:
+        return mapping
+    root = ET.fromstring(footnotes_part.blob)
+    for fn in root.findall("w:footnote", _NS):
+        fid = int(fn.get(f"{{{_W_NS}}}id", "-1"))
+        if fid < 0:
+            continue  # skip separators/continuation
+        # Collect text paragraph-by-paragraph to preserve basic structure
+        paras: List[str] = []
+        for p in fn.findall(".//w:p", _NS):
+            runs = [t.text or "" for t in p.findall(".//w:t", _NS)]
+            txt = "".join(runs).strip()
+            if txt:
+                paras.append(txt)
+        if not paras:
+            # Fallback: any text nodes
+            paras = [t.text or "" for t in fn.findall(".//w:t", _NS)]
+        mapping[fid] = "\n".join([t for t in paras if t]).strip()
+    return mapping
+
+def _iter_table_paragraphs(tbl: Table) -> Iterable[Paragraph]:
+    for row in tbl.rows:
+        for cell in row.cells:
+            yield from _iter_cell_paragraphs(cell)
+
+
+def _iter_cell_paragraphs(cell: _Cell) -> Iterable[Paragraph]:
+    for p in cell.paragraphs:
+        yield p
+    for t in cell.tables:
+        yield from _iter_table_paragraphs(t)
+
+
+def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
+    parts: List[str] = []
+    for run in p.runs:
+        r = run._r
+        refs = list(r.iter(qn("w:footnoteReference")))
+        if refs:
+            if run.text:
+                parts.append(run.text)
+            for ref in refs:
+                fid = int(ref.get(qn("w:id")))
+                ftxt = footnotes.get(fid, "").strip()
+                parts.append(f"[{fid}: {ftxt}]")
+            continue
+        if run.text:
+            parts.append(run.text)
+    return "".join(parts).strip()
+
+def _normalize(text: str) -> str:
     """Normalize text by removing artifacts and standardizing formatting.
 
     Args:
@@ -136,78 +205,42 @@ def extract_pdf_text(file: FileStorage) -> str:
     else:
         full_text = main_content
 
-    return normalize(full_text)
-
+    return _normalize(full_text)
 
 def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
-    """Extract text from DOCX with footnotes inline.
+    """Return DOCX body text with footnotes inserted inline at their references.
+
+    Footnote content is inserted at each reference as: "[n: footnote text]".
+    Footnote numbering follows the order of first appearance in the document.
 
     Args:
-        doc: python-docx Document object.
+        path: Filesystem path to a .docx file.
 
     Returns:
-        Text with footnotes inserted inline.
+        A single string containing paragraph text with inline footnotes.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file does not have a .docx extension.
     """
-    if not hasattr(doc, "part") or not hasattr(doc.part, "element"):
-        # Fallback to simple text extraction
-        return "\n\n".join(para.text for para in doc.paragraphs if para.text.strip())
+    footnotes = _load_footnotes_map(doc)
 
-    # Build footnote map
-    footnote_map = {}
-    try:
-        if doc.part.package is not None:
-            footnotes_part = doc.part.package.part_related_by(
-                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
-            )
-            footnotes_element = etree.fromstring(footnotes_part.blob)
 
-            # Extract all footnotes
-            for footnote in footnotes_element.findall(f".//{_W_NAMESPACE}footnote"):
-                footnote_id = footnote.get(f"{_W_NAMESPACE}id")
-                if footnote_id:
-                    texts = []
-                    for para in footnote.findall(f".//{_W_NAMESPACE}p"):
-                        para_texts = []
-                        for text_elem in para.findall(f".//{_W_NAMESPACE}t"):
-                            if text_elem.text:
-                                para_texts.append(text_elem.text)
-                        if para_texts:
-                            texts.append("".join(para_texts))
-                    if texts:
-                        footnote_map[footnote_id] = " ".join(texts)
-    except (KeyError, AttributeError):
-        pass
+    lines: List[str] = []
 
-    # Extract paragraphs with inline footnotes
-    text_parts = []
-    body = doc.part.element.find(f".//{_W_NAMESPACE}body")
+    for par in doc.paragraphs:
+        t = _para_with_inline_footnotes(par, footnotes)
+        if t:
+            lines.append(t)
 
-    if body is None:
-        # Fallback
-        return "\n\n".join(para.text for para in doc.paragraphs if para.text.strip())
+    for tbl in doc.tables:
+        for par in _iter_table_paragraphs(tbl):
+            t = _para_with_inline_footnotes(par, footnotes)
+            if t:
+                lines.append(t)
 
-    for para_element in body.findall(f".//{_W_NAMESPACE}p"):
-        # Extract text and footnote references together
-        para_content = []
+    return "\n\n".join(lines)
 
-        for run in para_element.findall(f".//{_W_NAMESPACE}r"):
-            # Get text from this run
-            for text_elem in run.findall(f".//{_W_NAMESPACE}t"):
-                if text_elem.text:
-                    para_content.append(text_elem.text)
-
-            # Check for footnote reference in this run
-            footnote_ref = run.find(f".//{_W_NAMESPACE}footnoteReference")
-            if footnote_ref is not None:
-                footnote_id = footnote_ref.get(f"{_W_NAMESPACE}id")
-                if footnote_id and footnote_id in footnote_map:
-                    # Insert footnote inline
-                    para_content.append(f" [{footnote_id}] {footnote_map[footnote_id]}")
-
-        if para_content:
-            text_parts.append("".join(para_content))
-
-    return "\n\n".join(text_parts)
 
 
 def extract_docx_text(file: FileStorage) -> str:
@@ -230,7 +263,7 @@ def extract_docx_text(file: FileStorage) -> str:
         raise ValueError(f"Failed to open DOCX file: {exc}") from exc
 
     full_text = _extract_docx_with_footnotes(doc)
-    return normalize(full_text)
+    return _normalize(full_text)
 
 
 def extract_text(file: FileStorage) -> str:
@@ -255,7 +288,7 @@ def extract_text(file: FileStorage) -> str:
     if ext == ".txt":
         try:
             raw_text = file.stream.read().decode("utf-8")
-            return normalize(raw_text)
+            return _normalize(raw_text)
         except Exception as exc:
             raise ValueError(f"Failed to read TXT file: {exc}") from exc
     elif ext == ".pdf":
