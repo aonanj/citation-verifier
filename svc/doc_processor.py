@@ -1,7 +1,7 @@
 """Extract text content from uploaded documents, including footnotes.
 
 This module provides functions to extract text from PDF, DOCX, and TXT files
-while preserving footnote citations and their content.
+while preserving footnote citations and their content inline.
 """
 
 import io
@@ -9,11 +9,11 @@ import os
 import re
 from typing import Final
 
-import docx
-from docx.document import Document
 import fitz  # PyMuPDF
-from lxml import etree  # type: ignore
 import pytesseract
+from docx import Document
+from docx.document import Document as docxDocument
+from lxml import etree # type: ignore
 from PIL import Image
 from werkzeug.datastructures import FileStorage
 
@@ -54,7 +54,7 @@ def _extract_pdf_footnotes(page: fitz.Page) -> str:
 
     if not isinstance(text_dict, dict):
         return ""
-    
+
     for block in text_dict.get("blocks", []):
         if block.get("type") != 0:  # Skip non-text blocks
             continue
@@ -63,7 +63,6 @@ def _extract_pdf_footnotes(page: fitz.Page) -> str:
             for span in line.get("spans", []):
                 text = span.get("text", "").strip()
                 font_size = span.get("size", 0)
-                flags = span.get("flags", 0)
 
                 # Heuristic: footnotes typically use smaller font
                 # or appear in specific page regions (bottom)
@@ -115,11 +114,11 @@ def extract_pdf_text(file: FileStorage) -> str:
                     )
                     ocr_text = pytesseract.image_to_string(img)
                     text_parts.append(ocr_text)
+
                 # Extract footnotes
                 footnote_text = _extract_pdf_footnotes(page)
                 if footnote_text.strip():
                     footnote_parts.append(f"[Page {page_num + 1} footnotes: {footnote_text}]")
-                    footnote_parts.append(f"[Page {page_num} footnotes: {footnote_text}]")
 
                 text_parts.append("\n\n\f\n\n")  # Page break marker
 
@@ -137,81 +136,68 @@ def extract_pdf_text(file: FileStorage) -> str:
     return normalize(full_text)
 
 
-def _extract_docx_footnotes(doc: Document) -> list[str]:
-    """Extract footnote text from DOCX document.
+def _build_footnote_map(doc: docxDocument) -> dict[str, str]:
+    """Build a map of footnote IDs to their text content.
 
     Args:
         doc: python-docx Document object.
 
     Returns:
-        List of footnote texts with reference markers.
+        Dictionary mapping footnote IDs to their text content.
     """
-    footnotes = []
+    footnote_map = {}
 
-    # Access footnotes through the document's part
     if not hasattr(doc, "part") or not hasattr(doc.part, "element"):
-        return footnotes
+        return footnote_map
 
     try:
-        # Get the document XML element
-        doc_element = doc.part.element
-        body = doc_element.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}body")
+        if doc.part.package is None:
+            return footnote_map
 
-        if body is None:
-            return footnotes
-
-        # Find all footnote references in the document
-        footnote_refs = body.findall(
-            ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}footnoteReference"
+        footnotes_part = doc.part.package.part_related_by(
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
         )
+        footnotes_element = etree.fromstring(footnotes_part.blob)
 
-        # Try to access footnotes part
-        try:
-            if doc.part.package is None:
-                return footnotes
-            footnotes_part = doc.part.package.part_related_by(
-                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+        # Extract all footnotes
+        for footnote in footnotes_element.findall(
+            f".//{{{footnotes_element.nsmap['w']}}}footnote"
+        ):
+            footnote_id = footnote.get(
+                f"{{{footnotes_element.nsmap['w']}}}id"
             )
-            footnotes_element = etree.fromstring(footnotes_part.blob)
+            if footnote_id:
+                # Extract text from all paragraphs in this footnote
+                texts = []
+                for para in footnote.findall(
+                    f".//{{{footnotes_element.nsmap['w']}}}p"
+                ):
+                    para_texts = []
+                    for text_elem in para.findall(
+                        f".//{{{footnotes_element.nsmap['w']}}}t"
+                    ):
+                        if text_elem.text:
+                            para_texts.append(text_elem.text)
+                    if para_texts:
+                        texts.append("".join(para_texts))
 
-            for ref in footnote_refs:
-                footnote_id = ref.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id")
-                if footnote_id:
-                    # Find corresponding footnote content
-                    footnote = footnotes_element.find(
-                        f".//{{{footnotes_element.nsmap['w']}}}footnote[@{{{footnotes_element.nsmap['w']}}}id='{footnote_id}']"
-                    )
-                    if footnote is not None:
-                        # Extract text from footnote paragraphs
-                        texts = []
-                        for para in footnote.findall(f".//{{{footnotes_element.nsmap['w']}}}p"):
-                            para_texts = []
-                            for text_elem in para.findall(f".//{{{footnotes_element.nsmap['w']}}}t"):
-                                if text_elem.text:
-                                    para_texts.append(text_elem.text)
-                            if para_texts:
-                                texts.append("".join(para_texts))
-                        if texts:
-                            footnotes.append(f"[^{footnote_id}]: {' '.join(texts)}")
-        except KeyError:
-            # No footnotes part found
-            pass
+                if texts:
+                    footnote_map[footnote_id] = " ".join(texts)
 
-    except Exception:
-        # Silently fail if we can't extract footnotes
+    except (KeyError, AttributeError):
         pass
 
-    return footnotes
+    return footnote_map
 
 
 def extract_docx_text(file: FileStorage) -> str:
-    """Extract text from DOCX file, including footnotes.
+    """Extract text from DOCX file, including footnotes inline.
 
     Args:
         file: FileStorage object containing DOCX data.
 
     Returns:
-        Extracted and normalized text.
+        Extracted and normalized text with footnotes inline.
 
     Raises:
         ValueError: If DOCX cannot be opened or processed.
@@ -219,21 +205,54 @@ def extract_docx_text(file: FileStorage) -> str:
     file.stream.seek(0)
 
     try:
-        doc = docx.Document(file.stream)
+        doc = Document(file.stream)
     except Exception as exc:
         raise ValueError(f"Failed to open DOCX file: {exc}") from exc
 
-    # Extract main text
-    main_text = [para.text for para in doc.paragraphs if para.text.strip()]
+    # Build footnote map
+    footnote_map = _build_footnote_map(doc)
 
-    # Extract footnotes
-    footnotes = _extract_docx_footnotes(doc)
+    # Extract paragraphs with inline footnotes
+    text_parts = []
 
-    # Combine
-    full_text = "\n".join(main_text)
-    if footnotes:
-        full_text += "\n\n--- FOOTNOTES ---\n\n" + "\n\n".join(footnotes)
+    for para in doc.paragraphs:
+        para_text = para.text.strip()
+        if not para_text:
+            continue
 
+        # Check if this paragraph has footnote references
+        if hasattr(para, "_element"):
+            # Find footnote references in this paragraph
+            footnote_refs = para._element.findall(
+                ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}footnoteReference"
+            )
+
+            if footnote_refs:
+                # Build paragraph with inline footnotes
+                # Start with the base text
+                result = para_text
+
+                # Add footnotes at the end of the paragraph
+                footnote_texts = []
+                for ref in footnote_refs:
+                    footnote_id = ref.get(
+                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id"
+                    )
+                    if footnote_id and footnote_id in footnote_map:
+                        footnote_texts.append(
+                            f"[{footnote_id}] {footnote_map[footnote_id]}"
+                        )
+
+                if footnote_texts:
+                    result += " " + " ".join(footnote_texts)
+
+                text_parts.append(result)
+            else:
+                text_parts.append(para_text)
+        else:
+            text_parts.append(para_text)
+
+    full_text = "\n\n".join(text_parts)
     return normalize(full_text)
 
 
@@ -267,4 +286,6 @@ def extract_text(file: FileStorage) -> str:
     elif ext == ".docx":
         return extract_docx_text(file)
     else:
-        raise ValueError(f"Unsupported file format: {ext}. Supported formats: .pdf, .docx, .txt")
+        raise ValueError(
+            f"Unsupported file format: {ext}. Supported formats: .pdf, .docx, .txt"
+        )
