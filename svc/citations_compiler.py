@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
 
@@ -18,23 +17,17 @@ from eyecite.models import (
 )
 
 from verifiers.case_verifier import get_case_name, verify_case_citation
+from verifiers.federal_law_verifier import (
+    classify_full_law_jurisdiction,
+    verify_federal_law_citation,
+)
 from utils.logger import get_logger
 from utils.span_finder import get_span
+from utils.cleaner import clean_str
 
 logger = get_logger()
 
 # --- helper functions ------------------------------------------
-_space_re = re.compile(r"\s+")
-_citation_marker_re = re.compile(r"\[\d+:")
-
-def _clean(s: str | None) -> str | None:
-    if not s:
-        return s
-    v = str(s)
-    # Remove all footnote markers like "[3:" from anywhere in the string
-    v = _citation_marker_re.sub("", v)
-    v = _space_re.sub(" ", v).strip()
-    return v if v else None
 
 def _ctype(obj: Any) -> str:
     return type(obj).__name__ 
@@ -64,12 +57,11 @@ def _get_citation_type(citation_obj) -> str:
     else:
         return "unknown"
 
-
 def _get_pin_cite(obj) -> str | None:
     metadata = getattr(obj, "metadata", None)
     if metadata is None:
         return None
-    return _clean(getattr(metadata, "pin_cite", None))
+    return clean_str(getattr(metadata, "pin_cite", None))
 
 
 def _citation_category(obj) -> str:
@@ -95,16 +87,15 @@ def _resource_identifier(resource: Any) -> str:
     if isinstance(resource, ResourceKey):
         parts = [resource.kind, *resource.id_tuple]
         return "::".join(part for part in parts if part)
-    return _clean(str(resource)) or _ctype(resource)
+    return clean_str(str(resource)) or _ctype(resource)
     
 def _get_citation(obj) -> str | None:
-    logger.info(f"Extracting citation from object: {obj}")
     c = obj.token.data if hasattr(obj, "token") and hasattr(obj.token, "data") else None
     if c is not None:
-        return _clean(c)
+        return clean_str(c)
     c = obj.data if hasattr(obj, "data") else None
     if c is not None:
-        return _clean(c)
+        return clean_str(c)
     return None
 
 def _get_journal_author_title(obj) -> dict[str | None, str | None] | None:
@@ -137,13 +128,13 @@ def _get_journal_author_title(obj) -> dict[str | None, str | None] | None:
 
     raw_title = preceding_text[second_comma + 1 : first_comma]
     raw_title = raw_title.replace('"', "").replace("'", "")
-    title = _clean(raw_title)
+    title = clean_str(raw_title)
 
     period_idx = preceding_text.rfind(".", 0, second_comma)
     author_start = period_idx + 1 if period_idx != -1 else 0
     raw_author = preceding_text[author_start:second_comma]
     raw_author = raw_author.replace('"', "").replace("'", "")
-    author = _clean(raw_author)
+    author = clean_str(raw_author)
 
     if title is None and author is None:
         return None
@@ -160,29 +151,30 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
     """Return a stable key Eyecite will use as the 'resource' for short forms."""
     t = _ctype(full_cite)
     if t == "FullCaseCitation":
-        name = _clean(get_case_name(full_cite)) or ""
-        reporter = (_clean(full_cite.groups.get("reporter", None)) or "")
-        vol = _clean(full_cite.groups.get("volume", None)) or ""
-        page = _clean(full_cite.groups.get("page", None)) or ""
-        year = _clean(full_cite.year) or ""
+        name = clean_str(get_case_name(full_cite)) or ""
+        reporter = (clean_str(full_cite.groups.get("reporter", None)) or "")
+        vol = clean_str(full_cite.groups.get("volume", None)) or ""
+        page = clean_str(full_cite.groups.get("page", None)) or ""
+        year = clean_str(full_cite.year) or ""
         return ResourceKey("case", (name, reporter, vol, page, year))
     if t == "FullLawCitation":
-        title = (_clean(full_cite.groups.get("title", None)) or "")
-        code = (_clean(full_cite.groups.get("reporter", None)) or "")
-        section = (_clean(full_cite.groups.get("section", None)) or "")
-        year = _clean(getattr(full_cite, "year", None)) or ""
+        title = (clean_str(full_cite.groups.get("title", None)) or "")
+        code = (clean_str(full_cite.groups.get("reporter", None)) or "")
+        section = (clean_str(full_cite.groups.get("section", None)) or "")
+        year = clean_str(getattr(full_cite, "year", None)) or ""
         return ResourceKey("law", (title, code, section, year))
     # Treat everything else as "other" so supra can still cluster journals, etc.
     title = ""
     author = ""
-    journal_info = _get_journal_author_title(full_cite)
-    if journal_info is not None:
-        title = journal_info.get("title", "") or ""
-        author = journal_info.get("author", "") or ""
-    journal = (_clean(full_cite.groups.get("reporter", None)) or "")
-    volume = _clean(full_cite.groups.get("volume", None)) or ""
-    page = _clean(full_cite.groups.get("page", None)) or ""
-    year = _clean(full_cite.year) or ""
+    if t == "FullJournalCitation":
+        journal_info = _get_journal_author_title(full_cite)
+        if journal_info is not None:
+            title = journal_info.get("title", "") or ""
+            author = journal_info.get("author", "") or ""
+    journal = (clean_str(full_cite.groups.get("reporter", None)) or "")
+    volume = clean_str(full_cite.groups.get("volume", None)) or ""
+    page = clean_str(full_cite.groups.get("page", None)) or ""
+    year = clean_str(full_cite.year) or ""
     return ResourceKey("other", (author, title, volume, journal, page, year))
 
 
@@ -192,14 +184,13 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
     cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
     citations = get_citations(cleaned_text)
-    logger.info(f"CITATIONS: {citations}")
     try:
         resolutions = resolve_citations(
             citations,
             resolve_full_citation=_bind_full_citation,
         )
-    except Exception:  # pragma: no cover - defensive fallback
-        logger.exception("eyecite resolve_citations failed; falling back to raw citations")
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.error(f"eyecite resolve_citations failed; falling back to raw citations: {exc}")
         resolutions = {
             f"raw:{idx}": [citation]
             for idx, citation in enumerate(citations)
@@ -235,14 +226,41 @@ def compile_citations(text: str) -> Dict[str, Any]:
         verification_details = None
 
         if entry_type == "case":
+            logger.debug(f"Verifying case citation for resource_key: {resource_key}")
             status, substatus, verification_details = verify_case_citation(
                 primary_full,
                 normalized_key,
                 resource_dict,
                 fallback_citation=_get_citation(primary_full),
             )
-        
-        logger.info(f"Resource dict: {resource_dict}")
+        elif entry_type == "law":
+            logger.debug(f"Verifying law citation for resource_key: {resource_key}")
+            jurisdiction = None
+            if isinstance(primary_full, FullLawCitation):
+                jurisdiction = classify_full_law_jurisdiction(primary_full)
+
+            if jurisdiction == "federal":
+                logger.debug(f"Verifying federal law citation for resource_key: {resource_key}")
+                status, substatus, verification_details = verify_federal_law_citation(
+                    primary_full,
+                    normalized_key,
+                    resource_dict,
+                    fallback_citation=_get_citation(primary_full),
+                )
+            elif jurisdiction == "state":
+                logger.debug(f"Verifying state law citation for resource_key: {resource_key}")
+                status = "warning"
+                substatus = "state_law_not_supported"
+                verification_details = {
+                    "jurisdiction": jurisdiction,
+                }
+            else:
+                logger.debug(f"Unsupported jurisdiction for resource_key: {resource_key}")
+                status = "warning"
+                substatus = "unsupported_jurisdiction"
+                verification_details = {
+                    "jurisdiction": jurisdiction or "unknown",
+                }
 
         citation_db[resource_key] = {
             "type": entry_type,

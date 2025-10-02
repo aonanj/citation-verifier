@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Tuple
 
 
-from utils.logger import get_logger
+from .logger import get_logger
 
 logger = get_logger()
 

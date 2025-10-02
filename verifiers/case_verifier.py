@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 from typing import Any, Dict, List, Tuple
@@ -8,45 +7,14 @@ from typing import Any, Dict, List, Tuple
 import httpx
 from eyecite.models import FullCitation
 
-logger = logging.getLogger(__name__)
+from utils.cleaner import clean_str, normalize_case_name_for_compare
+from utils.logger import get_logger
 
-
-_space_re = re.compile(r"\s+")
-_citation_marker_re = re.compile(r"\[\d+:")
-_non_alphanum_re = re.compile(r"[^a-z0-9]+", re.IGNORECASE)
+logger = get_logger()
 
 _COURT_LISTENER_LOOKUP_URL = "https://www.courtlistener.com/api/rest/v4/citation-lookup/"
 _COURT_LISTENER_TIMEOUT = httpx.Timeout(10.0, connect=5.0, read=5.0)
 _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
-
-
-def _clean(value: Any) -> str | None:
-    if not value:
-        return None
-    text = str(value)
-    # Remove all footnote markers like "[3:" from anywhere in the string
-    text = _citation_marker_re.sub("", text)
-    text = _space_re.sub(" ", text).strip()
-    return text or None
-
-
-def get_case_name(obj) -> str | None:
-    if obj is None:
-        return None
-    metadata = getattr(obj, "metadata", None)
-    if metadata is not None:
-        plaintiff = _clean(
-            getattr(metadata, "plaintiff", None)
-            or getattr(metadata, "petitioner", None)
-        )
-        defendant = _clean(
-            getattr(metadata, "defendant", None)
-            or getattr(metadata, "respondent", None)
-        )
-        if plaintiff and defendant:
-            return _clean(f"{plaintiff} v. {defendant}")
-    return None
-
 
 def _courtlistener_headers() -> Dict[str, str]:
     headers = {"Accept": "application/json"}
@@ -54,14 +22,6 @@ def _courtlistener_headers() -> Dict[str, str]:
     if token:
         headers["Authorization"] = f"Token {token.strip()}"
     return headers
-
-
-def _normalize_case_name_for_compare(name: str | None) -> str | None:
-    if not name:
-        return None
-    normalized = _non_alphanum_re.sub("", name.lower())
-    return normalized or None
-
 
 def _extract_year_from_value(value: Any) -> str | None:
     if value is None:
@@ -96,7 +56,7 @@ def _extract_lookup_case_name(payload: Dict[str, Any]) -> str | None:
 
     for field in candidate_fields:
         value = payload.get(field)
-        cleaned = _clean(value)
+        cleaned = clean_str(value)
         if cleaned:
             return cleaned
 
@@ -233,21 +193,21 @@ def _prepare_case_lookup_fields(
 
     if primary_full is not None:
         groups = getattr(primary_full, "groups", {}) or {}
-        volume = volume or _clean(groups.get("volume"))
-        reporter = reporter or _clean(groups.get("reporter"))
-        page = page or _clean(groups.get("page"))
+        volume = volume or clean_str(groups.get("volume"))
+        reporter = reporter or clean_str(groups.get("reporter"))
+        page = page or clean_str(groups.get("page"))
 
     if (not volume or not reporter or not page) and isinstance(primary_full, FullCitation):
-        volume = volume or _clean(getattr(primary_full, "volume", None))
-        page = page or _clean(getattr(primary_full, "page", None))
+        volume = volume or clean_str(getattr(primary_full, "volume", None))
+        page = page or clean_str(getattr(primary_full, "page", None))
 
     id_tuple = resource_dict.get("id_tuple")
     if isinstance(id_tuple, tuple):
         if len(id_tuple) >= 3:
-            reporter = reporter or _clean(id_tuple[1])
-            volume = volume or _clean(id_tuple[2])
+            reporter = reporter or clean_str(id_tuple[1])
+            volume = volume or clean_str(id_tuple[2])
         if len(id_tuple) >= 4:
-            page = page or _clean(id_tuple[3])
+            page = page or clean_str(id_tuple[3])
 
     if (not volume or not reporter or not page) and normalized_key:
         match = re.search(
@@ -255,12 +215,28 @@ def _prepare_case_lookup_fields(
             normalized_key,
         )
         if match:
-            volume = volume or _clean(match.group("volume"))
-            reporter = reporter or _clean(match.group("reporter"))
-            page = page or _clean(match.group("page"))
+            volume = volume or clean_str(match.group("volume"))
+            reporter = reporter or clean_str(match.group("reporter"))
+            page = page or clean_str(match.group("page"))
 
     return volume, reporter, page
 
+def get_case_name(obj) -> str | None:
+    if obj is None:
+        return None
+    metadata = getattr(obj, "metadata", None)
+    if metadata is not None:
+        plaintiff = clean_str(
+            getattr(metadata, "plaintiff", None)
+            or getattr(metadata, "petitioner", None)
+        )
+        defendant = clean_str(
+            getattr(metadata, "defendant", None)
+            or getattr(metadata, "respondent", None)
+        )
+        if plaintiff and defendant:
+            return clean_str(f"{plaintiff} v. {defendant}")
+    return None
 
 def verify_case_citation(
     primary_full: FullCitation | None,
@@ -268,7 +244,7 @@ def verify_case_citation(
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
-    citation_text = _clean(normalized_key) or _clean(fallback_citation)
+    citation_text = clean_str(normalized_key) or clean_str(fallback_citation)
 
     volume, reporter, page = _prepare_case_lookup_fields(
         primary_full,
@@ -301,13 +277,13 @@ def verify_case_citation(
         metadata = getattr(primary_full, "metadata", None)
         if metadata is not None:
             for attr in ("short_name", "case_name", "case_name_full"):
-                value = _clean(getattr(metadata, attr, None))
+                value = clean_str(getattr(metadata, attr, None))
                 if value:
                     expected_name = value
                     break
         if not expected_name:
             for attr in ("short_name", "case_name", "case_name_full"):
-                value = _clean(getattr(primary_full, attr, None))
+                value = clean_str(getattr(primary_full, attr, None))
                 if value:
                     expected_name = value
                     break
@@ -328,11 +304,11 @@ def verify_case_citation(
         if isinstance(id_tuple, tuple) and len(id_tuple) >= 5:
             expected_year = _extract_year_from_value(id_tuple[4])
 
-    actual_name = _clean(_extract_lookup_case_name(lookup_payload))
+    actual_name = clean_str(_extract_lookup_case_name(lookup_payload))
     actual_year = _extract_year_from_value(_extract_lookup_case_year(lookup_payload))
 
-    expected_name_norm = _normalize_case_name_for_compare(expected_name)
-    actual_name_norm = _normalize_case_name_for_compare(actual_name)
+    expected_name_norm = normalize_case_name_for_compare(expected_name)
+    actual_name_norm = normalize_case_name_for_compare(actual_name)
 
     mismatches: List[str] = []
 

@@ -23,6 +23,10 @@ from docx.oxml.table import CT_Tbl  # type: ignore
 from docx.oxml.text.paragraph import CT_P  # type: ignore
 from docx.oxml.ns import qn
 
+from utils.logger import get_logger
+
+logger = get_logger()
+
 _HYPHEN_WRAP_RE: Final = re.compile(r"(\w)-\n(\w)")
 _EXCESS_BREAKS_RE: Final = re.compile(r"\n{3,}")
 _SMART_QUOTES_RE: Final = re.compile("[\u201c\u201d]")

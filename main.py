@@ -92,14 +92,17 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
 	file = document
 
 	if not file.filename:
+		logger.error("Uploaded file is missing a filename.")
 		raise HTTPException(status_code=400, detail="Uploaded file is missing a filename.")
 
 	extension = os.path.splitext(file.filename)[1].lower()
 	if extension not in {".pdf", ".docx", ".txt"}:
+		logger.error(f"Unsupported file format: {extension}")
 		raise HTTPException(status_code=400, detail=f"Unsupported file format: {extension}")
 
 	file_contents = await file.read()
 	if not file_contents:
+		logger.error("Uploaded file is empty.")
 		raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
 	storage = FileStorage(
@@ -111,13 +114,16 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
 	try:
 		extracted_text = extract_text(storage)
 	except ValueError as exc:
+		logger.error(f"Error in extract_text: {exc}")
 		raise HTTPException(status_code=400, detail=str(exc)) from exc
 	except Exception as exc:  # pragma: no cover - unexpected failure
+		logger.error(f"Error in extract_text: {exc}")
 		raise HTTPException(status_code=500, detail="Failed to extract text.") from exc
 
 	try:
 		compiled = compile_citations(extracted_text)
 	except Exception as exc:  # pragma: no cover - unexpected failure
+		logger.error(f"Error in compile_citations: {exc}")
 		raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
 
 	sanitized = _sanitize_citations(compiled)
