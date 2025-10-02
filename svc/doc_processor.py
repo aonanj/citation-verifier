@@ -19,8 +19,9 @@ from docx import Document
 from docx.document import Document as DocxDocument
 from docx.text.paragraph import Paragraph
 from docx.table import _Cell, Table  # type: ignore
+from docx.oxml.table import CT_Tbl  # type: ignore
+from docx.oxml.text.paragraph import CT_P  # type: ignore
 from docx.oxml.ns import qn
-from docx.oxml.text.run import CT_R  # type: ignore
 
 _HYPHEN_WRAP_RE: Final = re.compile(r"(\w)-\n(\w)")
 _EXCESS_BREAKS_RE: Final = re.compile(r"\n{3,}")
@@ -76,6 +77,20 @@ def _iter_cell_paragraphs(cell: _Cell) -> Iterable[Paragraph]:
         yield p
     for t in cell.tables:
         yield from _iter_table_paragraphs(t)
+
+
+def _iter_block_items(container: DocxDocument | _Cell) -> Iterable[Paragraph | Table]:
+    if isinstance(container, DocxDocument):
+        parent_elm = container.element.body  # type: ignore[union-attr]
+    elif isinstance(container, _Cell):
+        parent_elm = container._tc
+    else:
+        parent_elm = container._element  # type: ignore[attr-defined]
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, container)  # type: ignore[arg-type]
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, container)  # type: ignore[arg-type]
 
 
 def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
@@ -199,11 +214,8 @@ def extract_pdf_text(file: FileStorage) -> str:
 
     # Combine main text and footnotes
     main_content = "\n\n\f\n\n".join(text_parts).strip()
-    if footnote_parts:
-        footnote_section = "\n\n--- FOOTNOTES ---\n\n" + "\n\n".join(footnote_parts)
-        full_text = main_content + footnote_section
-    else:
-        full_text = main_content
+
+    full_text = main_content
 
     return _normalize(full_text)
 
@@ -228,16 +240,16 @@ def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
 
     lines: List[str] = []
 
-    for par in doc.paragraphs:
-        t = _para_with_inline_footnotes(par, footnotes)
-        if t:
-            lines.append(t)
-
-    for tbl in doc.tables:
-        for par in _iter_table_paragraphs(tbl):
-            t = _para_with_inline_footnotes(par, footnotes)
+    for block in _iter_block_items(doc):
+        if isinstance(block, Paragraph):
+            t = _para_with_inline_footnotes(block, footnotes)
             if t:
                 lines.append(t)
+        else:
+            for par in _iter_table_paragraphs(block):
+                t = _para_with_inline_footnotes(par, footnotes)
+                if t:
+                    lines.append(t)
 
     return "\n\n".join(lines)
 

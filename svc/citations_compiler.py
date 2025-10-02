@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
@@ -19,16 +18,21 @@ from eyecite.models import (
 )
 
 from verifiers.case_verifier import get_case_name, verify_case_citation
+from utils.logger import get_logger
+from utils.span_finder import get_span
+
+logger = get_logger()
 
 # --- helper functions ------------------------------------------
 _space_re = re.compile(r"\s+")
-
-logger = logging.getLogger(__name__)
+_citation_marker_re = re.compile(r"\[\d+:")
 
 def _clean(s: str | None) -> str | None:
     if not s:
         return s
     v = str(s)
+    # Remove all footnote markers like "[3:" from anywhere in the string
+    v = _citation_marker_re.sub("", v)
     v = _space_re.sub(" ", v).strip()
     return v if v else None
 
@@ -81,16 +85,6 @@ def _citation_category(obj) -> str:
         return "id"
     return _ctype(obj)
 
-
-def _get_span(obj) -> Tuple[int, int] | None:
-    start = getattr(obj, "full_span_start", None) or getattr(obj, "span_start", None)
-    end = getattr(obj, "full_span_end", None) or getattr(obj, "span_end", None)
-    if start is None:
-        start = 0
-    if end is None:
-        end = 0
-    return (start, end)
-
 def _get_index(obj) -> int | None:
     index = getattr(obj, "index", None)
     if index is not None:
@@ -104,6 +98,7 @@ def _resource_identifier(resource: Any) -> str:
     return _clean(str(resource)) or _ctype(resource)
     
 def _get_citation(obj) -> str | None:
+    logger.info(f"Extracting citation from object: {obj}")
     c = obj.token.data if hasattr(obj, "token") and hasattr(obj.token, "data") else None
     if c is not None:
         return _clean(c)
@@ -113,33 +108,46 @@ def _get_citation(obj) -> str | None:
     return None
 
 def _get_journal_author_title(obj) -> dict[str | None, str | None] | None:
-    if not hasattr(obj, "document") or not hasattr(obj.document, "plain_text"):
+    """Extract author and title from a FullJournalCitation object."""
+    if not isinstance(obj, FullJournalCitation):
         return None
-    if not hasattr(obj, "token") or not hasattr(obj.token, "data"):
-        return None
-    cs = f", {obj.token.data}"
-    if obj.year is not None:
-        cs += f" ({obj.year})."
-    else:
-        cs += "."
-    text_block = obj.document.plain_text
-    text_block = text_block.replace(cs, "").strip()
-    sentences = re.split(r'([.!?])', text_block)
-    sentences = [s.strip() for s in sentences if s.strip()]
 
-    raw_cite = None
-    if len(sentences) >= 2:
-        raw_cite = sentences[-1].strip()
-    elif len(sentences) == 1:
-        raw_cite = sentences[0].strip()
-    else:
+    cite_span = get_span(obj)
+    if not cite_span:
         return None
-    
-    parts = raw_cite.split(',')
-    if len(parts) < 2:
+
+    start, _ = cite_span
+    if start is None or start <= 0:
         return None
-    author = _clean(parts[0])
-    title = _clean(parts[1])
+
+    document = getattr(obj, "document", None)
+    text_block = getattr(document, "plain_text", None)
+    if not text_block or not isinstance(text_block, str):
+        return None
+
+    preceding_text = text_block[:start]
+
+    first_comma = preceding_text.rfind(",")
+    if first_comma == -1:
+        return None
+
+    second_comma = preceding_text.rfind(",", 0, first_comma)
+    if second_comma == -1:
+        return None
+
+    raw_title = preceding_text[second_comma + 1 : first_comma]
+    raw_title = raw_title.replace('"', "").replace("'", "")
+    title = _clean(raw_title)
+
+    period_idx = preceding_text.rfind(".", 0, second_comma)
+    author_start = period_idx + 1 if period_idx != -1 else 0
+    raw_author = preceding_text[author_start:second_comma]
+    raw_author = raw_author.replace('"', "").replace("'", "")
+    author = _clean(raw_author)
+
+    if title is None and author is None:
+        return None
+
     return {"author": author, "title": title}
 
 # --- Resource binding for resolver ------------------------------------------
@@ -152,7 +160,7 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
     """Return a stable key Eyecite will use as the 'resource' for short forms."""
     t = _ctype(full_cite)
     if t == "FullCaseCitation":
-        name = get_case_name(full_cite) or ""
+        name = _clean(get_case_name(full_cite)) or ""
         reporter = (_clean(full_cite.groups.get("reporter", None)) or "")
         vol = _clean(full_cite.groups.get("volume", None)) or ""
         page = _clean(full_cite.groups.get("page", None)) or ""
@@ -175,7 +183,7 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
     volume = _clean(full_cite.groups.get("volume", None)) or ""
     page = _clean(full_cite.groups.get("page", None)) or ""
     year = _clean(full_cite.year) or ""
-    return ResourceKey("other", (title, author, volume, journal, page, year))
+    return ResourceKey("other", (author, title, volume, journal, page, year))
 
 
 
@@ -184,6 +192,7 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
     cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
     citations = get_citations(cleaned_text)
+    logger.info(f"CITATIONS: {citations}")
     try:
         resolutions = resolve_citations(
             citations,
@@ -232,6 +241,8 @@ def compile_citations(text: str) -> Dict[str, Any]:
                 resource_dict,
                 fallback_citation=_get_citation(primary_full),
             )
+        
+        logger.info(f"Resource dict: {resource_dict}")
 
         citation_db[resource_key] = {
             "type": entry_type,
@@ -249,7 +260,7 @@ def compile_citations(text: str) -> Dict[str, Any]:
                 {
                     "citation_category": _citation_category(cite),
                     "matched_text": _get_citation(cite),
-                    "span": _get_span(cite),
+                    "span": get_span(cite),
                     "index": _get_index(cite),
                     "pin_cite": _get_pin_cite(cite),
                     "citation_obj": cite,

@@ -10,6 +10,9 @@ from werkzeug.datastructures import FileStorage
 
 from svc.doc_processor import extract_text
 from svc.citations_compiler import compile_citations
+from utils.logger import setup_logger
+
+logger = setup_logger()
 
 
 class CitationOccurrence(BaseModel):
