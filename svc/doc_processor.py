@@ -2,22 +2,21 @@
 
 import os
 import re
-from typing import Final
+from collections import Counter
+from typing import Any, Dict, Final, Iterable, List, Optional, Sequence, Set
+from xml.etree import ElementTree as ET
 
 import fitz  # PyMuPDF
 import pytesseract
-from PIL import Image
-from werkzeug.datastructures import FileStorage
-from typing import Dict, Iterable, List
-from xml.etree import ElementTree as ET
-
 from docx import Document
 from docx.document import Document as DocxDocument
-from docx.text.paragraph import Paragraph
-from docx.table import _Cell, Table  # type: ignore
+from docx.oxml.ns import qn
 from docx.oxml.table import CT_Tbl  # type: ignore
 from docx.oxml.text.paragraph import CT_P  # type: ignore
-from docx.oxml.ns import qn
+from docx.table import Table, _Cell  # type: ignore
+from docx.text.paragraph import Paragraph
+from PIL import Image
+from werkzeug.datastructures import FileStorage
 
 from utils.logger import get_logger
 
@@ -27,6 +26,9 @@ _HYPHEN_WRAP_RE: Final = re.compile(r"(\w)-\n(\w)")
 _EXCESS_BREAKS_RE: Final = re.compile(r"\n{3,}")
 _SMART_QUOTES_RE: Final = re.compile("[\u201c\u201d]")
 _SMART_APOSTROPHES_RE: Final = re.compile("[\u2018\u2019]")
+_SUPERSCRIPT_TRANSLATION: Final = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+_SUPERSCRIPT_CHARACTERS: Final = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹")
+_FOOTNOTE_LINE_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)[\.\)]?\s*(.*)")
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
@@ -104,7 +106,7 @@ def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
             for ref in refs:
                 fid = int(ref.get(qn("w:id")))
                 ftxt = footnotes.get(fid, "").strip()
-                parts.append(f"[{fid}: {ftxt}]")
+                parts.append(f" {ftxt} ")
             continue
         if run.text:
             parts.append(run.text)
@@ -127,97 +129,322 @@ def _normalize(text: str) -> str:
     return text.strip()
 
 
-def _extract_pdf_footnotes(page: fitz.Page) -> str:
-    """Extract footnote text from a PDF page.
+def _normalize_superscripts(text: str) -> str:
+    return text.translate(_SUPERSCRIPT_TRANSLATION)
 
-    Args:
-        page: PyMuPDF page object.
 
-    Returns:
-        Extracted footnote text, or empty string if none found.
-    """
-    text_dict = page.get_text("dict")
-    footnote_parts = []
-
-    if not isinstance(text_dict, dict):
-        return ""
-
+def _primary_font_size(text_dict: Dict[str, Any]) -> float:
+    sizes: Counter[float] = Counter()
     for block in text_dict.get("blocks", []):
-        if block.get("type") != 0:  # Skip non-text blocks
+        if block.get("type") != 0:
             continue
-
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                text = span.get("text", "").strip()
-                font_size = span.get("size", 0)
+                raw_text = (span.get("text") or "").strip()
+                if not raw_text:
+                    continue
+                size = float(span.get("size", 0.0) or 0.0)
+                if size > 0:
+                    sizes[round(size, 1)] += 1
+    if not sizes:
+        return 0.0
+    return max(sizes.items(), key=lambda item: item[1])[0]
 
-                # Heuristic: footnotes typically use smaller font
-                # or appear in specific page regions (bottom)
-                bbox = span.get("bbox", [0, 0, 0, 0])
-                y_position = bbox[1]  # Top y-coordinate
-                page_height = page.rect.height
 
-                # Consider text in bottom 20% of page with smaller font as footnote
-                is_in_footnote_region = y_position > (page_height * 0.80)
-                is_small_font = font_size < 10
+def _line_text_from_spans(spans: Iterable[Dict[str, Any]]) -> str:
+    return "".join(str(span.get("text") or "") for span in spans)
 
-                if text and (is_in_footnote_region or is_small_font):
-                    footnote_parts.append(text)
 
-    return " ".join(footnote_parts) if footnote_parts else ""
+def _normalize_footnote_token(token: str) -> str:
+    if not token:
+        return token
+    start = 0
+    end = len(token)
+    while start < end and not token[start].isalpha():
+        start += 1
+    while end > start and not token[end - 1].isalpha():
+        end -= 1
+    if start >= end:
+        return token
+    leading = token[:start]
+    core = token[start:end]
+    trailing = token[end:]
+    if not core.isupper():
+        return token
+    if len(core) < 2:
+        return token
+    if not core.isalpha():
+        return token
+    if len(core) < 4 and not trailing.startswith('.'):
+        return token
+    converted = core[0] + core[1:].lower()
+    return f"{leading}{converted}{trailing}"
+
+
+def _normalize_footnote_case(text: str) -> str:
+    if not text:
+        return text
+    parts = re.split(r"(\s+)", text)
+    normalized_parts: List[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if part.isspace():
+            normalized_parts.append(part)
+        else:
+            normalized_parts.append(_normalize_footnote_token(part))
+    return "".join(normalized_parts)
+
+
+def _span_bbox(span: Dict[str, Any]) -> Sequence[float]:
+    bbox = span.get("bbox")
+    if isinstance(bbox, Sequence) and len(bbox) >= 4:
+        return bbox
+    return (0.0, 0.0, 0.0, 0.0)
+
+
+def _block_top(block: Dict[str, Any]) -> float:
+    for line in block.get("lines", []):
+        for span in line.get("spans", []):
+            bbox = _span_bbox(span)
+            return float(bbox[1])
+    return float("inf")
+
+
+def _block_average_font_size(block: Dict[str, Any]) -> float:
+    sizes: List[float] = []
+    for line in block.get("lines", []):
+        for span in line.get("spans", []):
+            size_val = float(span.get("size", 0.0) or 0.0)
+            if size_val > 0:
+                sizes.append(size_val)
+    if not sizes:
+        return 0.0
+    return sum(sizes) / len(sizes)
+
+
+def _is_footnote_block(
+    block: Dict[str, Any],
+    page_height: float,
+    primary_font_size: float,
+) -> bool:
+    lines = block.get("lines", [])
+    if not lines:
+        return False
+    normalized_lines = [
+        _normalize_superscripts(_line_text_from_spans(line.get("spans", []))).strip()
+        for line in lines
+    ]
+    footnote_starts = [line for line in normalized_lines if _FOOTNOTE_LINE_RE.match(line)]
+    if not footnote_starts:
+        return False
+    block_top = _block_top(block)
+    block_avg_size = _block_average_font_size(block)
+    majority_threshold = max(1, len(lines) // 2)
+    if page_height > 0 and block_top > page_height * 0.7:
+        return True
+    if primary_font_size > 0 and block_avg_size > 0:
+        if block_avg_size <= primary_font_size * 0.85 and len(footnote_starts) >= majority_threshold:
+            return True
+    return False
+
+
+def _parse_footnote_lines(lines: Iterable[str]) -> Dict[int, str]:
+    footnotes: Dict[int, str] = {}
+    current_number: Optional[int] = None
+    buffer: List[str] = []
+
+    def flush() -> None:
+        nonlocal buffer
+        nonlocal current_number
+        if current_number is None:
+            buffer = []
+            return
+        text = " ".join(part for part in buffer if part).strip()
+        if text:
+            footnotes[current_number] = _normalize_footnote_case(text)
+        buffer = []
+
+    for raw_line in lines:
+        normalized = _normalize_superscripts(raw_line)
+        stripped = normalized.strip()
+        if not stripped:
+            if buffer:
+                buffer.append("")
+            continue
+        match = _FOOTNOTE_LINE_RE.match(stripped)
+        if match:
+            flush()
+            number_str = match.group(1)
+            digits = number_str if number_str.isdigit() else _normalize_superscripts(number_str)
+            try:
+                current_number = int(digits)
+            except (TypeError, ValueError):
+                current_number = None
+            remainder = match.group(2).strip()
+            buffer = [remainder] if remainder else []
+        elif current_number is not None:
+            buffer.append(stripped)
+
+    if buffer:
+        flush()
+
+    return footnotes
+
+
+def _ends_with_whitespace(parts: List[str]) -> bool:
+    for part in reversed(parts):
+        if not part:
+            continue
+        return part[-1].isspace()
+    return False
+
+
+def _render_span_with_inline_footnotes(
+    span: Dict[str, Any],
+    footnotes: Dict[int, str],
+    primary_font_size: float,
+    used: Set[int],
+) -> str:
+    text = span.get("text") or ""
+    if not text:
+        return ""
+    normalized = _normalize_superscripts(text)
+    matches = list(re.finditer(r"(?<!\d)(\d{1,3})(?!\d)", normalized))
+    if not matches:
+        return text
+    font_size = float(span.get("size", 0.0) or 0.0)
+    has_superscript = any(ch in _SUPERSCRIPT_CHARACTERS for ch in text)
+    is_small = primary_font_size > 0 and font_size > 0 and font_size <= primary_font_size * 0.85
+    if not has_superscript and not is_small:
+        return text
+    residual = re.sub(r"(?<!\d)\d{1,3}(?!\d)", "", normalized)
+    if residual.strip():
+        return text
+    result: List[str] = []
+    last_idx = 0
+    for match in matches:
+        result.append(text[last_idx:match.start()])
+        num_val = int(normalized[match.start():match.end()])
+        footnote_text = footnotes.get(num_val)
+        if footnote_text:
+            if not _ends_with_whitespace(result):
+                result.append(" ")
+            clean_text = footnote_text.strip()
+            if clean_text:
+                result.append(clean_text)
+                result.append(" ")
+                used.add(num_val)
+        else:
+            result.append(text[match.start():match.end()])
+        last_idx = match.end()
+    result.append(text[last_idx:])
+    return "".join(result)
+
+
+def _render_line_with_inline_footnotes(
+    line: Dict[str, Any],
+    footnotes: Dict[int, str],
+    primary_font_size: float,
+    used: Set[int],
+) -> str:
+    parts: List[str] = []
+    for span in line.get("spans", []):
+        parts.append(
+            _render_span_with_inline_footnotes(span, footnotes, primary_font_size, used)
+        )
+    line_text = "".join(parts)
+    line_text = re.sub(r" {2,}", " ", line_text)
+    return line_text.rstrip()
+
+
+def _extract_pdf_page_text(page: fitz.Page) -> str:
+    try:
+        text_dict: Any = page.get_text("dict")
+    except Exception:  # pragma: no cover - defensive
+        return page.get_text("text")
+    if not isinstance(text_dict, dict):
+        return page.get_text("text")
+
+    primary_font_size = _primary_font_size(text_dict)
+    page_height = float(page.rect.height)
+
+    main_blocks: List[List[Dict[str, Any]]] = []
+    footnote_lines: List[str] = []
+
+    for block in text_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        lines = block.get("lines", [])
+        if not lines:
+            continue
+        if _is_footnote_block(block, page_height, primary_font_size):
+            for line in lines:
+                footnote_lines.append(_line_text_from_spans(line.get("spans", [])))
+        else:
+            main_blocks.append(lines)
+
+    footnotes = _parse_footnote_lines(footnote_lines)
+    used_footnotes: Set[int] = set()
+
+    if not main_blocks:
+        if footnotes:
+            logger.debug(
+                "Detected footnotes without main text on page %s", getattr(page, "number", 0) + 1
+            )
+        return page.get_text("text")
+
+    lines_out: List[str] = []
+    for block_lines in main_blocks:
+        block_texts: List[str] = []
+        for line in block_lines:
+            block_texts.append(
+                _render_line_with_inline_footnotes(line, footnotes, primary_font_size, used_footnotes)
+            )
+        if block_texts:
+            if lines_out and lines_out[-1] != "":
+                lines_out.append("")
+            lines_out.extend(block_texts)
+
+    unused = [num for num in sorted(footnotes) if num not in used_footnotes and footnotes[num]]
+    if unused:
+        if lines_out:
+            lines_out.append("")
+        for num in unused:
+            lines_out.append(footnotes[num])
+
+    return "\n".join(lines_out)
 
 
 def extract_pdf_text(file: FileStorage) -> str:
-    """Extract text from PDF file, including footnotes.
+    """Extract text from PDF file, inserting footnotes inline when present."""
 
-    Args:
-        file: FileStorage object containing PDF data.
-
-    Returns:
-        Extracted and normalized text.
-
-    Raises:
-        ValueError: If PDF cannot be opened or processed.
-    """
     file.stream.seek(0)
-    text_parts = []
-    footnote_parts = []
+    page_texts: List[str] = []
 
     try:
-        with fitz.open(stream=file.stream.read(), filetype="pdf") as doc:
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                # Extract main text
-                main_text = page.get_text("text")
-                if main_text.strip():
-                    text_parts.append(main_text)
-                else:
-                    # Fall back to OCR if no text found
-                    pix = page.get_pixmap()
-                    img = Image.frombytes(
-                        mode="RGB",
-                        size=(pix.width, pix.height),
-                        data=pix.samples,
-                    )
-                    ocr_text = pytesseract.image_to_string(img)
-                    text_parts.append(ocr_text)
-
-                # Extract footnotes
-                footnote_text = _extract_pdf_footnotes(page)
-                if footnote_text.strip():
-                    footnote_parts.append(f"[Page {page_num + 1} footnotes: {footnote_text}]")
-
-                text_parts.append("\n\n\f\n\n")  # Page break marker
-
-    except Exception as exc:
+        pdf_bytes = file.stream.read()
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            for page in doc:
+                page_text = _extract_pdf_page_text(page)
+                if not page_text.strip():
+                    raw_text = page.get_text("text")
+                    if raw_text.strip():
+                        page_text = raw_text
+                    else:
+                        pix = page.get_pixmap()
+                        img = Image.frombytes(
+                            mode="RGB",
+                            size=(pix.width, pix.height),
+                            data=pix.samples,
+                        )
+                        page_text = pytesseract.image_to_string(img)
+                page_texts.append(page_text.strip())
+    except Exception as exc:  # pragma: no cover - pass through for callers
         raise ValueError(f"Failed to extract text from PDF: {exc}") from exc
 
-    # Combine main text and footnotes
-    main_content = "\n\n\f\n\n".join(text_parts).strip()
-
-    full_text = main_content
-
-    return _normalize(full_text)
+    combined = "\n\n\f\n\n".join(page_texts).strip()
+    return _normalize(combined)
 
 def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
     """Return DOCX body text with footnotes inserted inline at their references.

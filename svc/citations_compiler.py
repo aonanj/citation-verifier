@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
 
-from eyecite import get_citations, resolve_citations, clean_text
+from eyecite import clean_text, get_citations, resolve_citations
 from eyecite.models import (
     CaseCitation,
     FullCaseCitation,
@@ -18,25 +18,26 @@ from eyecite.models import (
     SupraCitation,
 )
 
+from utils.cleaner import clean_str
+from utils.logger import get_logger
+from utils.span_finder import get_span
 from verifiers.case_verifier import get_case_name, verify_case_citation
 from verifiers.federal_law_verifier import (
     classify_full_law_jurisdiction,
     verify_federal_law_citation,
 )
-from utils.logger import get_logger
-from utils.span_finder import get_span
-from utils.cleaner import clean_str
+from verifiers.state_law_verifier import verify_state_law_citation
 
 logger = get_logger()
 
 # --- helper functions ------------------------------------------
 
 def _ctype(obj: Any) -> str:
-    return type(obj).__name__ 
+    return type(obj).__name__
 
 def _normalized_key(citation_obj) -> str:
     """Generate a normalized key for a citation object."""
-    
+
     if isinstance(citation_obj, FullCaseCitation) or isinstance(citation_obj, FullLawCitation):
         return citation_obj.corrected_citation()
     elif isinstance(citation_obj, FullJournalCitation):
@@ -46,10 +47,10 @@ def _normalized_key(citation_obj) -> str:
         return f"{volume}::{reporter}::{page}"
     else:
         return citation_obj.matched_text()
-    
+
 def _get_citation_type(citation_obj) -> str:
     """Determine the type of citation."""
-    
+
     if isinstance(citation_obj, (FullCaseCitation, CaseCitation, ShortCaseCitation)):
         return "case"
     elif isinstance(citation_obj, FullLawCitation):
@@ -90,7 +91,7 @@ def _resource_identifier(resource: Any) -> str:
         parts = [resource.kind, *resource.id_tuple]
         return "::".join(part for part in parts if part)
     return clean_str(str(resource)) or _ctype(resource)
-    
+
 def _get_citation(obj) -> str | None:
     c = obj.token.data if hasattr(obj, "token") and hasattr(obj.token, "data") else None
     if c is not None:
@@ -160,9 +161,10 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         year = clean_str(full_cite.year) or ""
         return ResourceKey("case", (name, reporter, vol, page, year))
     if t == "FullLawCitation":
-        title = (clean_str(full_cite.groups.get("title", None)) or "")
-        code = (clean_str(full_cite.groups.get("reporter", None)) or "")
-        section = (clean_str(full_cite.groups.get("section", None)) or "")
+        title = clean_str(full_cite.groups.get("title", None) or full_cite.groups.get("volume", None) or
+                          full_cite.groups.get("chapter", None)) or  ""
+        code = clean_str(full_cite.groups.get("reporter", None) or full_cite.groups.get("code", None)) or ""
+        section = clean_str(full_cite.groups.get("section", None) or full_cite.groups.get("page", None)) or ""
         year = clean_str(getattr(full_cite, "year", None)) or ""
         return ResourceKey("law", (title, code, section, year))
     # Treat everything else as "other" so supra can still cluster journals, etc.
@@ -186,6 +188,7 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
     cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
     citations = get_citations(cleaned_text)
+
     try:
         resolutions = resolve_citations(
             citations,
@@ -223,12 +226,11 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
         entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
 
-        status = "verified"
-        substatus = None
+        status = "error"
+        substatus = f"{entry_type}_verification_unsupported"
         verification_details = None
 
         if entry_type == "case":
-            logger.debug(f"Verifying case citation for resource_key: {resource_key}")
             status, substatus, verification_details = verify_case_citation(
                 primary_full,
                 normalized_key,
@@ -236,13 +238,11 @@ def compile_citations(text: str) -> Dict[str, Any]:
                 fallback_citation=_get_citation(primary_full),
             )
         elif entry_type == "law":
-            logger.debug(f"Verifying law citation for resource_key: {resource_key}")
             jurisdiction = None
             if isinstance(primary_full, FullLawCitation):
                 jurisdiction = classify_full_law_jurisdiction(primary_full)
 
             if jurisdiction == "federal":
-                logger.debug(f"Verifying federal law citation for resource_key: {resource_key}")
                 status, substatus, verification_details = verify_federal_law_citation(
                     primary_full,
                     normalized_key,
@@ -250,15 +250,15 @@ def compile_citations(text: str) -> Dict[str, Any]:
                     fallback_citation=_get_citation(primary_full),
                 )
             elif jurisdiction == "state":
-                logger.debug(f"Verifying state law citation for resource_key: {resource_key}")
-                status = "warning"
-                substatus = "state_law_not_supported"
-                verification_details = {
-                    "jurisdiction": jurisdiction,
-                }
+                status, substatus, verification_details = verify_state_law_citation(
+                    primary_full,
+                    normalized_key,
+                    resource_dict,
+                    fallback_citation=_get_citation(primary_full)
+                )
             else:
-                logger.debug(f"Unsupported jurisdiction for resource_key: {resource_key}")
-                status = "warning"
+                logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
+                status = "error"
                 substatus = "unsupported_jurisdiction"
                 verification_details = {
                     "jurisdiction": jurisdiction or "unknown",

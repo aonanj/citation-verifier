@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 
 import httpx
 from eyecite.models import FullCitation
+from rapidfuzz import fuzz, process
 
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
@@ -15,7 +16,7 @@ from utils.logger import get_logger
 logger = get_logger()
 
 _COURT_LISTENER_LOOKUP_URL = "https://www.courtlistener.com/api/rest/v4/citation-lookup/"
-_COURT_LISTENER_TIMEOUT = httpx.Timeout(10.0, connect=5.0, read=5.0)
+_COURT_LISTENER_TIMEOUT = httpx.Timeout(20.0, connect=10.0, read=10.0)
 _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
 
 def _courtlistener_headers() -> Dict[str, str]:
@@ -42,7 +43,6 @@ def _extract_year_from_value(value: Any) -> str | None:
 def _extract_lookup_case_name(payload: Dict[str, Any]) -> str | None:
     if not isinstance(payload, dict):
         return None
-
     candidate_fields = (
         "case_name",
         "case_name_short",
@@ -105,7 +105,7 @@ def _lookup_case_citation(
     page: str | None,
 ) -> Tuple[str, str | None, Dict[str, Any]]:
     if not volume or not reporter or not page:
-        return "warning", "missing_lookup_fields", {}
+        return "error", "missing_lookup_fields", {}
 
     request_payload = {
         "volume": volume,
@@ -121,46 +121,46 @@ def _lookup_case_citation(
             timeout=_COURT_LISTENER_TIMEOUT,
         )
     except httpx.HTTPError as exc:
-        logger.warning(
+        logger.error(
             "CourtListener lookup failed for volume=%s reporter=%s page=%s: %s",
             volume,
             reporter,
             page,
             exc,
         )
-        return "warning", "lookup_failed", {}
+        return "error", "lookup_failed", {}
 
     if response.status_code == 401:
-        return "warning", "lookup_auth_failed", {}
+        return "error", "lookup_auth_failed", {}
     if response.status_code == 403:
-        return "warning", "lookup_forbidden", {}
+        return "error", "lookup_forbidden", {}
     if response.status_code == 400:
-        logger.warning(
+        logger.error(
             "CourtListener lookup rejected payload volume=%s reporter=%s page=%s: %s",
             volume,
             reporter,
             page,
             response.text,
         )
-        return "warning", "lookup_bad_request", {}
+        return "error", "lookup_bad_request", {}
     if response.status_code >= 500:
-        return "warning", "lookup_service_error", {}
+        return "error", "lookup_service_error", {}
     if response.status_code != 200:
-        logger.warning(
+        logger.error(
             "CourtListener lookup unexpected status %s for %s",
             response.status_code,
             request_payload,
         )
-        return "warning", "lookup_unexpected_status", {}
+        return "error", "lookup_unexpected_status", {}
 
     try:
         payload = response.json()
     except ValueError:
-        logger.warning(
+        logger.error(
             "CourtListener lookup returned non-JSON response for %s",
             request_payload,
         )
-        return "warning", "lookup_invalid_payload", {}
+        return "error", "lookup_invalid_payload", {}
 
     if isinstance(payload, dict):
         results = payload.get("results")
@@ -179,7 +179,7 @@ def _lookup_case_citation(
             return "no match", None, {}
         return "ok", None, first
 
-    return "warning", "lookup_unrecognized_payload", {}
+    return "error", "lookup_unrecognized_payload", {}
 
 
 def _prepare_case_lookup_fields(
@@ -238,6 +238,10 @@ def get_case_name(obj) -> str | None:
         )
         if plaintiff and defendant:
             return clean_str(f"{plaintiff} v. {defendant}")
+
+        if plaintiff is None and defendant is not None:
+            return f"In re {defendant}"
+
     return None
 
 def verify_case_citation(
@@ -278,13 +282,13 @@ def verify_case_citation(
     if not expected_name and primary_full is not None:
         metadata = getattr(primary_full, "metadata", None)
         if metadata is not None:
-            for attr in ("short_name", "case_name", "case_name_full"):
+            for attr in ("case_name", "short_case_name", "case_name_full"):
                 value = clean_str(getattr(metadata, attr, None))
                 if value:
                     expected_name = value
                     break
         if not expected_name:
-            for attr in ("short_name", "case_name", "case_name_full"):
+            for attr in ("case_name", "case_name_short", "case_name_full"):
                 value = clean_str(getattr(primary_full, attr, None))
                 if value:
                     expected_name = value
@@ -316,7 +320,14 @@ def verify_case_citation(
 
     if expected_name_norm and actual_name_norm:
         if expected_name_norm != actual_name_norm:
-            mismatches.append("case_name")
+            result = process.extractOne(
+                expected_name_norm,
+                [actual_name_norm],
+                scorer=fuzz.partial_ratio,
+                score_cutoff=75
+            )
+            if result is None:
+                mismatches.append("case_name")
     elif expected_name_norm or actual_name_norm:
         mismatches.append("case_name")
 

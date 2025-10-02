@@ -5,7 +5,6 @@ import os
 import sys
 import tempfile
 
-
 _loggers = {}
 
 def setup_logger(name="citeverify", level=logging.INFO, toFile=True, fileName="citeverify.log"):
@@ -15,7 +14,7 @@ def setup_logger(name="citeverify", level=logging.INFO, toFile=True, fileName="c
     Args
         name: name of the logger
         level: level of logging info
-        toFile: 
+        toFile:
 
     """
     if name in _loggers:

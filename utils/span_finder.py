@@ -4,26 +4,35 @@ from __future__ import annotations
 
 from typing import Tuple
 
+from eyecite.models import CitationBase
 
 from .logger import get_logger
 
 logger = get_logger()
 
-class Reporter: 
+class Reporter:
     pass
-class Edition: 
+class Edition:
     pass
 
-def get_span(obj) -> Tuple[int, int] | None:
+def get_span(obj: CitationBase) -> Tuple[int, int] | None:
     """Get the span (start, end) of the citation in the source text."""
-    
+
+    try:
+        span = obj.span()
+        if span is not None and isinstance(span, tuple) and len(span) == 2:
+            return span
+    except Exception as e:
+        logger.error(f"Error getting span: {e}")
+        span = None
+
     document = obj.document if hasattr(obj, "document") else None
     citation_tokens = document.citation_tokens if document and hasattr(document, "citation_tokens") else None
     idx = obj.index if hasattr(obj, "index") else None
 
     if citation_tokens is None or idx is None:
         return None
-    
+
     citation_dict = {key: token for key, token in citation_tokens}
 
     target_token = citation_dict[idx] if idx in citation_dict else None
