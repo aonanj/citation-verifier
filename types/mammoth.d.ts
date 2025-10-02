@@ -1,3 +1,5 @@
+// Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+
 declare module 'mammoth' {
   interface ConvertToHtmlOptions {
     buffer?: Buffer;

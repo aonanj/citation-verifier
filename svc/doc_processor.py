@@ -1,8 +1,4 @@
-"""Extract text content from uploaded documents, including footnotes.
-
-This module provides functions to extract text from PDF, DOCX, and TXT files
-while preserving footnote citations and their content inline.
-"""
+# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 import os
 import re

@@ -63,7 +63,11 @@ uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
 
 ## License
 
-AGPLv3 — see [LICENSE](LICENSE)
+This repository is publicly viewable for portfolio purposes only. The code is proprietary.
+Copyright © 2025 Phaethon Order LLC. All rights reserved. 
+Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reuse requests.
+
+See [LICENSE](LICENSE)
 
 Note: `package.json` may list a different license string; the authoritative license for this repository is AGPLv3.
 
@@ -80,4 +84,4 @@ Note: `package.json` may list a different license string; the authoritative lice
 
 ## Contact
 
-Questions or support: support@phaethon.llc
+Questions or support: [support@phaethon.llc](mailto:support@phaethon.llc).

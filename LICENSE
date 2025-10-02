@@ -1,53 +1,35 @@
-GNU AFFERO GENERAL PUBLIC LICENSE
-Version 3, 19 November 2007
+Copyright © 2025 Phaethon Order LLC. All rights reserved.
 
-Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
-Everyone is permitted to copy and distribute verbatim copies
-of this license document, but changing it is not allowed.
+Evaluation License
 
-                            Preamble
+Permission is hereby granted to view, download, and execute this code solely for the limited
+purpose of personal evaluation and review by prospective employers of Phaethon Order LLC’s work.
+No license is granted for any other use.
 
-The GNU Affero General Public License is a free, copyleft license for
-software and other kinds of works, specifically designed to ensure
-cooperation with the community in the case of network server software.
+Restrictions
 
-[...]
+Except for the limited evaluation rights expressly set forth above, no right is granted to copy,
+modify, merge, publish, distribute, sublicense, sell, or create derivative works of this code,
+in whole or in part, for any purpose. Any such use is strictly prohibited without the prior
+written consent of Phaethon Order LLC.
 
-END OF TERMS AND CONDITIONS
+Ownership
 
-How to Apply These Terms to Your New Programs
+This code and all associated intellectual property rights remain the exclusive property of
+Phaethon Order LLC.
 
-If you develop a new program, and you want it to be of the greatest
-possible use to the public, the best way to achieve this is to make it
-free software which everyone can redistribute and change under these terms.
+Disclaimer of Warranty
 
-To do so, attach the following notices to the program. It is safest to
-attach them to the start of each source file to most effectively state
-the exclusion of warranty; and each file should have at least the
-“copyright” line and a pointer to where the full notice is found.
+This code is provided “AS IS” without warranty of any kind, express or implied, including but not
+limited to the warranties of merchantability, fitness for a particular purpose, and
+non-infringement. Use is at your sole risk.
 
-    A tool to verify legal citations in briefs, memos, and other court filings.
-    Copyright (C) 2025  Phaethon Order LLC
+Limitation of Liability
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
+In no event shall Phaethon Order LLC be liable for any claim, damages, or other liability,
+whether in an action of contract, tort, or otherwise, arising from or in connection with the
+code or the use or other dealings in the code.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+Contact
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-Also add information on how to contact you by electronic and paper mail.
-
-If your software can interact with users remotely through a computer
-network, you should also make sure that it provides a way for users to
-get its source.  For example, if your program is a web application, its
-interface could display a “Source” link that leads users to an archive
-of the code.  There are many ways you could offer source, and different
-solutions will be better for different programs; see section 13 for the
-specific requirements.
+For licensing or commercial use requests, please contact: support@phaethon.llc.

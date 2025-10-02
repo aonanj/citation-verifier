@@ -14,3 +14,4 @@ tests/
 .next/
 .vscode/
 .ruff_cache/
+*.log

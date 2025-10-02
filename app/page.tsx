@@ -1,3 +1,5 @@
+// Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
