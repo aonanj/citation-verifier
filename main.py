@@ -1,6 +1,7 @@
 import io
 import os
 from typing import Any, Dict, List
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,15 +23,18 @@ class CitationEntry(BaseModel):
 	resource_key: str
 	type: str
 	status: str
+	substatus: str | None = None
 	normalized_citation: str | None
 	resource: Dict[str, Any]
 	occurrences: List[CitationOccurrence]
+	verification_details: Dict[str, Any] | None = None
 
 
 class VerificationResponse(BaseModel):
 	citations: List[CitationEntry]
 	extracted_text: str | None = None
 
+load_dotenv()
 
 app = FastAPI(title="eyecite-extractor", version="0.1.0")
 
@@ -69,9 +73,11 @@ def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
 				resource_key=resource_key,
 				type=payload.get("type", "unknown"),
 				status=payload.get("status", "unknown"),
+				substatus=payload.get("substatus"),
 				normalized_citation=payload.get("normalized_citation"),
 				resource=payload.get("resource", {}),
 				occurrences=occurrences,
+				verification_details=payload.get("verification_details"),
 			)
 		)
 
@@ -114,5 +120,3 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
 	sanitized = _sanitize_citations(compiled)
 
 	return VerificationResponse(citations=sanitized, extracted_text=extracted_text)
-
-

@@ -17,9 +17,27 @@ type CitationEntry = {
   resource_key: string;
   type: string;
   status: string;
+  substatus: string | null;
   normalized_citation: string | null;
   resource: Record<string, unknown>;
   occurrences: CitationOccurrence[];
+  verification_details?: {
+    source?: string;
+    mismatched_fields?: string[];
+    extracted?: {
+      case_name?: string | null;
+      year?: string | null;
+    } | null;
+    court_listener?: {
+      case_name?: string | null;
+      year?: string | null;
+    } | null;
+    lookup_request?: {
+      volume?: string | null;
+      reporter?: string | null;
+      page?: string | null;
+    } | null;
+  } | null;
 };
 
 type VerificationResponse = {
@@ -235,7 +253,55 @@ export default function HomePage() {
                     </h3>
                     <p style={{ color: '#475569', fontSize: '0.95rem' }}>
                       Type: <strong>{citation.type}</strong> • Status: {citation.status}
+                      {citation.substatus && (
+                        <>
+                          {' '}• Substatus: {citation.substatus}
+                        </>
+                      )}
                     </p>
+
+                    {citation.status === 'warning' &&
+                      citation.verification_details?.mismatched_fields &&
+                      citation.verification_details.mismatched_fields.length > 0 && (
+                        <div
+                          style={{
+                            backgroundColor: '#fff7ed',
+                            border: '1px solid #fdba74',
+                            color: '#9a3412',
+                            borderRadius: '10px',
+                            padding: '0.9rem 1rem',
+                            marginTop: '0.75rem',
+                          }}
+                        >
+                          <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+                            Verification discrepancy details
+                          </p>
+                          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
+                            {citation.verification_details.mismatched_fields.map((field) => {
+                              const label = field === 'case_name' ? 'Case name' : field === 'year' ? 'Year' : field;
+                              const key = field as 'case_name' | 'year';
+                              const extractedValue = citation.verification_details?.extracted?.[key];
+                              const courtValue = citation.verification_details?.court_listener?.[key];
+
+                              return (
+                                <li key={`${citation.resource_key}-${field}`}>
+                                  <div style={{ fontSize: '0.9rem', lineHeight: 1.4 }}>
+                                    <div>
+                                      <strong>{label}</strong>
+                                    </div>
+                                    <div>
+                                      Document: {extractedValue ?? '—'}
+                                    </div>
+                                    <div>
+                                      CourtListener: {courtValue ?? '—'}
+                                    </div>
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
                   </div>
 
                   {citation.occurrences.length > 0 ? (

@@ -1,7 +1,9 @@
 from __future__ import annotations
-from typing import Any, Dict, Tuple
-from dataclasses import dataclass, asdict
+
+import logging
 import re
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Tuple
 
 from eyecite import get_citations, resolve_citations, clean_text
 from eyecite.models import (
@@ -16,8 +18,12 @@ from eyecite.models import (
     SupraCitation,
 )
 
+from verifiers.case_verifier import get_case_name, verify_case_citation
+
 # --- helper functions ------------------------------------------
 _space_re = re.compile(r"\s+")
+
+logger = logging.getLogger(__name__)
 
 def _clean(s: str | None) -> str | None:
     if not s:
@@ -25,16 +31,6 @@ def _clean(s: str | None) -> str | None:
     v = str(s)
     v = _space_re.sub(" ", v).strip()
     return v if v else None
-
-def _clean_join(v) -> str | None:
-    if not v:
-        return None
-    if isinstance(v, (list, tuple)):
-        v2 = " ".join(str(x) for x in v if x)
-    else:
-        v2 = str(v)
-    v2 = _space_re.sub(" ", v2).strip()
-    return v2 if v2 else None
 
 def _ctype(obj: Any) -> str:
     return type(obj).__name__ 
@@ -48,7 +44,7 @@ def _normalized_key(citation_obj) -> str:
         volume = citation_obj.groups.get("volume", "")
         reporter = citation_obj.groups.get("reporter", "")
         page = citation_obj.groups.get("page", "")
-        return f"{volume}:{reporter}:{page}"
+        return f"{volume}::{reporter}::{page}"
     else:
         return citation_obj.matched_text()
     
@@ -87,12 +83,19 @@ def _citation_category(obj) -> str:
 
 
 def _get_span(obj) -> Tuple[int, int] | None:
-    start = getattr(obj, "full_span_start", None)
-    end = getattr(obj, "full_span_end", None)
-    if start is None or end is None:
-        return None
+    start = getattr(obj, "full_span_start", None) or getattr(obj, "span_start", None)
+    end = getattr(obj, "full_span_end", None) or getattr(obj, "span_end", None)
+    if start is None:
+        start = 0
+    if end is None:
+        end = 0
     return (start, end)
 
+def _get_index(obj) -> int | None:
+    index = getattr(obj, "index", None)
+    if index is not None:
+        return int(index)
+    return None
 
 def _resource_identifier(resource: Any) -> str:
     if isinstance(resource, ResourceKey):
@@ -109,14 +112,6 @@ def _get_citation(obj) -> str | None:
         return _clean(c)
     return None
 
-def _get_case_name(obj) -> str | None:
-    if getattr(obj, "metadata", None) is not None:
-        md = obj.metadata
-        plaintiff = _clean(md.plaintiff or md.petitioner or None)
-        defendant = _clean(md.defendant or md.respondent or None)
-        if plaintiff is not None and defendant is not None:
-            return f"{plaintiff} v. {defendant}"
-    
 def _get_journal_author_title(obj) -> dict[str | None, str | None] | None:
     if not hasattr(obj, "document") or not hasattr(obj.document, "plain_text"):
         return None
@@ -157,7 +152,7 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
     """Return a stable key Eyecite will use as the 'resource' for short forms."""
     t = _ctype(full_cite)
     if t == "FullCaseCitation":
-        name = _get_case_name(full_cite) or ""
+        name = get_case_name(full_cite) or ""
         reporter = (_clean(full_cite.groups.get("reporter", None)) or "")
         vol = _clean(full_cite.groups.get("volume", None)) or ""
         page = _clean(full_cite.groups.get("page", None)) or ""
@@ -180,7 +175,7 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
     volume = _clean(full_cite.groups.get("volume", None)) or ""
     page = _clean(full_cite.groups.get("page", None)) or ""
     year = _clean(full_cite.year) or ""
-    return ResourceKey("other", (title , author, volume, journal, page, year))
+    return ResourceKey("other", (title, author, volume, journal, page, year))
 
 
 
@@ -189,10 +184,17 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
     cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
     citations = get_citations(cleaned_text)
-    resolutions = resolve_citations(
-        citations,
-        resolve_full_citation=_bind_full_citation,
-    )
+    try:
+        resolutions = resolve_citations(
+            citations,
+            resolve_full_citation=_bind_full_citation,
+        )
+    except Exception:  # pragma: no cover - defensive fallback
+        logger.exception("eyecite resolve_citations failed; falling back to raw citations")
+        resolutions = {
+            f"raw:{idx}": [citation]
+            for idx, citation in enumerate(citations)
+        }
 
     citation_db: Dict[str, Dict[str, Any]] = {}
 
@@ -219,10 +221,24 @@ def compile_citations(text: str) -> Dict[str, Any]:
 
         entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
 
+        status = "verified"
+        substatus = None
+        verification_details = None
+
+        if entry_type == "case":
+            status, substatus, verification_details = verify_case_citation(
+                primary_full,
+                normalized_key,
+                resource_dict,
+                fallback_citation=_get_citation(primary_full),
+            )
+
         citation_db[resource_key] = {
             "type": entry_type,
             "resource": resource_dict,
-            "status": "verified",
+            "status": status,
+            "substatus": substatus,
+            "verification_details": verification_details,
             "normalized_citation": normalized_key,
             "full_citation_obj": primary_full,
             "occurrences": [],
@@ -234,10 +250,10 @@ def compile_citations(text: str) -> Dict[str, Any]:
                     "citation_category": _citation_category(cite),
                     "matched_text": _get_citation(cite),
                     "span": _get_span(cite),
+                    "index": _get_index(cite),
                     "pin_cite": _get_pin_cite(cite),
                     "citation_obj": cite,
                 }
             )
 
     return citation_db
-
