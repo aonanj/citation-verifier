@@ -69,16 +69,7 @@ Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reu
 
 See [LICENSE](LICENSE)
 
-Note: `package.json` may list a different license string; the authoritative license for this repository is AGPLv3.
-
----
-
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch
-3. Make changes (include tests where sensible)
-4. Open a PR
+Note: `package.json` may list a different license string; the authoritative license for this repository is proprietary.
 
 ---
 
