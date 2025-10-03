@@ -2,6 +2,18 @@
 
 Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation. The frondend is available as a Microsoft Word Add-In and a Next.js frontend, presenting annotated results with contextual highlights. Citations are assumed to be in Bluebook standard format. See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
 
+## Screenshots
+
+### Next.js UI - Citation Verification List
+![Citation Verification List](docs/screenshots/CV-Screenshot-1.png)
+
+### Next.js US - Uploaded Document with Verification Indicators
+![Uploaded Document with Verification Indicators](docs/screenshots/CV-Screenshot-2.png)
+
+### Word Add-In UI
+![Word Add-In UI](docs/screenshots/CV-Screenshot-3.png)
+
+
 ## Overview
 - **Document ingestion**: Accepts PDF (text or scanned), DOCX, and plain text files up to 10 MB. Compatible with both inline citations and footnote citations. 
 - **Text normalization**: Uses PyMuPDF, python-docx, and Tesseract OCR when needed to produce a clean text stream with inline footnote content.
@@ -103,8 +115,10 @@ Environment variables fall back to sane defaults when omitted; state-law verific
 ```bash
 # Backend (FastAPI)
 uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+      
+uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
 
-# Frontend (Next.js)
+# Frontend (Next.js) - run from repo root
 npm run dev
 ```
 - Visit `http://localhost:3000` to access the UI.

@@ -338,10 +338,10 @@ def _build_plaw_endpoint(
         congress_num = int(congress)
         if congress_num < 104:
             return (
-                None,
+                "error",
                 None,
                 (
-                    "outside_congress_number_range",
+                    "citation predates earliest available data",
                     {"congress": congress, "source": "govinfo"},
                 ),
             )
@@ -368,7 +368,7 @@ def _build_govinfo_request(
     reporter = _get_law_group(cite, resource_dict, "reporter")
     if not reporter:
         return (
-            None,
+            "error",
             None,
             (
                 "missing_reporter",
@@ -382,7 +382,7 @@ def _build_govinfo_request(
         or reporter not in _REPORTER_BUILDERS
     ):
         return (
-            None,
+            "error",
             None,
             (
                 "unsupported_reporter",

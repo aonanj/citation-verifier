@@ -20,7 +20,15 @@ Prototype Office task pane that packages the current Word document as a base64 `
 ## Prerequisites
 - Node.js 18+
 - Word desktop (Windows or macOS) with sideloading enabled
-- Running backend (`uvicorn main:app --reload`) reachable at the URL passed via `VITE_BACKEND_URL`
+- Running backend reachable at the URL passed via `VITE_BACKEND_URL`
+   - `uvicorn main:app --host 127.0.0.1 --port 8000 --reload --ssl-keyfile dev-certs/localhost-key.pem --ssl-certfile dev-certs/localhost.pem`
+   - Use SSL to satisfy system security. MacOS: generate certificate (.pem file), "Always Trust"
+         ```bash
+         brew install mkcert nss 
+         mkcert -install
+         mkdir -p dev-certs
+         mkcert -key-file dev-certs/localhost-key.pem -cert-file dev-certs/localhost.pem localhost 127.0.0.1 ::1
+         ```
 
 ## Local development
 1. Install dependencies:

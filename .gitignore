@@ -16,4 +16,5 @@ tests/
 .vscode/
 .ruff_cache/
 *.log
-dev_certs/
+dev-certs/
+*.pem

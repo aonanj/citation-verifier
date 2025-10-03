@@ -33,6 +33,8 @@ def _extract_year_from_value(value: Any) -> str | None:
         if 1000 <= value <= 9999:
             return str(value)
         return None
+    if value.isdigit() and len(value) == 4:
+        return value
     if isinstance(value, str):
         match = re.search(r"(1[6-9]\d{2}|20\d{2}|2100)", value)
         if match:
@@ -43,30 +45,18 @@ def _extract_year_from_value(value: Any) -> str | None:
 def _extract_lookup_case_name(payload: Dict[str, Any]) -> str | None:
     if not isinstance(payload, dict):
         return None
-    candidate_fields = (
-        "case_name",
-        "case_name_short",
-        "case_name_full",
-        "short_name",
-        "caseName",
-        "caseNameShort",
-        "caseNameFull",
-        "style_of_cause",
-        "style_of_case",
-        "name",
-    )
 
-    for field in candidate_fields:
-        value = payload.get(field)
-        cleaned = clean_str(value)
-        if cleaned:
-            return cleaned
-
-    clusters = payload.get("clusters")
-    if isinstance(clusters, list) and clusters:
-        nested_case = clusters[0]
-        if isinstance(nested_case, dict):
-            return _extract_lookup_case_name(nested_case)
+    clusters = payload.get("clusters", None)
+    if clusters is not None and isinstance(clusters, list):
+        cluster = clusters[0]
+        if isinstance(cluster, dict):
+            cn = clean_str(cluster.get("case_name", None))
+            if cn is not None:
+                return cn
+            elif cluster.get("case_name_short", None) is not None:
+                return clean_str(cluster.get("case_name_short", None))
+            elif cluster.get("case_name_full", None) is not None:
+                return clean_str(cluster.get("case_name_full", None))
 
     return None
 
@@ -75,26 +65,14 @@ def _extract_lookup_case_year(payload: Dict[str, Any]) -> str | None:
     if not isinstance(payload, dict):
         return None
 
-    candidate_fields = (
-        "year",
-        "year_filed",
-        "year_decided",
-        "decision_date",
-        "date_filed",
-        "dateFiled",
-    )
-
-    for field in candidate_fields:
-        value = payload.get(field)
-        year = _extract_year_from_value(value)
-        if year:
-            return year
-
-    clusters = payload.get("clusters")
-    if isinstance(clusters, list) and clusters:
-        nested_case = clusters[0]
-        if isinstance(nested_case, dict):
-            return _extract_lookup_case_year(nested_case)
+    clusters = payload.get("clusters", None)
+    if clusters is not None and isinstance(clusters, list):
+        cluster = clusters[0]
+        if isinstance(cluster, dict):
+            decision_date = cluster.get("date_filed", None)
+            year = _extract_year_from_value(decision_date)
+            if year is not None:
+                return year
 
     return None
 
@@ -279,36 +257,26 @@ def verify_case_citation(
         return "no match", None, None
 
     expected_name = get_case_name(primary_full)
-    if not expected_name and primary_full is not None:
+    if expected_name is None and primary_full is not None:
         metadata = getattr(primary_full, "metadata", None)
         if metadata is not None:
-            for attr in ("case_name", "short_case_name", "case_name_full"):
-                value = clean_str(getattr(metadata, attr, None))
-                if value:
-                    expected_name = value
-                    break
-        if not expected_name:
-            for attr in ("case_name", "case_name_short", "case_name_full"):
-                value = clean_str(getattr(primary_full, attr, None))
-                if value:
-                    expected_name = value
-                    break
+            expected_name = clean_str(getattr(metadata, "resolved_case_name", None))
+            if not expected_name:
+                expected_name = clean_str(getattr(metadata, "resolved_case_name_short", None))
 
     expected_year = None
     if primary_full is not None:
-        expected_year = _extract_year_from_value(getattr(primary_full, "year", None))
+        expected_year = getattr(primary_full, "year", None)
         if not expected_year:
             metadata = getattr(primary_full, "metadata", None)
             if metadata is not None:
-                for attr in ("decision_date", "date_filed"):
-                    expected_year = _extract_year_from_value(getattr(metadata, attr, None))
-                    if expected_year:
-                        break
+                expected_year = getattr(metadata, "year", None)
+
     if not expected_year:
         resource_dict = resource_dict or {}
         id_tuple = resource_dict.get("id_tuple")
-        if isinstance(id_tuple, tuple) and len(id_tuple) >= 5:
-            expected_year = _extract_year_from_value(id_tuple[4])
+        if isinstance(id_tuple, tuple) and len(id_tuple) >= 4:
+            expected_year = _extract_year_from_value(id_tuple[-1])
 
     actual_name = clean_str(_extract_lookup_case_name(lookup_payload))
     actual_year = _extract_year_from_value(_extract_lookup_case_year(lookup_payload))
@@ -331,14 +299,20 @@ def verify_case_citation(
     elif expected_name_norm or actual_name_norm:
         mismatches.append("case_name")
 
-    if expected_year and actual_year:
-        if expected_year != actual_year:
+    if expected_year is not None and actual_year is not None:
+        cleaned_expected_year = int(clean_str(str(expected_year)) or expected_year)
+        cleaned_actual_year = int(clean_str(str(actual_year)) or actual_year)
+
+        if cleaned_expected_year != cleaned_actual_year:
             mismatches.append("year")
-    elif expected_year or actual_year:
+    elif expected_year is None and actual_year is not None:
+        mismatches.append("year")
+    elif expected_year is not None and actual_year is None:
         mismatches.append("year")
 
     if mismatches:
-        substatus = "case_name_and_year_mismatch" if len(mismatches) == 2 else f"{mismatches[0]}_mismatch"
+        substatus = "Mismatch at "
+        substatus += " (1) case name, (2) year" if len(mismatches) == 2 else f"{mismatches[0]}"
         details = {
             "source": "courtlistener",
             "mismatched_fields": mismatches,
