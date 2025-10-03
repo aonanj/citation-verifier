@@ -1,15 +1,15 @@
 # Citation Verifier
 
-Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation, while the Next.js frontend presents annotated results with contextual highlights.
+Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation, while the Next.js frontend presents annotated results with contextual highlights. Citations are assumed to be in Bluebook standard format.
 
 ## Overview
-- **Document ingestion**: Accepts PDF (text or scanned), DOCX (including tables, headers, and inline footnotes), and plain text filings up to 10 MB.
+- **Document ingestion**: Accepts PDF (text or scanned), DOCX, and plain text files up to 10 MB. Compatible with both inline citations and footnote citations. 
 - **Text normalization**: Uses PyMuPDF, python-docx, and Tesseract OCR when needed to produce a clean text stream with inline footnote content.
 - **Citation resolution**: eyecite identifies full, short, id., supra, and reference citations, clusters short forms with their full cite, and records pin cites and spans.
 - **Verification**:
   - **Case law**: CourtListener citation lookup with fuzzy matching (RapidFuzz) to flag name/year discrepancies.
   - **Federal law**: GovInfo link service with reporter-aware URL building for U.S.C., C.F.R., Stat., Pub. L., Fed. Reg., and related materials.
-  - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return the closest citation.
+  - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, and extracted text for the UI.
 
 Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
@@ -33,7 +33,7 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 - Single-page workflow in `app/page.tsx` for file upload, async status messaging, and rich results display.
 - Highlights occurrences inside the extracted text, color-coded by verification status with numbered badges.
 - Summaries group citations by type, while each citation card shows type, occurrences, substatus, and verifier-supplied diagnostics.
-- `NEXT_PUBLIC_API_BASE_URL` configures the backend target; defaults to `http://localhost:8000` for local development.
+- `BACKEND_URL` configures the backend target; defaults to `http://localhost:8000` for local development.
 
 ## Project Layout
 ```
@@ -95,7 +95,7 @@ GOVINFO_API_KEY=...           # optional: improves GovInfo rate limits
 OPENAI_API_KEY=...            # required for state-law verification
 LOG_TO_FILE=true              # optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000  # override as needed
+BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.  
 ```
 Environment variables fall back to sane defaults when omitted; state-law verification returns errors if no OpenAI key is present.
 
@@ -108,7 +108,7 @@ uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 npm run dev
 ```
 - Visit `http://localhost:3000` to access the UI.
-- Point the frontend at a different backend by setting `NEXT_PUBLIC_API_BASE_URL` before `npm run dev`.
+- Point the frontend at a different backend by setting `BACKEND_URL` before `npm run dev`.
 
 ## API
 `POST /api/verify`
@@ -143,7 +143,7 @@ npm run dev
 ## Usage Tips
 - Uploads larger than ~10 MB or outside the accepted extensions are rejected before processing.
 - The frontend highlights every matched occurrence in context; hover or scan the numbered badges to correlate cards with text spans.
-- `substatus` explains why a citation is flagged (e.g., `lookup_service_error`, `closest_match: …`).
+- `substatus` explains why a citation is flagged with a warning or marked as false (e.g., `case name mismatch`, `closest_match: …`).
 
 ## Logging
 `utils/logger.py` honors `LOG_TO_FILE`/`LOG_FILE_PATH` or defaults to console output. Log formatting matches `[timestamp] - logger level message` for easier aggregation.

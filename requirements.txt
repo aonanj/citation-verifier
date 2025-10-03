@@ -77,6 +77,8 @@ python-docx==1.2.0
     # via -r requirements.in
 python-dotenv==1.1.1
     # via -r requirements.in
+python-multipart==0.0.20
+    # via -r requirements.in
 rapidfuzz==3.14.1
     # via -r requirements.in
 regex==2025.9.18
