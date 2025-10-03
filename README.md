@@ -1,6 +1,10 @@
 # Citation Verifier
 
-Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation. The frondend is available as a Microsoft Word Add-In and a Next.js frontend, presenting annotated results with contextual highlights. Citations are assumed to be in Bluebook standard format. See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
+Full-stack toolchain that verifies legal citations in legal briefs, memos, journal articles, and other legal and academic documents against primary sources. Available as a web service with a Next.js frontend that accepts DOCX, PDF, and plain text documents. The backend is a containerized python service that extracts citations from a document (both inline citations and footnotes are compatible), normalizes them, and then verifies each citation. The annotated results are displayed with contextual highlights. The service is also available as a Microsoft Word Add-In. 
+
+See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
+
+(Note: Citations are assumed to be in Bluebook standard format.)
 
 ## Screenshots
 
