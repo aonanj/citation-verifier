@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Tuple
 
@@ -29,6 +30,29 @@ from verifiers.federal_law_verifier import (
 from verifiers.state_law_verifier import verify_state_law_citation
 
 logger = get_logger()
+
+# --- async helpers -------------------------------------------------
+
+async def _verify_state_async(
+    resource_key: str,
+    primary_full: Any,
+    normalized_key: str | None,
+    resource_dict: Dict[str, Any],
+    fallback_citation: str | None,
+) -> Tuple[str, str, str | None, Dict[str, Any] | None]:
+    """Run the state law verifier off the main event loop."""
+    try:
+        status, substatus, details = await asyncio.to_thread(
+            verify_state_law_citation,
+            primary_full,
+            normalized_key,
+            resource_dict,
+            fallback_citation=fallback_citation,
+        )
+    except Exception as exc:  # pragma: no cover - defensive safeguard
+        logger.exception("State law verification task failed for %s: %s", resource_key, exc)
+        status, substatus, details = "error", "state_law_async_failed", None
+    return resource_key, status, substatus, details
 
 # --- helper functions ------------------------------------------
 
@@ -183,8 +207,12 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
 
 
 
-def compile_citations(text: str) -> Dict[str, Any]:
-    """Compile citations from the given text."""
+async def compile_citations(text: str) -> Dict[str, Any]:
+    """Compile citations from the given text.
+
+    State-law verifications are dispatched to background threads so the main
+    request handler is not blocked on long-running OpenAI calls.
+    """
 
     cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
     citations = get_citations(cleaned_text)
@@ -202,6 +230,7 @@ def compile_citations(text: str) -> Dict[str, Any]:
         }
 
     citation_db: Dict[str, Dict[str, Any]] = {}
+    state_tasks = []
 
     for resource, resolved_cites in resolutions.items():
         if not resolved_cites:
@@ -230,12 +259,14 @@ def compile_citations(text: str) -> Dict[str, Any]:
         substatus = f"{entry_type}_verification_unsupported"
         verification_details = None
 
+        fallback_value = _get_citation(primary_full)
+
         if entry_type == "case":
             status, substatus, verification_details = verify_case_citation(
                 primary_full,
                 normalized_key,
                 resource_dict,
-                fallback_citation=_get_citation(primary_full),
+                fallback_citation=fallback_value,
             )
         elif entry_type == "law":
             jurisdiction = None
@@ -247,14 +278,22 @@ def compile_citations(text: str) -> Dict[str, Any]:
                     primary_full,
                     normalized_key,
                     resource_dict,
-                    fallback_citation=_get_citation(primary_full),
+                    fallback_citation=fallback_value,
                 )
             elif jurisdiction == "state":
-                status, substatus, verification_details = verify_state_law_citation(
-                    primary_full,
-                    normalized_key,
-                    resource_dict,
-                    fallback_citation=_get_citation(primary_full)
+                status = "pending"
+                substatus = "state_law_verification_pending"
+                verification_details = None
+                state_tasks.append(
+                    asyncio.create_task(
+                        _verify_state_async(
+                            resource_key,
+                            primary_full,
+                            normalized_key,
+                            resource_dict,
+                            fallback_value,
+                        )
+                    )
                 )
             else:
                 logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
@@ -286,5 +325,15 @@ def compile_citations(text: str) -> Dict[str, Any]:
                     "citation_obj": cite,
                 }
             )
+
+    if state_tasks:
+        for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
+            entry = citation_db.get(resource_key_task)
+            if not entry:
+                logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
+                continue
+            entry["status"] = status
+            entry["substatus"] = substatus
+            entry["verification_details"] = verification_details
 
     return citation_db

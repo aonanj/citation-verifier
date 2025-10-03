@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from 'react';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+const API_BASE_URL = process.env.BACKEND_URL ?? DEFAULT_API_BASE_URL;
 
 type CitationOccurrence = {
   citation_category: string | null;
@@ -570,11 +570,12 @@ export default function HomePage() {
               type="file"
               accept=".pdf,.docx,.txt"
               style={{
-                width: '100%',
+                width: '75%',
+                maxWidth: '100%',
                 padding: '0.85rem 1.1rem',
-                border: '1px solid rgba(100, 116, 139, 0.4)',
+                border: '1px solid rgba(37, 99, 235, 0.35)',
                 borderRadius: '14px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'rgba(59, 130, 246, 0.12)',
                 fontSize: '0.95rem',
               }}
               disabled={isLoading}

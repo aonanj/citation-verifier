@@ -123,7 +123,7 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
         raise HTTPException(status_code=500, detail="Failed to extract text.") from exc
 
     try:
-        compiled = compile_citations(extracted_text)
+        compiled = await compile_citations(extracted_text)
     except Exception as exc:  # pragma: no cover - unexpected failure
         logger.error(f"Error in compile_citations: {exc}")
         raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
