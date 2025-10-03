@@ -39,7 +39,6 @@ def setup_logger(name="citeverify", level=logging.INFO, toFile=True, fileName="c
         # Resolve a writable path. HF Spaces code dir (/app) may be read-only; prefer /data then /tmp
         base_dir = os.path.dirname(target_file) or "."
         if not os.path.isabs(target_file):
-            # If relative and not writable, we'll adjust later
             candidate_paths = [base_dir]
         else:
             candidate_paths = [base_dir]

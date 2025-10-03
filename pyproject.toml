@@ -85,7 +85,7 @@ generate-hashes = false
 
 [tool.ruff]
 line-length = 180
-lint.select = ["E", "F", "W", "I"]  # rules you want enabled
+lint.select = ["E", "F", "W", "I"]  # enabled rules
 lint.ignore = ["E203"]
 exclude = ["build", "dist", ".venv"]
 lint.extend-select = []

@@ -1,0 +1,17 @@
+{
+  "name": "citation-verifier-word-taskpane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host localhost --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host localhost --port 5175"
+  },
+  "devDependencies": {
+    "@types/office-js": "^1.0.74",
+    "@vitejs/plugin-basic-ssl": "^1.0.2",
+    "typescript": "^5.4.2",
+    "vite": "^7.1.9"
+  }
+}

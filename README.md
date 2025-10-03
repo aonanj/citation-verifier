@@ -1,6 +1,6 @@
 # Citation Verifier
 
-Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation, while the Next.js frontend presents annotated results with contextual highlights. Citations are assumed to be in Bluebook standard format.
+Full-stack toolchain for extracting legal citations from court filings and verifying them against primary sources. The backend normalizes and checks each citation. The frondend is available as a Microsoft Word Add-In and a Next.js frontend, presenting annotated results with contextual highlights. Citations are assumed to be in Bluebook standard format. See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
 
 ## Overview
 - **Document ingestion**: Accepts PDF (text or scanned), DOCX, and plain text files up to 10 MB. Compatible with both inline citations and footnote citations. 
@@ -149,9 +149,14 @@ npm run dev
 `utils/logger.py` honors `LOG_TO_FILE`/`LOG_FILE_PATH` or defaults to console output. Log formatting matches `[timestamp] - logger level message` for easier aggregation.
 
 ## License
+
 This repository is publicly viewable for portfolio purposes only. The code is proprietary.
 Copyright © 2025 Phaethon Order LLC. All rights reserved.
 Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reuse requests.
+
+See [LICENSE](LICENSE)
+
+Note: `package.json` may list a different license string; the authoritative license for this repository is proprietary.
 
 ## Contact
 Questions or support: [support@phaethon.llc](mailto:support@phaethon.llc).

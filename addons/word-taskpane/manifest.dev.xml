@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>0d9a9b86-9d93-4f70-949c-7008932e8e5b</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>Phaethon Order LLC</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Citation Verifier" />
+  <Description DefaultValue="Prototype task pane that sends the Word document to the citation verifier backend." />
+  <IconUrl DefaultValue="https://localhost:5174/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:5174/icon-80.png" />
+  <SupportUrl DefaultValue="https://localhost:5174" />
+  <AppDomains>
+    <AppDomain>https://localhost:8000</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:5174/index.html" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title" />
+            <Description resid="GetStarted.Description" />
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl" />
+          </GetStarted>
+          <FunctionFile resid="TaskPane.Url" />
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="CitationVerifier.Group">
+                <Label resid="Group.Label" />
+                <Control xsi:type="Button" id="CitationVerifier.TaskPaneButton">
+                  <Label resid="TaskPaneButton.Label" />
+                  <Supertip>
+                    <Title resid="TaskPaneButton.Label" />
+                    <Description resid="TaskPaneButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="TaskPane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+          <ExtensionPoint xsi:type="Taskpane">
+            <TaskpaneId>ButtonId1</TaskpaneId>
+            <SourceLocation resid="TaskPane.Url" />
+            <SupportsPinning>true</SupportsPinning>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://localhost:5174/icon-16.png" />
+        <bt:Image id="Icon.32" DefaultValue="https://localhost:5174/icon-32.png" />
+        <bt:Image id="Icon.80" DefaultValue="https://localhost:5174/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="TaskPane.Url" DefaultValue="https://localhost:5174/index.html" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://phaethon.llc" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="Citation Verifier" />
+        <bt:String id="Group.Label" DefaultValue="Citation Verifier" />
+        <bt:String id="TaskPaneButton.Label" DefaultValue="Open Verifier" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Open the task pane to verify citations in the current document." />
+        <bt:String id="TaskPaneButton.Tooltip" DefaultValue="Send the document to the citation verifier backend." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
