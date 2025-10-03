@@ -3,6 +3,7 @@
 __pycache__
 .DS_Store
 .env
+.env.local
 __pycache__/
 copilot-instructions.md
 *.docx
@@ -15,3 +16,4 @@ tests/
 .vscode/
 .ruff_cache/
 *.log
+dev_certs/
