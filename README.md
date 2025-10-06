@@ -28,14 +28,14 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, and extracted text for the UI.
 
+Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
+
 ### Known Issues & Limitations
 - **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
 - **String citations**: String citations are not gracefully handled. If included, they will likely introduce errors to short citations, such as _id._, _supra_, and short case names. Support for string citations is in development.  
   - Work item. No estimated date of delivery. 
 - **Journal, URL, and other citations**: Currently, supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws. Journal, URL, secondary sources, and other citation types are not supported. Support for other citations is in development. 
   - Work item. No estimated date of delivery. 
-
-Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
 ## System Architecture
 ### Backend (Python)
