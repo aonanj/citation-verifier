@@ -26,7 +26,7 @@ Prototype Office task pane that packages the current Word document as a base64 `
          ```bash
          brew install mkcert nss 
          mkcert -install
-         mkdir -p dev-certs
+         mkdir -p dev-certs               #run in root dir
          mkcert -key-file dev-certs/localhost-key.pem -cert-file dev-certs/localhost.pem localhost 127.0.0.1 ::1
          ```
 

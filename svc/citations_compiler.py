@@ -21,6 +21,7 @@ from eyecite.models import (
 
 from utils.cleaner import clean_str
 from utils.logger import get_logger
+from utils.resource_resolver import get_journal_author_title
 from utils.span_finder import get_span
 from verifiers.case_verifier import get_case_name, verify_case_citation
 from verifiers.federal_law_verifier import (
@@ -125,49 +126,6 @@ def _get_citation(obj) -> str | None:
         return clean_str(c)
     return None
 
-def _get_journal_author_title(obj) -> dict[str | None, str | None] | None:
-    """Extract author and title from a FullJournalCitation object."""
-    if not isinstance(obj, FullJournalCitation):
-        return None
-
-    cite_span = get_span(obj)
-    if not cite_span:
-        return None
-
-    start, _ = cite_span
-    if start is None or start <= 0:
-        return None
-
-    document = getattr(obj, "document", None)
-    text_block = getattr(document, "plain_text", None)
-    if not text_block or not isinstance(text_block, str):
-        return None
-
-    preceding_text = text_block[:start]
-
-    first_comma = preceding_text.rfind(",")
-    if first_comma == -1:
-        return None
-
-    second_comma = preceding_text.rfind(",", 0, first_comma)
-    if second_comma == -1:
-        return None
-
-    raw_title = preceding_text[second_comma + 1 : first_comma]
-    raw_title = raw_title.replace('"', "").replace("'", "")
-    title = clean_str(raw_title)
-
-    period_idx = preceding_text.rfind(".", 0, second_comma)
-    author_start = period_idx + 1 if period_idx != -1 else 0
-    raw_author = preceding_text[author_start:second_comma]
-    raw_author = raw_author.replace('"', "").replace("'", "")
-    author = clean_str(raw_author)
-
-    if title is None and author is None:
-        return None
-
-    return {"author": author, "title": title}
-
 # --- Resource binding for resolver ------------------------------------------
 @dataclass(frozen=True)
 class ResourceKey:
@@ -192,18 +150,18 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         year = clean_str(getattr(full_cite, "year", None)) or ""
         return ResourceKey("law", (title, code, section, year))
     # Treat everything else as "other" so supra can still cluster journals, etc.
-    title = ""
-    author = ""
     if t == "FullJournalCitation":
-        journal_info = _get_journal_author_title(full_cite)
+        title = ""
+        author = ""
+        journal_info = get_journal_author_title(full_cite)
         if journal_info is not None:
             title = journal_info.get("title", "") or ""
             author = journal_info.get("author", "") or ""
-    journal = (clean_str(full_cite.groups.get("reporter", None)) or "")
-    volume = clean_str(full_cite.groups.get("volume", None)) or ""
-    page = clean_str(full_cite.groups.get("page", None)) or ""
-    year = clean_str(full_cite.year) or ""
-    return ResourceKey("other", (author, title, volume, journal, page, year))
+        journal = (clean_str(full_cite.groups.get("reporter", None)) or "")
+        volume = clean_str(full_cite.groups.get("volume", None)) or ""
+        page = clean_str(full_cite.groups.get("page", None)) or ""
+        year = clean_str(full_cite.year) or ""
+        return ResourceKey("journal", (author, title, volume, journal, page, year))
 
 
 

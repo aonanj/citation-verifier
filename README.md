@@ -28,6 +28,13 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, and extracted text for the UI.
 
+### Known Issues & Limitations
+- **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
+- **String citations**: String citations are not gracefully handled. If included, they will likely introduce errors to short citations, such as _id._, _supra_, and short case names. Support for string citations is in development.  
+  - Work item. No estimated date of delivery. 
+- **Journal, URL, and other citations**: Currently, supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws. Journal, URL, secondary sources, and other citation types are not supported. Support for other citations is in development. 
+  - Work item. No estimated date of delivery. 
+
 Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
 ## System Architecture
@@ -53,22 +60,28 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 
 ## Project Layout
 ```
-├── main.py                  # FastAPI entrypoint
-├── app/                     # Next.js application (App Router)
-│   ├── layout.tsx           # Global metadata and styling
-│   └── page.tsx             # Upload form + results dashboard
+├── main.py                   # FastAPI entrypoint
+├── addons/word-taskpane      # Word Add-In service
+│   └── ...                   # See Word Add-In README.md
+├── app/                      # Next.js application (App Router)
+│   ├── layout.tsx            # Global metadata and styling
+│   └── page.tsx              # Upload form + results dashboard
 ├── svc/
-│   ├── doc_processor.py     # Text extraction and normalization
-│   └── citations_compiler.py# Eyecite integration and verifier dispatch
-├── verifiers/
+│   ├── doc_processor.py      # Text extraction and normalization
+│   └── citations_compiler.py # Eyecite integration and verifier dispatch
+├── verifiers/                # Citation verification services
 │   ├── case_verifier.py
 │   ├── federal_law_verifier.py
 │   └── state_law_verifier.py
-├── utils/                   # Logging, cleaning, span helpers
-├── resources/               # Sample documents and reference material
-├── requirements.in/.txt     # Python dependency pins
-├── package.json             # Frontend dependencies
-└── pyproject.toml           # Backend build metadata
+├── utils/                    # Logging, cleaning, span helpers
+│   ├── cleaner.py
+│   ├── logger.py
+│   ├── resource_resolver.py
+│   └── span_finder.py
+├── resources/                # Sample documents and reference material
+├── requirements.in/.txt      # Python dependency pins
+├── package.json              # Frontend dependencies
+└── pyproject.toml            # Backend build metadata
 ```
 
 ## Dependencies
@@ -111,7 +124,7 @@ GOVINFO_API_KEY=...           # optional: improves GovInfo rate limits
 OPENAI_API_KEY=...            # required for state-law verification
 LOG_TO_FILE=true              # optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
-BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.  
+BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.com  
 ```
 Environment variables fall back to sane defaults when omitted; state-law verification returns errors if no OpenAI key is present.
 

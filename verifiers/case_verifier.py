@@ -12,6 +12,7 @@ from rapidfuzz import fuzz, process
 
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
+from utils.resource_resolver import resolve_case_name
 
 logger = get_logger()
 
@@ -204,6 +205,7 @@ def _prepare_case_lookup_fields(
 def get_case_name(obj) -> str | None:
     if obj is None:
         return None
+    case_name = None
     metadata = getattr(obj, "metadata", None)
     if metadata is not None:
         plaintiff = clean_str(
@@ -215,12 +217,12 @@ def get_case_name(obj) -> str | None:
             or getattr(metadata, "respondent", None)
         )
         if plaintiff and defendant:
-            return clean_str(f"{plaintiff} v. {defendant}")
+            case_name = clean_str(f"{plaintiff} v. {defendant}")
 
         if plaintiff is None and defendant is not None:
-            return f"In re {defendant}"
+            case_name = f"In re {defendant}"
 
-    return None
+    return resolve_case_name(case_name, obj)
 
 def verify_case_citation(
     primary_full: FullCitation | None,
