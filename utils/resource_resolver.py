@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from eyecite.models import FullJournalCitation
+from eyecite.models import FullCaseCitation, FullJournalCitation
 
 from utils.cleaner import clean_str
 from utils.logger import get_logger
@@ -53,49 +53,118 @@ def get_journal_author_title(obj) -> dict[str | None, str | None] | None:
 
     return {"author": author, "title": title}
 
-def resolve_case_name(case_name: str | None, obj) -> str | None:
-    """Resolve case name from the citation object if possible."""
+def resolve_case_name(case_name: str | None, obj=None) -> str | None:
+    """Resolve case name from the citation object if possible.
+
+    `case_name` is an optional fallback sourced from citation metadata.
+    """
+
+    fallback = clean_str(case_name)
+
+    if obj is None and isinstance(case_name, FullCaseCitation):
+        obj = case_name
+        fallback = None
+
+    if not isinstance(obj, FullCaseCitation):
+        return fallback
 
     span = get_span(obj)
-    start, end = span if span is not None else (None, None)
+    if span is None:
+        return fallback
+    start, end = span
     if start is None or end is None or start <= 0 or end <= 0:
-        return case_name
+        return fallback
 
     document = getattr(obj, "document", None)
     text_block = getattr(document, "plain_text", None)
-    if not text_block or not isinstance(text_block, str):
-        return case_name
+    if not isinstance(text_block, str) or not text_block:
+        return fallback
 
     preceding_text = text_block[:start]
     if not preceding_text:
-        return case_name
+        return fallback
 
-    first_comma = preceding_text.rfind(",")
-    if first_comma == -1:
-        return case_name
+    trimmed = preceding_text.rstrip()
+    comma_idx = trimmed.rfind(",")
+    if comma_idx == -1:
+        return fallback
 
-    v = preceding_text.lower().rfind("v.", 0, first_comma)
-    if v == -1:
-        in_re = preceding_text.lower().rfind("in re", 0, first_comma)
-        if in_re == -1:
-            return case_name
-        raw_case_name = f"In re {preceding_text[in_re:first_comma]}"
-        raw_case_name = raw_case_name.replace('"', "").replace("'", "")
-        raw_case_name = clean_str(raw_case_name)
-        if len(raw_case_name or "") < len(case_name if case_name else ""):
-            return case_name
-        return raw_case_name
+    case_segment = trimmed[:comma_idx].rstrip()
+    if not case_segment:
+        return fallback
 
-    raw_defendent = preceding_text[v:first_comma]
-    period_idx = preceding_text.rfind(".", 0, v)
-    raw_plaintiff_start = period_idx + 1 if period_idx != -1 else 0
-    raw_plaintiff = preceding_text[raw_plaintiff_start:v]
-    raw_case_name = f"{raw_plaintiff} v. {raw_defendent}"
-    raw_case_name = raw_case_name.replace('"', "").replace("'", "")
-    raw_case_name = clean_str(raw_case_name)
-    if len(raw_case_name or "") < len(case_name if case_name else ""):
-        return case_name
-    return raw_case_name
+    context_window = case_segment[-300:]
+
+    base_word = r"[A-Z][\w.\-&'/]*,?"
+    connectors = r"(?:of|the|and|for|in|on|at|et|al\.?|ex|rel\.?|&)"
+    name_pattern = rf"{base_word}(?:\s+(?:{base_word}|{connectors}))*"
+
+    patterns = [
+        rf"(In\s+re\s+{name_pattern})\s*$",
+        rf"({name_pattern}\s+v\.\s+{name_pattern})\s*$",
+    ]
+
+    noise_single = {"see", "cf.", "cf", "compare", "but", "accord", "contra", "e.g.", "e.g"}
+    noise_pairs = {
+        ("see", "also"),
+        ("see", "e.g."),
+        ("but", "see"),
+        ("but", "cf."),
+        ("but", "compare"),
+    }
+
+    for pattern in patterns:
+        match = re.search(pattern, context_window)
+        if not match:
+            continue
+
+        candidate = clean_str(match.group(1))
+        if not candidate:
+            continue
+
+        if candidate.lower().startswith("in re "):
+            return candidate
+
+        if " v. " not in candidate:
+            continue
+
+        tokens = candidate.split()
+        idx = 0
+        while idx < len(tokens):
+            current = tokens[idx].lower().strip(",;:")
+            next_token = tokens[idx + 1].lower().strip(",;:") if idx + 1 < len(tokens) else None
+
+            if next_token and (current, next_token) in noise_pairs:
+                idx += 2
+                continue
+
+            if current in noise_single:
+                idx += 1
+                continue
+
+            break
+
+        if idx >= len(tokens):
+            continue
+
+        stripped_tokens = tokens[idx:]
+        cleaned_candidate = clean_str(" ".join(stripped_tokens))
+        if not cleaned_candidate or " v. " not in cleaned_candidate:
+            continue
+
+        left, _, right = cleaned_candidate.partition(" v. ")
+        if not left or not right:
+            continue
+        if not any(ch.isalpha() and ch.isupper() for ch in left):
+            continue
+        if not any(ch.isalpha() and ch.isupper() for ch in right):
+            continue
+        if len(cleaned_candidate) > len(fallback or ""):
+            logger.info(f"Resolved case name: {cleaned_candidate}")
+            return cleaned_candidate
+    logger.info("Could not resolve case name; using fallback: %s", fallback)
+    return fallback
+
 
 def resolve_case_court_year(case_year: str | None, obj) -> dict[str | Any | None, str | Any | None] | None:
     """Resolve case year and court from the citation object if possible."""

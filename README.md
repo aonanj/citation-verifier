@@ -119,9 +119,11 @@ Major libraries are pinned in `requirements.txt`:
 ## Configuration
 Create `.env` in the project root to supply credentials and logging preferences:
 ```
-COURTLISTENER_API_TOKEN=...   # optional: enables authenticated case lookups
-GOVINFO_API_KEY=...           # optional: improves GovInfo rate limits
-OPENAI_API_KEY=...            # required for state-law verification
+COURTLISTENER_API_TOKEN=...   # State and federal case verifications
+GOVINFO_API_KEY=...           # Federal law verifications
+OPENAI_API_KEY=...            # State law verifications
+LEGISCAN_API_KEY=...          # Active legislative data (e.g., active bills) verifications (not yet implemented)
+SEMANTIC_SCHOLAR_API_KEY=...  # Journal verifications (1 of 3 APIs)
 LOG_TO_FILE=true              # optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
 BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.com  

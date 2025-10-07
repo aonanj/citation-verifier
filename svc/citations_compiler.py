@@ -226,40 +226,40 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 resource_dict,
                 fallback_citation=fallback_value,
             )
-        elif entry_type == "law":
-            jurisdiction = None
-            if isinstance(primary_full, FullLawCitation):
-                jurisdiction = classify_full_law_jurisdiction(primary_full)
+        # elif entry_type == "law":
+        #     jurisdiction = None
+        #     if isinstance(primary_full, FullLawCitation):
+        #         jurisdiction = classify_full_law_jurisdiction(primary_full)
 
-            if jurisdiction == "federal":
-                status, substatus, verification_details = verify_federal_law_citation(
-                    primary_full,
-                    normalized_key,
-                    resource_dict,
-                    fallback_citation=fallback_value,
-                )
-            elif jurisdiction == "state":
-                status = "pending"
-                substatus = "state_law_verification_pending"
-                verification_details = None
-                state_tasks.append(
-                    asyncio.create_task(
-                        _verify_state_async(
-                            resource_key,
-                            primary_full,
-                            normalized_key,
-                            resource_dict,
-                            fallback_value,
-                        )
-                    )
-                )
-            else:
-                logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
-                status = "error"
-                substatus = "unsupported_jurisdiction"
-                verification_details = {
-                    "jurisdiction": jurisdiction or "unknown",
-                }
+        #     if jurisdiction == "federal":
+        #         status, substatus, verification_details = verify_federal_law_citation(
+        #             primary_full,
+        #             normalized_key,
+        #             resource_dict,
+        #             fallback_citation=fallback_value,
+        #         )
+        #     elif jurisdiction == "state":
+        #         status = "pending"
+        #         substatus = "state_law_verification_pending"
+        #         verification_details = None
+        #         state_tasks.append(
+        #             asyncio.create_task(
+        #                 _verify_state_async(
+        #                     resource_key,
+        #                     primary_full,
+        #                     normalized_key,
+        #                     resource_dict,
+        #                     fallback_value,
+        #                 )
+        #             )
+        #         )
+            # else:
+            #     logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
+            #     status = "error"
+            #     substatus = "unsupported_jurisdiction"
+            #     verification_details = {
+            #         "jurisdiction": jurisdiction or "unknown",
+            #     }
 
         citation_db[resource_key] = {
             "type": entry_type,
@@ -284,14 +284,14 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 }
             )
 
-    if state_tasks:
-        for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
-            entry = citation_db.get(resource_key_task)
-            if not entry:
-                logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
-                continue
-            entry["status"] = status
-            entry["substatus"] = substatus
-            entry["verification_details"] = verification_details
+    # if state_tasks:
+    #     for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
+    #         entry = citation_db.get(resource_key_task)
+    #         if not entry:
+    #             logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
+    #             continue
+    #         entry["status"] = status
+    #         entry["substatus"] = substatus
+    #         entry["verification_details"] = verification_details
 
     return citation_db
