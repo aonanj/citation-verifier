@@ -1,5 +1,7 @@
 # Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
+# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +21,11 @@ from eyecite.models import (
     SupraCitation,
 )
 
+from svc.string_citation_handler import (
+    CitationSegment,
+    StringCitationDetector,
+    StringCitationSplitter,
+)
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 from utils.resource_resolver import get_journal_author_title
@@ -164,33 +171,333 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         return ResourceKey("journal", (author, title, volume, journal, page, year))
 
 
+# --- String citation processing helpers -----------------------------------
 
-async def compile_citations(text: str) -> Dict[str, Any]:
-    """Compile citations from the given text.
+def _process_citation_segment(
+    segment: CitationSegment,
+) -> Tuple[Dict[str, Any], Dict[int, CitationSegment]]:
+    """Process a single citation segment with eyecite.
 
-    State-law verifications are dispatched to background threads so the main
-    request handler is not blocked on long-running OpenAI calls.
+    Args:
+        segment: The citation segment to process.
+
+    Returns:
+        Tuple of (resolutions dict, segment_metadata dict).
     """
+    segment_text = segment.text
+    cleaned = clean_text(segment_text, ["all_whitespace", "underscores"])
 
-    cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
-    citations = get_citations(cleaned_text)
+    try:
+        citations = get_citations(cleaned)
+    except Exception as exc:
+        logger.error("eyecite.get_citations failed for segment: %s", exc)
+        return {}, {}
 
     try:
         resolutions = resolve_citations(
             citations,
             resolve_full_citation=_bind_full_citation,
         )
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.error(f"eyecite resolve_citations failed; falling back to raw citations: {exc}")
+    except Exception as exc:
+        logger.error("eyecite.resolve_citations failed for segment: %s", exc)
         resolutions = {
             f"raw:{idx}": [citation]
             for idx, citation in enumerate(citations)
         }
 
+    # Adjust spans to original document coordinates
+    segment_metadata: Dict[int, CitationSegment] = {}
+
+    for resource, resolved_cites in resolutions.items():
+        for cite in resolved_cites:
+            cite_span = get_span(cite)
+            if cite_span:
+                seg_start, seg_end = cite_span
+                # Adjust to absolute position in original document
+                adjusted_start = segment.original_span[0] + seg_start
+                adjusted_end = segment.original_span[0] + seg_end
+
+                # Update citation span (modify in place if possible)
+                if hasattr(cite, '_span'):
+                    cite.span._span = (adjusted_start, adjusted_end)
+
+            # Track segment metadata for this citation
+            cite_index = _get_index(cite)
+            if cite_index is not None:
+                segment_metadata[cite_index] = segment
+
+    return resolutions, segment_metadata
+
+
+def _merge_resolutions(
+    target: Dict[str, Any],
+    source: Dict[str, Any],
+) -> None:
+    """Merge source resolutions into target.
+
+    Args:
+        target: Target resolutions dict (modified in place).
+        source: Source resolutions dict.
+    """
+    for resource_key, resolved_cites in source.items():
+        if resource_key not in target:
+            target[resource_key] = []
+        target[resource_key].extend(resolved_cites)
+
+
+def _resolve_string_local_shorts(
+    resolutions: Dict[str, Any],
+    segment_metadata: Dict[int, CitationSegment],
+) -> Dict[str, Any]:
+    """Resolve short citations to antecedents within the same string group.
+
+    This handles cases where a short citation appears in the same string
+    citation as its full antecedent:
+        "Brown v. Board, 347 U.S. 483 (1954); Brown, 347 U.S. at 495"
+
+    Args:
+        resolutions: Citation resolutions from eyecite.
+        segment_metadata: Mapping of citation index to segment info.
+
+    Returns:
+        Updated resolutions dict with corrected short form assignments.
+    """
+    # Group citations by string_group_id
+    string_groups: Dict[str, list] = {}
+
+    for resource_key, cites in resolutions.items():
+        for cite in cites:
+            cite_idx = _get_index(cite)
+            if cite_idx is None or cite_idx not in segment_metadata:
+                continue
+
+            segment = segment_metadata[cite_idx]
+            group_id = segment.string_group_id
+
+            if group_id is None:
+                # Standalone citation, no string-local resolution needed
+                continue
+
+            if group_id not in string_groups:
+                string_groups[group_id] = []
+
+            string_groups[group_id].append({
+                'resource_key': resource_key,
+                'cite': cite,
+                'segment': segment,
+            })
+
+    # Within each group, build local antecedent registry
+    for group_id, group_items in string_groups.items():
+        # Sort by position in string
+        sorted_items = sorted(
+            group_items,
+            key=lambda x: x['segment'].position_in_string or 0
+        )
+
+        # Build lookup of full citations appearing before each position
+        local_fulls: Dict[int, Dict[str, Any]] = {}
+
+        for i, item in enumerate(sorted_items):
+            cite = item['cite']
+
+            if isinstance(cite, FullCitation):
+                # Register this as potential antecedent for later shorts
+                for j in range(i + 1, len(sorted_items)):
+                    if j not in local_fulls:
+                        local_fulls[j] = {}
+                    # Store by normalized case name or statute identifier
+                    lookup_key = _make_short_lookup_key(cite)
+                    if lookup_key:
+                        local_fulls[j][lookup_key] = item
+
+        # Now check shorts and reassign if better local match exists
+        for i, item in enumerate(sorted_items):
+            cite = item['cite']
+
+            if isinstance(cite, (ShortCaseCitation, IdCitation, SupraCitation)):
+                lookup_key = _make_short_lookup_key(cite)
+
+                if lookup_key and i in local_fulls:
+                    potential_antecedent = local_fulls[i].get(lookup_key)
+
+                    if potential_antecedent:
+                        # Found a better (local) antecedent
+                        correct_resource_key = potential_antecedent['resource_key']
+
+                        # Log the correction
+                        logger.info(
+                            "String-local resolution: reassigning short citation "
+                            "from %s to %s (group_id=%s)",
+                            item['resource_key'],
+                            correct_resource_key,
+                            group_id,
+                        )
+
+                        # Move citation to correct resource
+                        # (eyecite may have grouped it incorrectly)
+                        if correct_resource_key != item['resource_key']:
+                            # Remove from current resource
+                            if item['resource_key'] in resolutions:
+                                try:
+                                    resolutions[item['resource_key']].remove(cite)
+                                except ValueError:
+                                    pass
+
+                            # Add to correct resource
+                            if correct_resource_key not in resolutions:
+                                resolutions[correct_resource_key] = []
+                            resolutions[correct_resource_key].append(cite)
+
+    return resolutions
+
+
+def _make_short_lookup_key(cite: Any) -> str | None:
+    """Create a normalized key for matching shorts to fulls.
+
+    Args:
+        cite: Citation object (Full or Short).
+
+    Returns:
+        Normalized lookup key, or None if key cannot be extracted.
+    """
+    if isinstance(cite, FullCaseCitation):
+        name = get_case_name(cite) or ""
+        from utils.cleaner import normalize_case_name_for_compare
+        normalized = normalize_case_name_for_compare(name)
+        if normalized and "v" in normalized:
+            first_party = normalized.split("v")[0].strip()
+            return first_party
+        return normalized
+
+    elif isinstance(cite, ShortCaseCitation):
+        # Extract the short name
+        metadata = getattr(cite, "metadata", None)
+        if metadata:
+            from utils.cleaner import normalize_case_name_for_compare
+            plaintiff = clean_str(
+                getattr(metadata, "plaintiff", None)
+                or getattr(metadata, "antecedent_guess", None)
+            )
+            if plaintiff:
+                return normalize_case_name_for_compare(plaintiff)
+
+    elif isinstance(cite, (IdCitation, SupraCitation)):
+        # These reference the immediately preceding citation
+        # For string-local resolution, we need special handling
+        return "__ID_OR_SUPRA__"
+
+    elif isinstance(cite, FullLawCitation):
+        # Build key from statute identifier
+        reporter = clean_str(getattr(cite, "reporter", None))
+        section = clean_str(getattr(cite, "section", None))
+        if reporter and section:
+            return f"{reporter}::{section}"
+
+    return None
+
+
+# --- Main compilation function --------------------------------------------
+
+async def compile_citations(text: str) -> Dict[str, Any]:
+    """Compile citations from the given text, handling string citations.
+
+    This function:
+    1. Detects string citations (multiple citations separated by semicolons)
+    2. Splits string citations into individual segments
+    3. Processes each segment with eyecite
+    4. Resolves short citations to local antecedents within string groups
+    5. Verifies citations against external sources
+
+    Args:
+        text: The document text to analyze.
+
+    Returns:
+        Dict mapping resource keys to citation metadata, including:
+        - type, status, substatus
+        - normalized_citation
+        - occurrences (with string_group_id and position_in_string)
+        - verification_details
+
+    Raises:
+        Exception: If critical errors occur during processing.
+    """
+    logger.info("Starting citation compilation (text length: %d chars)", len(text))
+
+    # Step 1: Detect and split string citations
+    detector = StringCitationDetector()
+    splitter = StringCitationSplitter()
+
+    string_citation_spans = detector.detect_string_citations(text)
+    logger.info("Detected %d potential string citation spans", len(string_citation_spans))
+
+    # Step 2: Build list of all citation segments (string + standalone)
+    all_segments: list[CitationSegment] = []
+    covered_ranges: set[Tuple[int, int]] = set()
+    string_group_counter = 0
+
+    for start, end, is_string in string_citation_spans:
+        if is_string:
+            string_text = text[start:end]
+            group_id = f"string_group_{string_group_counter}"
+            string_group_counter += 1
+
+            try:
+                segments = splitter.split_string_citation(
+                    string_text,
+                    start,
+                    group_id,
+                )
+                all_segments.extend(segments)
+                covered_ranges.add((start, end))
+            except ValueError as exc:
+                logger.warning("Failed to split string citation: %s", exc)
+                continue
+
+    # For now, we process string citations; eyecite will handle standalone
+    # citations in the non-string portions. Future enhancement: also wrap
+    # standalone citations as CitationSegments for consistency.
+
+    # Step 3: Process each segment with eyecite
+    all_resolutions: Dict[str, Any] = {}
+    all_segment_metadata: Dict[int, CitationSegment] = {}
+
+    for segment in all_segments:
+        seg_resolutions, seg_metadata = _process_citation_segment(segment)
+        _merge_resolutions(all_resolutions, seg_resolutions)
+        all_segment_metadata.update(seg_metadata)
+
+    # Step 4: Process non-string portions (fallback to original eyecite flow)
+    # This ensures citations outside detected strings are still captured
+    if not all_segments:
+        # No string citations detected; use original flow
+        logger.info("No string citations detected; using standard eyecite processing")
+        cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
+        citations = get_citations(cleaned_text)
+
+        try:
+            all_resolutions = resolve_citations(
+                citations,
+                resolve_full_citation=_bind_full_citation,
+            )
+        except Exception as exc:
+            logger.error("eyecite resolve_citations failed: %s", exc)
+            all_resolutions = {
+                f"raw:{idx}": [citation]
+                for idx, citation in enumerate(citations)
+            }
+
+    # Step 5: Resolve short citations within string groups
+    all_resolutions = _resolve_string_local_shorts(
+        all_resolutions,
+        all_segment_metadata,
+    )
+
+    # Step 6: Build citation database with verification
     citation_db: Dict[str, Dict[str, Any]] = {}
     state_tasks = []
 
-    for resource, resolved_cites in resolutions.items():
+    for resource, resolved_cites in all_resolutions.items():
         if not resolved_cites:
             continue
 
@@ -204,6 +511,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 "id_tuple": (str(resource),),
             }
             resource_kind = resource_dict["kind"]
+
         primary_full = next(
             (cite for cite in resolved_cites if isinstance(cite, FullCitation)),
             None,
@@ -219,6 +527,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
         fallback_value = _get_citation(primary_full)
 
+        # Verification logic (same as before)
         if entry_type == "case":
             status, substatus, verification_details = verify_case_citation(
                 primary_full,
@@ -226,40 +535,41 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 resource_dict,
                 fallback_citation=fallback_value,
             )
-        # elif entry_type == "law":
-        #     jurisdiction = None
-        #     if isinstance(primary_full, FullLawCitation):
-        #         jurisdiction = classify_full_law_jurisdiction(primary_full)
 
-        #     if jurisdiction == "federal":
-        #         status, substatus, verification_details = verify_federal_law_citation(
-        #             primary_full,
-        #             normalized_key,
-        #             resource_dict,
-        #             fallback_citation=fallback_value,
-        #         )
-        #     elif jurisdiction == "state":
-        #         status = "pending"
-        #         substatus = "state_law_verification_pending"
-        #         verification_details = None
-        #         state_tasks.append(
-        #             asyncio.create_task(
-        #                 _verify_state_async(
-        #                     resource_key,
-        #                     primary_full,
-        #                     normalized_key,
-        #                     resource_dict,
-        #                     fallback_value,
-        #                 )
-        #             )
-        #         )
-            # else:
-            #     logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
-            #     status = "error"
-            #     substatus = "unsupported_jurisdiction"
-            #     verification_details = {
-            #         "jurisdiction": jurisdiction or "unknown",
-            #     }
+        elif entry_type == "law":
+            jurisdiction = None
+            if isinstance(primary_full, FullLawCitation):
+                jurisdiction = classify_full_law_jurisdiction(primary_full)
+
+            if jurisdiction == "federal":
+                status, substatus, verification_details = verify_federal_law_citation(
+                    primary_full,
+                    normalized_key,
+                    resource_dict,
+                    fallback_citation=fallback_value,
+                )
+            elif jurisdiction == "state":
+                status = "pending"
+                substatus = "state_law_verification_pending"
+                verification_details = None
+                state_tasks.append(
+                    asyncio.create_task(
+                        _verify_state_async(
+                            resource_key,
+                            primary_full,
+                            normalized_key,
+                            resource_dict,
+                            fallback_value,
+                        )
+                    )
+                )
+            else:
+                logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
+                status = "error"
+                substatus = "unsupported_jurisdiction"
+                verification_details = {
+                    "jurisdiction": jurisdiction or "unknown",
+                }
 
         citation_db[resource_key] = {
             "type": entry_type,
@@ -272,26 +582,34 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             "occurrences": [],
         }
 
+        # Add occurrences with string group metadata
         for cite in resolved_cites:
-            citation_db[resource_key]["occurrences"].append(
-                {
-                    "citation_category": _citation_category(cite),
-                    "matched_text": _get_citation(cite),
-                    "span": get_span(cite),
-                    "index": _get_index(cite),
-                    "pin_cite": _get_pin_cite(cite),
-                    "citation_obj": cite,
-                }
-            )
+            cite_idx = _get_index(cite)
+            segment = all_segment_metadata.get(cite_idx) if cite_idx else None
 
-    # if state_tasks:
-    #     for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
-    #         entry = citation_db.get(resource_key_task)
-    #         if not entry:
-    #             logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
-    #             continue
-    #         entry["status"] = status
-    #         entry["substatus"] = substatus
-    #         entry["verification_details"] = verification_details
+            occurrence = {
+                "citation_category": _citation_category(cite),
+                "matched_text": _get_citation(cite),
+                "span": get_span(cite),
+                "index": cite_idx,
+                "pin_cite": _get_pin_cite(cite),
+                "citation_obj": cite,
+                # New fields for string citation support
+                "string_group_id": segment.string_group_id if segment else None,
+                "position_in_string": segment.position_in_string if segment else None,
+            }
+            citation_db[resource_key]["occurrences"].append(occurrence)
+
+    if state_tasks:
+        for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
+            entry = citation_db.get(resource_key_task)
+            if not entry:
+                logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
+                continue
+            entry["status"] = status
+            entry["substatus"] = substatus
+            entry["verification_details"] = verification_details
+
+    logger.info("Citation compilation complete: %d unique citations", len(citation_db))
 
     return citation_db

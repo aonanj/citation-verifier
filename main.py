@@ -22,6 +22,9 @@ class CitationOccurrence(BaseModel):
     matched_text: str | None
     span: List[int] | None
     pin_cite: str | None
+    # New fields for string citation support
+    string_group_id: str | None = None
+    position_in_string: int | None = None
 
 
 class CitationEntry(BaseModel):
@@ -41,7 +44,7 @@ class VerificationResponse(BaseModel):
 
 load_dotenv()
 
-app = FastAPI(title="eyecite-extractor", version="0.1.0")
+app = FastAPI(title="citation-verifier", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +79,8 @@ def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
                     matched_text=occurrence.get("matched_text"),
                     span=span_list,
                     pin_cite=occurrence.get("pin_cite"),
+                    string_group_id=occurrence.get("string_group_id"),
+                    position_in_string=occurrence.get("position_in_string"),
                 )
             )
 
