@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Set, Tuple
 
 from eyecite import clean_text, get_citations, resolve_citations
 from eyecite.models import (
@@ -38,6 +38,8 @@ from verifiers.federal_law_verifier import (
 from verifiers.state_law_verifier import verify_state_law_citation
 
 logger = get_logger()
+
+_AdjustedSpans = Dict[int, Tuple[int, int]]
 
 # --- async helpers -------------------------------------------------
 
@@ -175,11 +177,13 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
 
 def _process_citation_segment(
     segment: CitationSegment,
+    adjusted_spans: _AdjustedSpans,  # New parameter to collect adjusted spans
 ) -> Tuple[Dict[str, Any], Dict[int, CitationSegment]]:
     """Process a single citation segment with eyecite.
 
     Args:
         segment: The citation segment to process.
+        adjusted_spans: Dict to store adjusted span information (modified in place).
 
     Returns:
         Tuple of (resolutions dict, segment_metadata dict).
@@ -211,22 +215,47 @@ def _process_citation_segment(
     for resource, resolved_cites in resolutions.items():
         for cite in resolved_cites:
             cite_span = get_span(cite)
-            if cite_span:
+            cite_index = _get_index(cite)
+
+            if cite_span and cite_index is not None:
                 seg_start, seg_end = cite_span
-                # Adjust to absolute position in original document
+                # Calculate adjusted position in original document
                 adjusted_start = segment.original_span[0] + seg_start
                 adjusted_end = segment.original_span[0] + seg_end
 
-                # Update citation span (modify in place if possible)
-                if hasattr(cite, '_span'):
-                    cite.span._span = (adjusted_start, adjusted_end)
+                # Store adjusted span separately (don't modify eyecite object)
+                adjusted_spans[cite_index] = (adjusted_start, adjusted_end)
 
             # Track segment metadata for this citation
-            cite_index = _get_index(cite)
             if cite_index is not None:
                 segment_metadata[cite_index] = segment
 
     return resolutions, segment_metadata
+
+
+def _get_adjusted_span(
+    cite: Any,
+    adjusted_spans: _AdjustedSpans,
+) -> Tuple[int, int] | None:
+    """Get the adjusted span for a citation.
+
+    First checks the adjusted_spans dict for string citation corrections,
+    then falls back to the citation's native span.
+
+    Args:
+        cite: Citation object.
+        adjusted_spans: Dict of adjusted spans.
+
+    Returns:
+        Tuple of (start, end) or None if span unavailable.
+    """
+    cite_index = _get_index(cite)
+
+    if cite_index is not None and cite_index in adjusted_spans:
+        return adjusted_spans[cite_index]
+
+    # Fallback to native span
+    return get_span(cite)
 
 
 def _merge_resolutions(
@@ -454,21 +483,20 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 logger.warning("Failed to split string citation: %s", exc)
                 continue
 
-    # For now, we process string citations; eyecite will handle standalone
-    # citations in the non-string portions. Future enhancement: also wrap
-    # standalone citations as CitationSegments for consistency.
-
     # Step 3: Process each segment with eyecite
     all_resolutions: Dict[str, Any] = {}
     all_segment_metadata: Dict[int, CitationSegment] = {}
+    adjusted_spans: _AdjustedSpans = {}  # Track all adjusted spans
 
     for segment in all_segments:
-        seg_resolutions, seg_metadata = _process_citation_segment(segment)
+        seg_resolutions, seg_metadata = _process_citation_segment(
+            segment, 
+            adjusted_spans  # Pass the tracking dict
+        )
         _merge_resolutions(all_resolutions, seg_resolutions)
         all_segment_metadata.update(seg_metadata)
 
     # Step 4: Process non-string portions (fallback to original eyecite flow)
-    # This ensures citations outside detected strings are still captured
     if not all_segments:
         # No string citations detected; use original flow
         logger.info("No string citations detected; using standard eyecite processing")
@@ -527,7 +555,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
         fallback_value = _get_citation(primary_full)
 
-        # Verification logic (same as before)
+        # Verification logic
         if entry_type == "case":
             status, substatus, verification_details = verify_case_citation(
                 primary_full,
@@ -587,10 +615,12 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             cite_idx = _get_index(cite)
             segment = all_segment_metadata.get(cite_idx) if cite_idx else None
 
+            cite_span = _get_adjusted_span(cite, adjusted_spans)
+
             occurrence = {
                 "citation_category": _citation_category(cite),
                 "matched_text": _get_citation(cite),
-                "span": get_span(cite),
+                "span": cite_span,
                 "index": cite_idx,
                 "pin_cite": _get_pin_cite(cite),
                 "citation_obj": cite,
