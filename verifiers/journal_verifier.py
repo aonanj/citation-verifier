@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Tuple
+import re
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from eyecite.models import FullCitation, FullJournalCitation
@@ -18,7 +20,26 @@ _OPENALEX_SOURCE_URL = "https://api.openalex.org/sources"
 _OPENALEX_TIMEOUT = httpx.Timeout(15.0, connect=10.0, read=10.0)
 _OPENALEX_MAILTO_ENV = "OPENALEX_MAILTO"
 
+_SEMANTIC_SCHOLAR_BASE_URL = "https://api.semanticscholar.org/graph/v1"
+_SEMANTIC_SCHOLAR_TIMEOUT = httpx.Timeout(15.0, connect=10.0, read=10.0)
 _SEMANTIC_SCHOLAR_API_KEY = "SEMANTIC_SCHOLAR_API_KEY"
+_SEMANTIC_SCHOLAR_MAX_SEARCH = 50
+_DEFAULT_FIELDS_BASE = [
+    "title",
+    "year",
+    "venue",
+    "authors.name",
+    "url",
+    "isOpenAccess",
+    "publicationTypes",
+    "externalIds",
+]
+_DEFAULT_FIELDS_BASIC = ",".join(_DEFAULT_FIELDS_BASE)
+_DEFAULT_FIELDS_AUTH = ",".join(_DEFAULT_FIELDS_BASE + ["tldr"])
+_FIELDS = ",".join([
+    "title","year","venue","journal.name","volume","pages",
+    "authors.name","url","externalIds"
+])
 
 
 def _result_matches_citation(
@@ -271,7 +292,7 @@ def _verify_journal_citation_with_openalex(
     
     return "not_match", "not found in OpenAlex", None
 
-def _verify_with_semantic_scholar(primary_full: FullCitation | None, resource_dict: Dict[str, Any] | None
+def _verify_title_with_semantic_scholar(primary_full: FullCitation | None, resource_dict: Dict[str, Any] | None
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Verify a citation using the Semantic Scholar API with targeted, quoted field filters.
 
@@ -287,6 +308,179 @@ def _verify_with_semantic_scholar(primary_full: FullCitation | None, resource_di
     if not isinstance(primary_full, FullJournalCitation):
         return "no_match", "not a journal citation", None
     
+    data = None
+    
+    search_author = clean_str(resource_dict.get("author")) if resource_dict else None
+    search_title = clean_str(resource_dict.get("title")) if resource_dict else None
+    if not search_author or not search_title:
+        ji = get_journal_author_title(primary_full)
+        if not search_author and ji:
+            search_author = clean_str(ji.get("author"))
+        if not search_title and ji:
+            search_title = clean_str(ji.get("title"))
+    
+    if search_author is None and search_title is None:
+        return _verify_citation_with_semantic_scholar(primary_full, resource_dict)
+
+    headers: Dict[str, str] = {"Accept": "application/json"}
+    api_key = os.environ.get(_SEMANTIC_SCHOLAR_API_KEY)
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    fields = _DEFAULT_FIELDS_AUTH if api_key else _DEFAULT_FIELDS_BASIC
+    params_search = {
+        "query": f"\"{search_title}\"",
+        "limit": str(_SEMANTIC_SCHOLAR_MAX_SEARCH),
+        "fields": fields,
+    }
+
+    search_title_norm = normalize_case_name_for_compare(search_title)
+    search_author_norm = normalize_case_name_for_compare(search_author)
+
+    with httpx.Client(timeout=_SEMANTIC_SCHOLAR_TIMEOUT, headers=headers) as client:
+        for attempt in range(2):
+            try:
+                response = client.get(
+                    f"{_SEMANTIC_SCHOLAR_BASE_URL}/paper/search",
+                    params=params_search,
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code if e.response else None
+                if status_code == 429 and attempt == 0:
+                    logger.warning(
+                        "Semantic Scholar rate limited (429) for title search '%s'; retrying after 1s",
+                        search_title,
+                    )
+                    time.sleep(1)
+                    continue
+                response_text = ""
+                error_response = getattr(e, "response", None)
+                if error_response is not None:
+                    try:
+                        response_text = error_response.text
+                    except Exception:
+                        response_text = "<response text unavailable>"
+                logger.error(
+                    f"Semantic Scholar HTTP error: {e} for title search '{search_title}'. Response: {response_text}"
+                )
+                return "error", f"semantic scholar http error: {e}", None
+            except httpx.HTTPError as e:
+                response_text = ""
+                error_response = getattr(e, "response", None)
+                if error_response is not None:
+                    try:
+                        response_text = error_response.text
+                    except Exception:
+                        response_text = "<response text unavailable>"
+                logger.error(
+                    f"Semantic Scholar HTTP error: {e} for title search '{search_title}'. Response: {response_text}"
+                )
+                return "error", f"semantic scholar http error: {e}", None
+            except Exception as e:
+                logger.error(f"Semantic Scholar unknown error: {e} for title search: {search_title}")
+                return "error", f"semantic scholar error: {e}", None
+
+    papers = data.get("data", []) if data else []
+    if not papers:
+        logger.info(f"Semantic Scholar no match found for title='{search_title}'")
+        return "not_match", "not found in Semantic Scholar", None
+
+    for paper in papers:
+        paper_title = paper.get("title")
+        paper_title_norm = normalize_case_name_for_compare(paper_title)
+        if not (search_title_norm and paper_title_norm):
+            continue
+        title_matches = (
+            search_title_norm == paper_title_norm
+            or search_title_norm in paper_title_norm
+            or paper_title_norm in search_title_norm
+        )
+        if not title_matches:
+            continue
+
+        if search_author and search_author_norm:
+            authors = paper.get("authors") or []
+            if not isinstance(authors, list):
+                authors = []
+            for author in authors:
+                author_name = author.get("name")
+                author_norm = normalize_case_name_for_compare(author_name)
+                if author_norm and (
+                    search_author_norm == author_norm
+                    or search_author_norm in author_norm
+                    or author_norm in search_author_norm
+                ):
+                    logger.info(f"Semantic Scholar author match found: {author_name}")
+                    return "verified", None, {"source": "semantic_scholar", "data": paper}
+
+                if author_name:
+                    similarity = process.extractOne(
+                        search_author,
+                        [author_name],
+                        scorer=fuzz.partial_ratio,
+                        score_cutoff=75,
+                    )
+                    if similarity:
+                        logger.info(f"Semantic Scholar author similarity found: {similarity}")
+                        return "verified", None, {"source": "semantic_scholar", "data": paper}
+            logger.info(f"Semantic Scholar no author match found for: {search_author}")
+            continue
+
+        logger.info(f"Semantic Scholar paper match found for title='{search_title}'")
+        return "verified", None, {"source": "semantic_scholar", "data": paper}
+
+    return "not_match", "no author match for title match", {"author": search_author, "source": "semantic_scholar"}
+
+    return "not_match", "not found in Semantic Scholar", None
+
+def _norm(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    # lowercase, remove punctuation, collapse spaces
+    s2 = re.sub(r"[^\w\s]", " ", s.lower())
+    return re.sub(r"\s+", " ", s2).strip()
+
+def _first_page(pages: Optional[str]) -> Optional[int]:
+    if not pages:
+        return None
+    # handles "123", "123-130", "123–130", "S12-S30"
+    m = re.match(r"^[A-Za-z]*\s*(\d+)", pages.strip())
+    return int(m.group(1)) if m else None
+
+def _journal_name(paper: Dict[str, Any]) -> str:
+    # S2 sometimes uses journal.name, sometimes venue
+    jname = None
+    j = paper.get("journal")
+    if isinstance(j, dict):
+        jname = j.get("name")
+    return jname or paper.get("venue") or ""
+
+def _escape_semantic_scholar_term(term: str) -> str:
+    if not term:
+        return ""
+    # Escape Lucene special characters so the query is always parseable
+    return re.sub(r"([+\-=&|!(){}\[\]^\"~*?:\\\/])", r"\\\1", term)
+
+def _verify_citation_with_semantic_scholar(
+    primary_full: FullCitation | None, 
+    resource_dict: Dict[str, Any] | None
+) -> Tuple[str, str | None, Dict[str, Any] | None]:
+    """
+    Search Semantic Scholar by Journal + Volume + First Page (+ optional year).
+
+    Returns a list of candidate papers filtered to match:
+      - normalized journal name equals or contains the provided journal name, or vice versa
+      - volume exact string match (after stripping)
+      - first page equals `page`
+
+    Results are sorted with exact journal equality first, then year proximity if provided.
+    """
+    if not isinstance(primary_full, FullJournalCitation):
+        return "no_match", "not a journal citation", None
+    
     reporter_full_name = []
     data = {}
     logger.info(f"Verifying journal citation with OpenAlex: {primary_full}")
@@ -296,6 +490,10 @@ def _verify_with_semantic_scholar(primary_full: FullCitation | None, resource_di
     logger.info(f"Primary full volume: {volume}")
     page = groups.get('page') if groups else None
     logger.info(f"Primary full page: {page}")
+    year = getattr(primary_full, 'year', None)
+    if year is None:
+        year = resource_dict.get('year') if resource_dict else None
+    logger.info(f"Primary full year: {year}")
 
     reporter_editions = getattr(primary_full, 'all_editions', None)
     if reporter_editions and len(reporter_editions) > 0:
@@ -308,7 +506,126 @@ def _verify_with_semantic_scholar(primary_full: FullCitation | None, resource_di
             guess_names = getattr(edition_guess, 'name', None)
             reporter_full_name = guess_names.split(";") if guess_names else []
 
-    return "not_match", "not found in Semantic Scholar", None
+    headers = {"Accept": "application/json"}
+    api_key = os.environ.get(_SEMANTIC_SCHOLAR_API_KEY)
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    logger.info(f"Semantic Scholar search for reporter_full_name={reporter_full_name},volume={str(volume)},page={str(page)}")
+    journal = clean_str(reporter_full_name[0] if reporter_full_name else None)
+    if not (journal and volume and page):
+        return "no_match", "insufficient citation data for search", None
+
+    norm_j = _norm(journal) if journal else ""
+    vol_s = str(volume).strip()
+    page_s = str(page).strip()
+    year_str = str(year) if year is not None else None
+
+    queries: List[str] = []
+
+    def _add_query(parts: List[Optional[str]]) -> None:
+        query = " ".join(part for part in parts if part)
+        if query and query not in queries:
+            queries.append(query)
+
+    journal_variants: List[str] = []
+    if journal:
+        base_phrase = journal.strip()
+        if base_phrase:
+            journal_variants.append(base_phrase)
+            # Some Semantic Scholar queries choke on raw '&'; try common substitutions.
+            amp_as_word = re.sub(r"&", " and ", base_phrase)
+            amp_removed = re.sub(r"&", " ", base_phrase)
+            for variant in (amp_as_word, amp_removed):
+                normalized_variant = re.sub(r"\s+", " ", variant).strip()
+                if normalized_variant and normalized_variant not in journal_variants:
+                    journal_variants.append(normalized_variant)
+
+    for phrase in journal_variants:
+        escaped_phrase = _escape_semantic_scholar_term(phrase)
+        quoted_phrase = f"\"{escaped_phrase}\"" if escaped_phrase else ""
+        if quoted_phrase:
+            if year_str:
+                _add_query([quoted_phrase, vol_s, page_s, year_str])
+            _add_query([quoted_phrase, vol_s, page_s])
+        if phrase:
+            if year_str:
+                _add_query([phrase, vol_s, page_s, year_str])
+            _add_query([phrase, vol_s, page_s])
+
+    def filter_and_rank(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out = []
+        for p in items:
+            pj = _journal_name(p)
+            pv = (p.get("volume") or "").strip()
+            fp = _first_page(p.get("pages"))
+            if not pv or fp is None:
+                continue
+            # journal match: equality or substring either direction after normalization
+            nj = _norm(pj)
+            j_ok = (nj == norm_j) or (norm_j and norm_j in nj) or (nj and nj in norm_j)
+            if not j_ok:
+                continue
+            if pv != vol_s:
+                continue
+            if fp != int(page):
+                continue
+            out.append(p)
+
+        # Rank: exact journal equality first, then year closeness if provided
+        def score(p):
+            pj = _journal_name(p)
+            nj = _norm(pj)
+            exact = 1 if nj == norm_j else 0
+            yr_pen = 0
+            if year and isinstance(p.get("year"), int):
+                yr_pen = abs(p["year"] - year)
+            return (-exact, yr_pen)
+
+        return sorted(out, key=score)
+
+    last_client_error: Optional[str] = None
+
+    with httpx.Client(timeout=_SEMANTIC_SCHOLAR_TIMEOUT, headers=headers) as client:
+        for q in queries:
+            params = {
+                "query": q,
+                "limit": _SEMANTIC_SCHOLAR_MAX_SEARCH,
+                "fields": _FIELDS,
+            }
+            try:
+                r = client.get(
+                    f"{_SEMANTIC_SCHOLAR_BASE_URL}/paper/search",
+                    params=params,
+                )
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code if e.response else None
+                logger.warning(
+                    "Semantic Scholar returned %s for query='%s': %s",
+                    status_code,
+                    q,
+                    e,
+                )
+                if status_code and 400 <= status_code < 500:
+                    last_client_error = f"semantic scholar query rejected ({status_code})"
+                    continue
+                return "error", f"semantic scholar http error: {e}", None
+            except httpx.HTTPError as e:
+                logger.error(f"Semantic Scholar HTTP error for query='{q}': {e}")
+                return "error", f"semantic scholar http error: {e}", None
+
+            data = r.json() or {}
+            items = data.get("data", []) if isinstance(data, dict) else []
+            filtered = filter_and_rank(items)
+            if filtered:
+                return "verified", None, {"source": "semantic_scholar", "data": filtered[0]}
+
+    # Nothing matched strictly; as a fallback, return top unfiltered candidates from the last search
+    if last_client_error:
+        return "error", last_client_error, None
+    return "no_match", "not found in Semantic Scholar", None
+
 
 def verify_journal_citation(
   primary_full: FullCitation | None,
@@ -336,8 +653,8 @@ def verify_journal_citation(
     if validation[0] == "verified":
         logger.info(f"Journal citation verified by OpenAlex: {primary_full}")
         return validation
-    
-    validation = _verify_with_semantic_scholar(
+
+    validation = _verify_title_with_semantic_scholar(
         primary_full=primary_full,
         resource_dict=resource_dict,
     )
@@ -345,4 +662,4 @@ def verify_journal_citation(
         logger.info(f"Journal citation verified by Semantic Scholar: {primary_full}")
         return validation
 
-    return "no_match", "not found in OpenAlex", None
+    return "no_match", "not found in OpenAlex or Semantic Scholar", None

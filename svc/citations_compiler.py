@@ -565,7 +565,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 fallback_citation=fallback_value,
             )
 
-        elif entry_type == "testing": ##"law":
+        elif entry_type == "law":
             jurisdiction = None
             if isinstance(primary_full, FullLawCitation):
                 jurisdiction = classify_full_law_jurisdiction(primary_full)
