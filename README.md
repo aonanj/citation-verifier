@@ -11,7 +11,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 ### Next.js UI - Citation Verification List
 ![Citation Verification List](docs/screenshots/CV-Screenshot-1.png)
 
-### Next.js US - Uploaded Document with Verification Indicators
+### Next.js UI - Uploaded Document with Verification Indicators
 ![Uploaded Document with Verification Indicators](docs/screenshots/CV-Screenshot-2.png)
 
 ### Word Add-In UI
