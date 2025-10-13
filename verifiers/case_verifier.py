@@ -48,7 +48,7 @@ def _extract_lookup_case_name(payload: Dict[str, Any]) -> str | None:
         return None
 
     clusters = payload.get("clusters", None)
-    if clusters is not None and isinstance(clusters, list):
+    if clusters is not None and isinstance(clusters, list) and len(clusters) > 0:
         cluster = clusters[0]
         if isinstance(cluster, dict):
             cn = clean_str(cluster.get("case_name", None))
@@ -67,7 +67,7 @@ def _extract_lookup_case_year(payload: Dict[str, Any]) -> str | None:
         return None
 
     clusters = payload.get("clusters", None)
-    if clusters is not None and isinstance(clusters, list):
+    if clusters is not None and isinstance(clusters, list) and len(clusters) > 0:
         cluster = clusters[0]
         if isinstance(cluster, dict):
             decision_date = cluster.get("date_filed", None)
@@ -273,7 +273,6 @@ def verify_case_citation(
             metadata = getattr(primary_full, "metadata", None)
             if metadata is not None:
                 expected_year = getattr(metadata, "year", None)
-
     if not expected_year:
         resource_dict = resource_dict or {}
         id_tuple = resource_dict.get("id_tuple")
@@ -312,7 +311,8 @@ def verify_case_citation(
     elif expected_year is not None and actual_year is None:
         mismatches.append("year")
 
-    if mismatches:
+
+    if len(mismatches) > 0:
         substatus = "Mismatch at "
         substatus += " (1) case name, (2) year" if len(mismatches) == 2 else f"{mismatches[0]}"
         details = {

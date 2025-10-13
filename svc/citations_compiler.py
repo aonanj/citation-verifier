@@ -153,17 +153,16 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         reporter = (clean_str(full_cite.groups.get("reporter", None)) or "")
         vol = clean_str(full_cite.groups.get("volume", None)) or ""
         page = clean_str(full_cite.groups.get("page", None)) or ""
-        year = clean_str(full_cite.year) or ""
+        year = clean_str(full_cite.year) or clean_str(full_cite.metadata.year) or ""
         return ResourceKey("case", (name, reporter, vol, page, year))
-    if t == "FullLawCitation":
+    elif t == "FullLawCitation":
         title = clean_str(full_cite.groups.get("title", None) or full_cite.groups.get("volume", None) or
                           full_cite.groups.get("chapter", None)) or  ""
         code = clean_str(full_cite.groups.get("reporter", None) or full_cite.groups.get("code", None)) or ""
         section = clean_str(full_cite.groups.get("section", None) or full_cite.groups.get("page", None)) or ""
         year = clean_str(getattr(full_cite, "year", None)) or ""
         return ResourceKey("law", (title, code, section, year))
-    # Treat everything else as "other" so supra can still cluster journals, etc.
-    if t == "FullJournalCitation":
+    elif t == "FullJournalCitation":
         title = ""
         author = ""
         journal_info = get_journal_author_title(full_cite)
@@ -175,6 +174,8 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         page = clean_str(full_cite.groups.get("page", None)) or ""
         year = clean_str(full_cite.year) or ""
         return ResourceKey("journal", (author, title, volume, journal, page, year))
+    else:
+        logger.info(f"Unsupported full citation type for resource binding: {full_cite}")
 
 
 # --- String citation processing helpers -----------------------------------
@@ -506,6 +507,12 @@ async def compile_citations(text: str) -> Dict[str, Any]:
         cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
         citations = get_citations(cleaned_text)
 
+        logger.info(f"Detected {len(citations)} citations in text: {citations}")
+
+        if not citations:
+            logger.info("No citations detected in text; returning empty result set")
+            return {}
+
         try:
             all_resolutions = resolve_citations(
                 citations,
@@ -518,6 +525,10 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 for idx, citation in enumerate(citations)
             }
 
+
+    if not all_resolutions or not any(all_resolutions.values()):
+        logger.info("No citations detected; returning empty result set")
+        return {}
 
     # Step 5: Resolve short citations within string groups
     all_resolutions = _resolve_string_local_shorts(
@@ -548,10 +559,12 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             (cite for cite in resolved_cites if isinstance(cite, FullCitation)),
             None,
         )
+
         representative = primary_full or resolved_cites[0]
         normalized_key = _normalized_key(representative) or resource_key
 
         entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
+        logger.info("Entry type: %s", entry_type)
 
         status = "error"
         substatus = f"{entry_type}_verification_unsupported"
@@ -567,6 +580,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 resource_dict,
                 fallback_citation=fallback_value,
             )
+            logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
 
         elif entry_type == "law":
             jurisdiction = None
