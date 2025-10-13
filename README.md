@@ -32,9 +32,7 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 
 ### Known Issues & Limitations
 - **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
-- **String citations**: String citations are not gracefully handled. If included, they will likely introduce errors to short citations, such as _id._, _supra_, and short case names. Support for string citations is in development.  
-  - Work item. No estimated date of delivery. 
-- **Journal, URL, and other citations**: Currently, supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws. Journal, URL, secondary sources, and other citation types are not supported. Support for other citations is in development. 
+- **URLs and other citations**: Currently, supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals. URLs, secondary sources, and other citation types are not supported. Support for other citations is in development. 
   - Work item. No estimated date of delivery. 
 
 ## System Architecture
