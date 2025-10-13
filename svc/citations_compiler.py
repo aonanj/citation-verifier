@@ -619,7 +619,9 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     2. Splits string citations into individual segments
     3. Processes each segment with eyecite
     4. Resolves short citations to local antecedents within string groups
-    5. Verifies citations against external sources
+    5. Detects and resolves secondary source citations
+    6. Sorts all citations by document position
+    7. Verifies citations against external sources
 
     Args:
         text: The document text to analyze.
@@ -636,14 +638,13 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     """
     logger.info("Starting citation compilation (text length: %d chars)", len(text))
 
-    # Step 1: Detect and split string citations
+    # Steps 1-5: String detection, eyecite processing (unchanged)
     detector = StringCitationDetector()
     splitter = StringCitationSplitter()
 
     string_citation_spans = detector.detect_string_citations(text)
     logger.info("Detected %d potential string citation spans", len(string_citation_spans))
 
-    # Step 2: Build list of all citation segments (string + standalone)
     all_segments: list[CitationSegment] = []
     covered_ranges: set[Tuple[int, int]] = set()
     string_group_counter = 0
@@ -666,8 +667,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 logger.error("Failed to split string citation: %s", exc)
                 continue
 
-    # Step 3: Process each segment with eyecite
-    all_resolutions: Dict[Any, Any] = {}  # Changed from Dict[str, Any]
+    all_resolutions: Dict[Any, Any] = {}
     all_segment_metadata: Dict[int, CitationSegment] = {}
     adjusted_spans: _AdjustedSpans = {}
 
@@ -679,7 +679,6 @@ async def compile_citations(text: str) -> Dict[str, Any]:
         _merge_resolutions(all_resolutions, seg_resolutions)
         all_segment_metadata.update(seg_metadata)
 
-    # Step 4: Process non-string portions (fallback to original eyecite flow)
     if not all_segments:
         logger.info("No string citations detected; using standard eyecite processing")
         cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
@@ -703,137 +702,254 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 for idx, citation in enumerate(citations)
             }
 
-
     if not all_resolutions or not any(all_resolutions.values()):
         logger.info("No citations detected; returning empty result set")
         return {}
 
-    # Step 5: Resolve short citations within string groups
     all_resolutions = _resolve_string_local_shorts(
         all_resolutions,
         all_segment_metadata,
     )
 
-    # Step 6: Build citation database with verification
-    citation_db: Dict[str, Dict[str, Any]] = {}
-    state_tasks = []
+    # Step 6: Detect and resolve secondary citations
+    eyecite_spans: Set[Tuple[int, int]] = set()
+    all_citation_spans_for_id_resolution: List[Tuple[int, int, str, Any]] = []
+    
+    # Collect eyecite spans for secondary detection and Id. resolution
+    for resource, resolved_cites in all_resolutions.items():
+        resource_key = _resource_identifier(resource)
+        entry_type = _get_citation_type(
+            next((c for c in resolved_cites if isinstance(c, FullCitation)), None)
+        ) if resolved_cites else "unknown"
+        
+        for cite in resolved_cites:
+            cite_span = _get_adjusted_span(cite, adjusted_spans)
+            if cite_span:
+                eyecite_spans.add(cite_span)
+                all_citation_spans_for_id_resolution.append(
+                    (cite_span[0], cite_span[1], entry_type, None)
+                )
+    
+    # Sort for Id. resolution
+    all_citation_spans_for_id_resolution.sort(key=lambda s: s[0])
+    
+    # Detect secondary citations
+    secondary_detector = SecondaryCitationDetector()
+    full_secondary_citations, short_secondary_citations = secondary_detector.detect_secondary_citations(
+        text, eyecite_spans
+    )
+    
+    if full_secondary_citations or short_secondary_citations:
+        logger.info(
+            "Detected %d full and %d short secondary source citations",
+            len(full_secondary_citations),
+            len(short_secondary_citations),
+        )
+        
+        # Add full secondary citations to all_citation_spans for Id. resolution
+        for cite in full_secondary_citations:
+            all_citation_spans_for_id_resolution.append(
+                (cite.span[0], cite.span[1], "secondary", cite)
+            )
+        
+        # Re-sort after adding secondaries
+        all_citation_spans_for_id_resolution.sort(key=lambda s: s[0])
+        
+        # Resolve short citations to their antecedents
+        secondary_resolver = SecondaryCitationResolver()
+        resolved_short_secondary = secondary_resolver.resolve_short_citations(
+            full_secondary_citations,
+            short_secondary_citations,
+            all_citation_spans_for_id_resolution,
+        )
+        
+        # Filter out Id. citations that refer to non-secondary sources
+        resolved_short_secondary = [
+            cite for cite in resolved_short_secondary
+            if cite.source_type != "non_secondary"
+        ]
+        
+        if resolved_short_secondary:
+            logger.info(
+                "Filtered to %d short secondary citations (removed non-secondary refs)",
+                len(resolved_short_secondary),
+            )
+    else:
+        full_secondary_citations = []
+        resolved_short_secondary = []
 
+    # Step 7: Create unified list of all citations sorted by position
+    citation_entries: List[Dict[str, Any]] = []
+    
+    # Add eyecite citations with their first occurrence position
     for resource, resolved_cites in all_resolutions.items():
         if not resolved_cites:
             continue
+        
+        # Find first occurrence position
+        first_position = float('inf')
+        for cite in resolved_cites:
+            cite_span = _get_adjusted_span(cite, adjusted_spans)
+            if cite_span and cite_span[0] < first_position:
+                first_position = cite_span[0]
+        
+        citation_entries.append({
+            'type': 'eyecite',
+            'position': first_position,
+            'resource': resource,
+            'resolved_cites': resolved_cites,
+        })
+    
+    # Add secondary citations with their positions
+    for cite in full_secondary_citations:
+        citation_entries.append({
+            'type': 'secondary_full',
+            'position': cite.span[0],
+            'citation': cite,
+        })
+    
+    for cite in resolved_short_secondary:
+        citation_entries.append({
+            'type': 'secondary_short',
+            'position': cite.span[0],
+            'citation': cite,
+        })
+    
+    # Sort by position to maintain document order
+    citation_entries.sort(key=lambda x: x['position'])
+    
+    logger.info(
+        "Built unified citation list with %d entries in document order",
+        len(citation_entries)
+    )
 
-        resource_key = _resource_identifier(resource)
-        if isinstance(resource, ResourceKey):
-            resource_dict = asdict(resource)
-            resource_kind = resource.kind
-        else:
-            resource_dict = {
-                "kind": _ctype(resource),
-                "id_tuple": (str(resource),),
-            }
-            resource_kind = resource_dict["kind"]
+    # Step 8: Build citation database in sorted order
+    citation_db: Dict[str, Dict[str, Any]] = {}
+    state_tasks = []
 
-        primary_full = next(
-            (cite for cite in resolved_cites if isinstance(cite, FullCitation)),
-            None,
-        )
+    for entry in citation_entries:
+        if entry['type'] == 'eyecite':
+            # Process eyecite citation (existing logic)
+            resource = entry['resource']
+            resolved_cites = entry['resolved_cites']
+            
+            resource_key = _resource_identifier(resource)
+            if isinstance(resource, ResourceKey):
+                resource_dict = asdict(resource)
+                resource_kind = resource.kind
+            else:
+                resource_dict = {
+                    "kind": _ctype(resource),
+                    "id_tuple": (str(resource),),
+                }
+                resource_kind = resource_dict["kind"]
 
-        representative = primary_full or resolved_cites[0]
-        normalized_key = _normalized_key(representative) or resource_key
-
-        entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
-        logger.info("Entry type: %s", entry_type)
-
-        status = "error"
-        substatus = f"{entry_type}_verification_unsupported"
-        verification_details = None
-
-        fallback_value = _get_citation(primary_full)
-
-        # Verification logic
-        if entry_type == "case":
-            status, substatus, verification_details = verify_case_citation(
-                primary_full,
-                normalized_key,
-                resource_dict,
-                fallback_citation=fallback_value,
+            primary_full = next(
+                (cite for cite in resolved_cites if isinstance(cite, FullCitation)),
+                None,
             )
-            logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
 
-        elif entry_type == "law":
-            jurisdiction = None
-            if isinstance(primary_full, FullLawCitation):
-                jurisdiction = classify_full_law_jurisdiction(primary_full)
+            representative = primary_full or resolved_cites[0]
+            normalized_key = _normalized_key(representative) or resource_key
 
-            if jurisdiction == "federal":
-                status, substatus, verification_details = verify_federal_law_citation(
+            entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
+            logger.info("Entry type: %s", entry_type)
+
+            status = "error"
+            substatus = f"{entry_type}_verification_unsupported"
+            verification_details = None
+
+            fallback_value = _get_citation(primary_full)
+
+            # Verification logic
+            if entry_type == "case":
+                status, substatus, verification_details = verify_case_citation(
                     primary_full,
                     normalized_key,
                     resource_dict,
                     fallback_citation=fallback_value,
                 )
-            elif jurisdiction == "state":
-                status = "pending"
-                substatus = "state_law_verification_pending"
-                verification_details = None
-                state_tasks.append(
-                    asyncio.create_task(
-                        _verify_state_async(
-                            resource_key,
-                            primary_full,
-                            normalized_key,
-                            resource_dict,
-                            fallback_value,
+                logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
+
+            elif entry_type == "law":
+                jurisdiction = None
+                if isinstance(primary_full, FullLawCitation):
+                    jurisdiction = classify_full_law_jurisdiction(primary_full)
+
+                if jurisdiction == "federal":
+                    status, substatus, verification_details = verify_federal_law_citation(
+                        primary_full,
+                        normalized_key,
+                        resource_dict,
+                        fallback_citation=fallback_value,
+                    )
+                elif jurisdiction == "state":
+                    status = "pending"
+                    substatus = "state_law_verification_pending"
+                    verification_details = None
+                    state_tasks.append(
+                        asyncio.create_task(
+                            _verify_state_async(
+                                resource_key,
+                                primary_full,
+                                normalized_key,
+                                resource_dict,
+                                fallback_value,
+                            )
                         )
                     )
+                else:
+                    logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
+                    status = "error"
+                    substatus = "unsupported_jurisdiction"
+                    verification_details = {
+                        "jurisdiction": jurisdiction or "unknown",
+                    }
+
+            elif entry_type == "journal":
+                status, substatus, verification_details = verify_journal_citation(
+                    primary_full,
+                    normalized_key,
+                    resource_dict,
                 )
 
-            else:
-                logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
-                status = "error"
-                substatus = "unsupported_jurisdiction"
-                verification_details = {
-                    "jurisdiction": jurisdiction or "unknown",
-                }
-
-        elif entry_type == "journal":
-            status, substatus, verification_details = verify_journal_citation(
-                primary_full,
-                normalized_key,
-                resource_dict,
-            )
-
-        citation_db[resource_key] = {
-            "type": entry_type,
-            "resource": resource_dict,
-            "status": status,
-            "substatus": substatus,
-            "verification_details": verification_details,
-            "normalized_citation": normalized_key,
-            "full_citation_obj": primary_full,
-            "occurrences": [],
-        }
-
-        # Add occurrences with string group metadata
-        for cite in resolved_cites:
-            cite_idx = _get_index(cite)
-            segment = all_segment_metadata.get(cite_idx) if cite_idx else None
-
-            cite_span = _get_adjusted_span(cite, adjusted_spans)
-
-            occurrence = {
-                "citation_category": _citation_category(cite),
-                "matched_text": _get_citation(cite),
-                "span": cite_span,
-                "index": cite_idx,
-                "pin_cite": _get_pin_cite(cite),
-                "citation_obj": cite,
-                # New fields for string citation support
-                "string_group_id": segment.string_group_id if segment else None,
-                "position_in_string": segment.position_in_string if segment else None,
+            citation_db[resource_key] = {
+                "type": entry_type,
+                "resource": resource_dict,
+                "status": status,
+                "substatus": substatus,
+                "verification_details": verification_details,
+                "normalized_citation": normalized_key,
+                "full_citation_obj": primary_full,
+                "occurrences": [],
             }
-            citation_db[resource_key]["occurrences"].append(occurrence)
 
+            # Add occurrences with string group metadata
+            for cite in resolved_cites:
+                cite_idx = _get_index(cite)
+                segment = all_segment_metadata.get(cite_idx) if cite_idx else None
+
+                cite_span = _get_adjusted_span(cite, adjusted_spans)
+
+                occurrence = {
+                    "citation_category": _citation_category(cite),
+                    "matched_text": _get_citation(cite),
+                    "span": cite_span,
+                    "index": cite_idx,
+                    "pin_cite": _get_pin_cite(cite),
+                    "citation_obj": cite,
+                    "string_group_id": segment.string_group_id if segment else None,
+                    "position_in_string": segment.position_in_string if segment else None,
+                }
+                citation_db[resource_key]["occurrences"].append(occurrence)
+        
+        elif entry['type'] in ('secondary_full', 'secondary_short'):
+            # Process secondary citation
+            cite = entry['citation']
+            is_full = (entry['type'] == 'secondary_full')
+            _add_secondary_to_db(cite, citation_db, is_full)
+
+    # Complete state law verifications
     if state_tasks:
         for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
             entry = citation_db.get(resource_key_task)
@@ -843,9 +959,6 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             entry["status"] = status
             entry["substatus"] = substatus
             entry["verification_details"] = verification_details
-
-    # Step 7: Process secondary citations
-    _process_secondary_citations(text, citation_db)
 
     logger.info("Citation compilation complete: %d unique citations", len(citation_db))
 
