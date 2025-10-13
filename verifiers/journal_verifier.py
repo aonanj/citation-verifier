@@ -37,8 +37,7 @@ _DEFAULT_FIELDS_BASE = [
 _DEFAULT_FIELDS_BASIC = ",".join(_DEFAULT_FIELDS_BASE)
 _DEFAULT_FIELDS_AUTH = ",".join(_DEFAULT_FIELDS_BASE + ["tldr"])
 _FIELDS = ",".join([
-    "title","year","venue","journal.name","volume","pages",
-    "authors.name","url","externalIds"
+    "title","year","venue","authors.name","url","externalIds"
 ])
 
 
@@ -542,16 +541,18 @@ def _verify_citation_with_semantic_scholar(
                     journal_variants.append(normalized_variant)
 
     for phrase in journal_variants:
-        escaped_phrase = _escape_semantic_scholar_term(phrase)
-        quoted_phrase = f"\"{escaped_phrase}\"" if escaped_phrase else ""
+        # For quoted queries, don't escape - the quotes handle special characters
+        quoted_phrase = f"\"{phrase}\"" if phrase else ""
         if quoted_phrase:
             if year_str:
                 _add_query([quoted_phrase, vol_s, page_s, year_str])
             _add_query([quoted_phrase, vol_s, page_s])
-        if phrase:
+        # For unquoted queries, escape special characters
+        escaped_phrase = _escape_semantic_scholar_term(phrase)
+        if escaped_phrase:
             if year_str:
-                _add_query([phrase, vol_s, page_s, year_str])
-            _add_query([phrase, vol_s, page_s])
+                _add_query([escaped_phrase, vol_s, page_s, year_str])
+            _add_query([escaped_phrase, vol_s, page_s])
 
     def filter_and_rank(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out = []
@@ -619,6 +620,8 @@ def _verify_citation_with_semantic_scholar(
             items = data.get("data", []) if isinstance(data, dict) else []
             filtered = filter_and_rank(items)
             if filtered:
+                logger.info(f"Semantic Scholar match found first result: {filtered[0]}")
+                logger.info(f"Semantic Scholar match found all results: {filtered}")
                 return "verified", None, {"source": "semantic_scholar", "data": filtered[0]}
 
     # Nothing matched strictly; as a fallback, return top unfiltered candidates from the last search
