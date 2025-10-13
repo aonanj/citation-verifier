@@ -22,7 +22,9 @@ type CitationEntry = {
   resource: Record<string, unknown>;
   occurrences: CitationOccurrence[];
   verification_details?: {
-    source?: string;
+    source?: string | null;
+    unverified_fields?: string | string[] | null;
+    returned_values?: Record<string, unknown> | null;
     mismatched_fields?: string[];
     extracted?: {
       case_name?: string | null;
@@ -156,6 +158,19 @@ const formatIdentifier = (value: string | null | undefined): string | null => {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
+};
+
+const formatDetailValue = (input: unknown): string => {
+  if (input === null || input === undefined) {
+    return '—';
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => String(item)).join(', ');
+  }
+  if (typeof input === 'object') {
+    return JSON.stringify(input);
+  }
+  return String(input);
 };
 
 const getDisplayCitation = (citation: CitationEntry): string => {
@@ -685,6 +700,25 @@ export default function HomePage() {
                 const formattedSubstatus = formatIdentifier(citation.substatus);
                 const displayCitation = getDisplayCitation(citation);
                 const occurrences = sortOccurrences(citation.occurrences);
+                const isUnverifiedDetailsWarning =
+                  normalizeKey(citation.status) === 'warning' &&
+                  normalizeKey(citation.substatus) === 'unverified details';
+                const unverifiedFields = citation.verification_details?.unverified_fields;
+                const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
+                  ? unverifiedFields.join(', ')
+                  : unverifiedFields ?? null;
+                const returnedValues = citation.verification_details?.returned_values;
+                const returnedEntries =
+                  returnedValues && typeof returnedValues === 'object'
+                    ? Object.entries(returnedValues as Record<string, unknown>)
+                    : [];
+                const detailSourceRaw = citation.verification_details?.source ?? null;
+                const formattedDetailSource = detailSourceRaw
+                  ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
+                  : null;
+                const hasVerificationDetailContent =
+                  Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
+                const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
 
                 return (
                   <article
@@ -819,6 +853,48 @@ export default function HomePage() {
                         )}
                       </div>
                     </div>
+
+                    {showUnverifiedDetailBlock && (
+                      <div
+                        style={{
+                          border: '1px solid rgba(234, 179, 8, 0.3)',
+                          backgroundColor: 'rgba(250, 204, 21, 0.18)',
+                          borderRadius: '12px',
+                          padding: '1rem 1.1rem',
+                          marginBottom: '1.25rem',
+                        }}
+                      >
+                        <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#92400e' }}>
+                          Verification details
+                        </p>
+                        <div style={{ display: 'grid', gap: '0.6rem', fontSize: '0.92rem', color: '#78350f' }}>
+                          {formattedDetailSource && (
+                            <div>
+                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Source</strong>
+                              <div>{formattedDetailSource}</div>
+                            </div>
+                          )}
+                          {unverifiedFieldsDisplay && (
+                            <div>
+                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Unverified fields</strong>
+                              <div>{unverifiedFieldsDisplay}</div>
+                            </div>
+                          )}
+                          {returnedEntries.length > 0 && (
+                            <div>
+                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Returned values</strong>
+                              <div style={{ display: 'grid', gap: '0.25rem' }}>
+                                {returnedEntries.map(([field, value]) => (
+                                  <div key={`${citation.resource_key}-returned-${field}`}>
+                                    <strong>{formatIdentifier(field) ?? field}</strong>: {formatDetailValue(value)}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {citation.status === 'warning' &&
                       citation.verification_details?.mismatched_fields &&

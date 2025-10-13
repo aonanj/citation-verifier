@@ -79,7 +79,10 @@ def _normalized_key(citation_obj) -> str:
         volume = citation_obj.groups.get("volume", "")
         reporter = citation_obj.groups.get("reporter", "")
         page = citation_obj.groups.get("page", "")
-        return f"{volume}::{reporter}::{page}"
+        year = citation_obj.year
+        if year:
+            return f"{volume} {reporter} {page} ({year})"
+        return f"{volume} {reporter} {page}"
     else:
         return citation_obj.matched_text()
 
@@ -481,7 +484,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 all_segments.extend(segments)
                 covered_ranges.add((start, end))
             except ValueError as exc:
-                logger.warning("Failed to split string citation: %s", exc)
+                logger.error("Failed to split string citation: %s", exc)
                 continue
 
     # Step 3: Process each segment with eyecite
@@ -643,7 +646,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
         for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
             entry = citation_db.get(resource_key_task)
             if not entry:
-                logger.warning("State verification completed for unknown resource_key %s", resource_key_task)
+                logger.error("State verification completed for unknown resource_key %s", resource_key_task)
                 continue
             entry["status"] = status
             entry["substatus"] = substatus

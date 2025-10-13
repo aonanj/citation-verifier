@@ -286,7 +286,7 @@ class StringCitationSplitter:
         parts = self._smart_split_on_semicolons(text, protected_ranges)
 
         if not parts:
-            logger.warning(
+            logger.error(
                 "No citation parts found in text: %s", text[:100]
             )
             return []

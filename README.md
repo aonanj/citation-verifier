@@ -26,15 +26,16 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **Case law**: CourtListener citation lookup with fuzzy matching (RapidFuzz) to flag name/year discrepancies.
   - **Federal law**: GovInfo link service with reporter-aware URL building for U.S.C., C.F.R., Stat., Pub. L., Fed. Reg., and related materials.
   - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
-  - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries an API on title and author, fallback to query on volume, journal, page. 
+  - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries an API on title and author, fallback to query on volume, journal, page, and year. 
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, and extracted text for the UI.
 
 Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
 ### Known Issues & Limitations
 - **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
-- **URLs and other citations**: Currently, supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals. URLs, secondary sources, and other citation types are not supported. Support for other citations is in development. 
+- **URLs and other citations**: Supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals. URLs, secondary sources, and other citation types are not supported. Support for other citations is in development. 
   - Work item. No estimated date of delivery. 
+- **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [support@phaethon.llc](mailto:support@phaethon.llc).  
 
 ## System Architecture
 ### Backend (Python)
@@ -59,28 +60,31 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 
 ## Project Layout
 ```
-├── main.py                   # FastAPI entrypoint
-├── addons/word-taskpane      # Word Add-In service
-│   └── ...                   # See Word Add-In README.md
-├── app/                      # Next.js application (App Router)
-│   ├── layout.tsx            # Global metadata and styling
-│   └── page.tsx              # Upload form + results dashboard
+├── main.py                           # FastAPI entrypoint
+├── addons/word-taskpane              # Word Add-In service
+│   └── ...                           # See Word Add-In README.md
+├── app/                              # Next.js application (App Router)
+│   ├── layout.tsx                    # Global metadata and styling
+│   └── page.tsx                      # Upload form + results dashboard
 ├── svc/
-│   ├── doc_processor.py      # Text extraction and normalization
-│   └── citations_compiler.py # Eyecite integration and verifier dispatch
-├── verifiers/                # Citation verification services
+│   ├── doc_processor.py              # Text extraction and normalization
+│   ├── citations_compiler.py         # Eyecite integration and verifier dispatch
+│   └── string_citation_handler.py    # Formats string citations
+├── verifiers/                        # Citation verification services
 │   ├── case_verifier.py
 │   ├── federal_law_verifier.py
+│   ├── journal_verifier.py
 │   └── state_law_verifier.py
-├── utils/                    # Logging, cleaning, span helpers
+├── utils/                            # Logging, cleaning, span helpers
 │   ├── cleaner.py
 │   ├── logger.py
 │   ├── resource_resolver.py
 │   └── span_finder.py
-├── resources/                # Sample documents and reference material
-├── requirements.in/.txt      # Python dependency pins
-├── package.json              # Frontend dependencies
-└── pyproject.toml            # Backend build metadata
+├── resources/                        # Sample documents and reference material
+├── Dockerfile                        # Container build
+├── requirements.txt                  # Python dependency pins
+├── package.json                      # Frontend dependencies
+└── pyproject.toml                    # Backend build metadata
 ```
 
 ## Dependencies
@@ -99,6 +103,7 @@ Major libraries are pinned in `requirements.txt`:
 - CourtListener citation lookup API (optional token support)
 - GovInfo link service (API key recommended for higher rate limits)
 - OpenAI Responses API (`gpt-5`) with built-in web-search tool access
+- OpenAlex API and Semantic Scholar API (API key recommended) 
 - Local Tesseract installation for OCR (`pytesseract` shell dependency)
 
 ## Setup
@@ -122,7 +127,7 @@ COURTLISTENER_API_TOKEN=...   # State and federal case verifications
 GOVINFO_API_KEY=...           # Federal law verifications
 OPENAI_API_KEY=...            # State law verifications
 LEGISCAN_API_KEY=...          # Active legislative data (e.g., active bills) verifications (not yet implemented)
-SEMANTIC_SCHOLAR_API_KEY=...  # Journal verifications (1 of 3 APIs)
+SEMANTIC_SCHOLAR_API_KEY=...  # Journal verifications
 LOG_TO_FILE=true              # optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
 BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.com  

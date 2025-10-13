@@ -293,7 +293,7 @@ def resolve_case_name(case_name: str | None, obj=None) -> str | None:
                 continue
 
             if is_in_re:
-                return candidate
+                return candidate.rstrip().removesuffix(",")
 
             if " v. " not in candidate:
                 continue
@@ -301,8 +301,8 @@ def resolve_case_name(case_name: str | None, obj=None) -> str | None:
             tokens = candidate.split()
             idx = 0
             while idx < len(tokens):
-                current = tokens[idx].lower().strip(",;:")
-                next_token = tokens[idx + 1].lower().strip(",;:") if idx + 1 < len(tokens) else None
+                current = tokens[idx].lower().strip(",").strip(";").strip(":")
+                next_token = tokens[idx + 1].lower().strip(",").strip(";").strip(":") if idx + 1 < len(tokens) else None
 
                 if next_token and (current, next_token) in noise_pairs:
                     idx += 2
@@ -329,11 +329,13 @@ def resolve_case_name(case_name: str | None, obj=None) -> str | None:
                 continue
             if not any(ch.isalpha() and ch.isupper() for ch in right):
                 continue
-            return cleaned_candidate
+            return cleaned_candidate.rstrip().removesuffix(",")
         return None
 
     for context in contexts:
         candidate = extract_candidate(context)
+        if candidate:
+            candidate = candidate.rstrip().removesuffix(",")
         if not candidate:
             continue
         if len(candidate) > len(fallback or ""):
