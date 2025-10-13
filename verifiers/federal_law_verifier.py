@@ -471,7 +471,7 @@ def verify_federal_law_citation(
 
     if response.status_code == 400:
         logger.error(f"GovInfo lookup failed for {url}: 400")
-        return "no_match", "no_federal_law", details
+        return "no_match", "Not found in GovInfo", details
     elif response.status_code == 401:
         logger.error(f"GovInfo lookup failed for {url}: 401")
         return "error", "lookup_auth_failed", details
@@ -493,12 +493,12 @@ def verify_federal_law_citation(
     if content_type.find("pdf") == -1 or not body.startswith(b"%PDF"):
         logger.error(f"GovInfo lookup failed for {url}: invalid content type")
         details["content_type"] = response.headers.get("content-type")
-        return "no match", None, details
+        return "no_match", "Not found in GovInfo", details
 
     if not body:
         logger.error(f"GovInfo lookup failed for {url}: empty content")
         details["content_length"] = 0
-        return "no match", None, details
+        return "no_match", "Not found in GovInfo", details
 
     return "verified", None, None
 

@@ -26,14 +26,15 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **Case law**: CourtListener citation lookup with fuzzy matching (RapidFuzz) to flag name/year discrepancies.
   - **Federal law**: GovInfo link service with reporter-aware URL building for U.S.C., C.F.R., Stat., Pub. L., Fed. Reg., and related materials.
   - **State law**: OpenAI `gpt-5` Responses API plus constrained web search (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
-  - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries an API on title and author, fallback to query on volume, journal, page, and year. 
+  - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries an API on title and author, fallback to query on volume, journal, page, and year.
+  - **Secondary Sources**: Library of Congress API query. Limited support.   
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, and extracted text for the UI.
 
 Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
 ### Known Issues & Limitations
 - **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
-- **URLs and other citations**: Supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals. URLs, secondary sources, and other citation types are not supported. Support for other citations is in development. 
+- **URLs and other citations**: Supported citations types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals; (6) secondary legal sources (limited). URLs and citation types other than those listed above are not supported. Support for other citations is in development. 
   - Work item. No estimated date of delivery. 
 - **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [support@phaethon.llc](mailto:support@phaethon.llc).  
 
@@ -49,6 +50,8 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 - **Verification modules** (`verifiers/`):
   - `case_verifier.py`: CourtListener integration with credential support, year extraction, and fuzzy name comparisons.
   - `federal_law_verifier.py`: Jurisdiction heuristics, GovInfo request builder, and reporter-specific parsing (e.g., CFR parts vs. sections).
+  - `secondary_sources_verifier.py`: Secondary legal sources such as legal encyclopedias (C.J.S., Am. Jur.), restatements, and treatises by querying
+the Library of Congress Search API; fuzzy matching on results
   - `state_law_verifier.py`: Constructs Bluebook-style prompts and interprets structured JSON replies with confidence scoring.
 - **Utilities** (`utils/`): Shared logging (env-aware file/console handlers), string cleaning, and span recovery for eyecite tokens.
 
@@ -69,11 +72,13 @@ Pipeline: `document upload → /api/verify (FastAPI) → extract_text → compil
 ├── svc/
 │   ├── doc_processor.py              # Text extraction and normalization
 │   ├── citations_compiler.py         # Eyecite integration and verifier dispatch
+│   ├── secondary_citation_handler.py # Extracts secondary legal sources (supplement eyecite)
 │   └── string_citation_handler.py    # Formats string citations
 ├── verifiers/                        # Citation verification services
 │   ├── case_verifier.py
 │   ├── federal_law_verifier.py
 │   ├── journal_verifier.py
+│   ├── secondary_sources_verifier.py
 │   └── state_law_verifier.py
 ├── utils/                            # Logging, cleaning, span helpers
 │   ├── cleaner.py

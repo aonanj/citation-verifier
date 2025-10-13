@@ -140,7 +140,7 @@ def _verify_author_title_with_openalex(
       - Then, post-filter results with `_result_matches_citation` to confirm.
     """
     if not isinstance(citation, FullJournalCitation):
-        return "no_match", "not a journal citation", None
+        return "no_match", "Not a journal citation", None
 
     # Choose search fields: prefer provided values; fall back to parsed citation.
     search_author = clean_str(resource_dict.get("author")) if resource_dict else None
@@ -165,7 +165,7 @@ def _verify_author_title_with_openalex(
 #        filter_parts.append(f'author.search:"{search_author}"')
 
     if not filter_parts:
-        return "no_match", "could not build filter from citation data", None
+        return "error", "could not build filter from citation data", None
 
     filter_str = ",".join(filter_parts)
 
@@ -192,7 +192,7 @@ def _verify_author_title_with_openalex(
     results = data.get("results", []) if isinstance(data, dict) else []
     if not results:
         logger.info(f"No OpenAlex results for filter='{filter_str}'")
-        return "no_match", None, {"not found": "title", "source": "openalex"}
+        return "no_match", "Not found in OpenAlex", {"not found": "title", "source": "openalex"}
 
     # The rest of the function remains the same, as post-filtering is still valuable
     citation_author = search_author
@@ -212,7 +212,7 @@ def _verify_author_title_with_openalex(
                 return "verified", None, {"source": "openalex", "data": f"{citation_author}, {citation_title}"}
 
     logger.info("No OpenAlex result matched author+title after filter search")
-    return "no_match", "no matching result in openalex search results", {"source": "openalex"}
+    return "no_match", "Not found in OpenAlex", {"source": "openalex"}
 
 def _verify_journal_citation_with_openalex(
   primary_full: FullCitation | None, resource_dict: Dict[str, Any] | None
@@ -229,7 +229,7 @@ def _verify_journal_citation_with_openalex(
         - data is the OpenAlex work data if verified, otherwise None
     """
     if not isinstance(primary_full, FullJournalCitation):
-        return "no_match", "not a journal citation", None
+        return "no_match", "Not a journal citation", None
     
     reporter_full_name = []
     data = {}
@@ -316,9 +316,9 @@ def _verify_journal_citation_with_openalex(
     results_works = data_works.get("results", []) if isinstance(data_works, dict) else []
     if not results_works:
         logger.info(f"No OpenAlex results for filter search on {source_id}")
-        return "no_match", None, {"not found": "title", "source": "openalex"}
+        return "no_match", "Not found in OpenAlex", {"not found": "title", "source": "openalex"}
     
-    return "no_match", "not found in OpenAlex", None
+    return "no_match", "Not found in OpenAlex", None
 
 def _verify_title_with_semantic_scholar(
     primary_full: FullCitation | None,
@@ -326,7 +326,7 @@ def _verify_title_with_semantic_scholar(
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Verify a citation via Semantic Scholar by exact/near title match with optional author check."""
     if not isinstance(primary_full, FullJournalCitation):
-        return "no_match", "not a journal citation", None
+        return "no_match", "Not a journal citation", None
 
     # ---- inputs ----
     search_author = clean_str(resource_dict.get("author")) if resource_dict else None
@@ -426,7 +426,7 @@ def _verify_title_with_semantic_scholar(
         if last_client_error:
             return "error", last_client_error, None
         logger.info("Semantic Scholar no match for title='%s'", search_title)
-        return "no_match", "not found in Semantic Scholar", None
+        return "no_match", "Not found in Semantic Scholar", None
 
     # ---- scoring ----
     for paper in papers:
@@ -472,7 +472,7 @@ def _verify_title_with_semantic_scholar(
                     f" + author '{search_author}'" if search_author else "")
         return "verified", None, {"source": "semantic_scholar", "data": paper}
 
-    return "no_match", "no author match for title match", {"author": search_author, "source": "semantic_scholar"}
+    return "no_match", "No author match for title match", {"author": search_author, "source": "semantic_scholar"}
 
 def _norm(s: Optional[str]) -> str:
     if not s:
@@ -690,4 +690,4 @@ def verify_journal_citation(
         logger.info(f"Journal citation verified by Semantic Scholar: {primary_full}")
         return validation
 
-    return "no_match", "not found in OpenAlex or Semantic Scholar", None
+    return "no_match", "Not found in OpenAlex or Semantic Scholar", None

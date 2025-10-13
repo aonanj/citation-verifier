@@ -1,12 +1,9 @@
 # Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
-
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
-
 from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 from eyecite import clean_text, get_citations, resolve_citations
 from eyecite.models import (
@@ -21,6 +18,11 @@ from eyecite.models import (
     SupraCitation,
 )
 
+from svc.secondary_citation_handler import (
+    SecondaryCitation,
+    SecondaryCitationDetector,
+    SecondaryCitationResolver,
+)
 from svc.string_citation_handler import (
     CitationSegment,
     StringCitationDetector,
@@ -430,6 +432,182 @@ def _make_short_lookup_key(cite: Any) -> str | None:
 
     return None
 
+def _process_secondary_citations(
+    text: str,
+    citation_db: Dict[str, Dict[str, Any]],
+) -> None:
+    """Detect and add secondary source citations to the citation database.
+    
+    This function:
+    1. Collects spans from eyecite-detected citations to avoid duplicates
+    2. Detects full secondary citations
+    3. Detects short form secondary citations (Id., supra, etc.)
+    4. Resolves short forms to their antecedents (considering ALL citations)
+    5. Adds all citations to the citation database with verification
+    
+    Args:
+        text: The document text.
+        citation_db: Citation database to update (modified in place).
+    """
+    # Collect all eyecite citation spans to avoid duplicate detection
+    eyecite_spans: Set[Tuple[int, int]] = set()
+    all_citation_spans: List[Tuple[int, int, str, Any]] = []
+    
+    for resource_key, entry in citation_db.items():
+        citation_type = entry.get("type", "unknown")
+        for occurrence in entry.get("occurrences", []):
+            span = occurrence.get("span")
+            if span and isinstance(span, (tuple, list)) and len(span) == 2:
+                span_tuple = (span[0], span[1])
+                eyecite_spans.add(span_tuple)
+                # Track all citations with their type for Id. resolution
+                # Use "case", "law", "journal" for non-secondary
+                all_citation_spans.append((span[0], span[1], citation_type, None))
+    
+    # Sort all citation spans by position
+    all_citation_spans.sort(key=lambda s: s[0])
+    
+    # Detect citations
+    detector = SecondaryCitationDetector()
+    full_citations, short_citations = detector.detect_secondary_citations(
+        text, eyecite_spans
+    )
+    
+    if not full_citations and not short_citations:
+        return
+    
+    logger.info(
+        "Detected %d full and %d short secondary source citations",
+        len(full_citations),
+        len(short_citations),
+    )
+    
+    # Add full secondary citations to all_citation_spans for Id. resolution
+    for cite in full_citations:
+        all_citation_spans.append((cite.span[0], cite.span[1], "secondary", cite))
+    
+    # Re-sort after adding secondaries
+    all_citation_spans.sort(key=lambda s: s[0])
+    
+    # Resolve short citations to their antecedents
+    resolver = SecondaryCitationResolver()
+    resolved_shorts = resolver.resolve_short_citations(
+        full_citations, short_citations, all_citation_spans
+    )
+    
+    # Process full citations first
+    for cite in full_citations:
+        _add_secondary_to_db(cite, citation_db, is_full=True)
+    
+    # Process resolved short citations
+    # Filter out Id. citations that refer to non-secondary sources
+    for cite in resolved_shorts:
+        if cite.source_type == "non_secondary":
+            logger.info(
+                "Skipping Id. at position %d - refers to non-secondary citation",
+                cite.span[0],
+            )
+            continue
+        _add_secondary_to_db(cite, citation_db, is_full=False)
+
+def _add_secondary_to_db(
+    cite: SecondaryCitation,
+    citation_db: Dict[str, Dict[str, Any]],
+    is_full: bool,
+) -> None:
+    """Add a secondary citation to the citation database.
+    
+    Args:
+        cite: The SecondaryCitation to add.
+        citation_db: Citation database to update (modified in place).
+        is_full: Whether this is a full citation (vs short form).
+    """
+    # Determine resource key
+    if cite.antecedent_key and not is_full:
+        # Short form - use antecedent's resource key
+        resource_key = cite.antecedent_key
+    else:
+        # Full citation - use its own resource key
+        resource_key = cite.to_resource_key()
+    
+    occurrence = {
+        "citation_category": cite.citation_category,
+        "matched_text": cite.matched_text,
+        "span": cite.span,
+        "index": None,
+        "pin_cite": cite.pin_cite,
+        "citation_obj": cite,
+        "string_group_id": None,
+        "position_in_string": None,
+    }
+    
+    # Check if entry already exists
+    if resource_key in citation_db:
+        # Add as additional occurrence
+        citation_db[resource_key]["occurrences"].append(occurrence)
+        logger.info(
+            "Added occurrence to existing secondary citation: %s",
+            cite.matched_text[:50],
+        )
+        return
+    
+    # Create new entry (only for full citations)
+    if not is_full:
+        # This is a short citation but no full was found
+        logger.error(
+            "Short citation %s at position %d has no antecedent in database",
+            cite.matched_text,
+            cite.span[0],
+        )
+        # Create a stub entry anyway
+        resource_key = cite.to_resource_key()
+    
+    # Verify the citation
+    normalized = cite.to_normalized_citation()
+    resource_dict = {
+        "kind": "secondary",
+        "source_type": cite.source_type,
+        "id_tuple": (
+            cite.volume or "",
+            cite.title or "",
+            cite.section or cite.page or "",
+            cite.year or "",
+        ),
+    }
+    
+    # Only verify full citations
+    if is_full:
+        from verifiers.secondary_sources_verifier import verify_secondary_citation
+        status, substatus, verification_details = verify_secondary_citation(
+            cite, normalized, resource_dict
+        )
+    else:
+        # Short forms inherit verification status from their antecedent
+        status = "warning"
+        substatus = "short_form_unresolved"
+        verification_details = {
+            "note": "Short form citation without resolved antecedent",
+        }
+    
+    # Create new entry
+    citation_db[resource_key] = {
+        "type": "secondary",
+        "resource": resource_dict,
+        "status": status,
+        "substatus": substatus,
+        "verification_details": verification_details,
+        "normalized_citation": normalized,
+        "full_citation_obj": cite,
+        "occurrences": [occurrence],
+    }
+    
+    logger.info(
+        "Added new secondary citation to database: %s (status: %s)",
+        cite.matched_text[:50],
+        status,
+    )
+
+
 
 # --- Main compilation function --------------------------------------------
 
@@ -665,6 +843,9 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             entry["status"] = status
             entry["substatus"] = substatus
             entry["verification_details"] = verification_details
+
+    # Step 7: Process secondary citations
+    _process_secondary_citations(text, citation_db)
 
     logger.info("Citation compilation complete: %d unique citations", len(citation_db))
 
