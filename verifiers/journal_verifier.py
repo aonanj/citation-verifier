@@ -325,6 +325,7 @@ def _verify_title_with_semantic_scholar(primary_full: FullCitation | None, resou
     api_key = os.environ.get(_SEMANTIC_SCHOLAR_API_KEY)
     if api_key:
         headers["x-api-key"] = api_key
+    headers["Retry-After"] = "1"  # Suggest to server to wait 1 second if rate limited
 
     fields = _DEFAULT_FIELDS_AUTH if api_key else _DEFAULT_FIELDS_BASIC
     params_search = {
@@ -509,6 +510,7 @@ def _verify_citation_with_semantic_scholar(
     api_key = os.environ.get(_SEMANTIC_SCHOLAR_API_KEY)
     if api_key:
         headers["x-api-key"] = api_key
+    headers["Retry-After"] = "1"  # Suggest to server to wait 1 second if rate limited
 
     logger.info(f"Semantic Scholar search for reporter_full_name={reporter_full_name},volume={str(volume)},page={str(page)}")
     journal = clean_str(reporter_full_name[0] if reporter_full_name else None)
