@@ -86,7 +86,7 @@ generate-hashes = false
 [tool.ruff]
 line-length = 180
 lint.select = ["E", "F", "W", "I"]  # enabled rules
-lint.ignore = ["E203"]
+lint.ignore = ["E203", "W293", "W291"]
 exclude = ["build", "dist", ".venv"]
 lint.extend-select = []
 lint.per-file-ignores = { "tests/*" = ["F401"] }

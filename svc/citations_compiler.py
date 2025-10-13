@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, Tuple
 
 from eyecite import clean_text, get_citations, resolve_citations
 from eyecite.models import (
@@ -35,6 +35,7 @@ from verifiers.federal_law_verifier import (
     classify_full_law_jurisdiction,
     verify_federal_law_citation,
 )
+from verifiers.journal_verifier import verify_journal_citation
 from verifiers.state_law_verifier import verify_state_law_citation
 
 logger = get_logger()
@@ -178,7 +179,7 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
 def _process_citation_segment(
     segment: CitationSegment,
     adjusted_spans: _AdjustedSpans,  # New parameter to collect adjusted spans
-) -> Tuple[Dict[str, Any], Dict[int, CitationSegment]]:
+) -> Tuple[Dict[Any, Any], Dict[int, CitationSegment]]:
     """Process a single citation segment with eyecite.
 
     Args:
@@ -277,7 +278,7 @@ def _merge_resolutions(
 def _resolve_string_local_shorts(
     resolutions: Dict[str, Any],
     segment_metadata: Dict[int, CitationSegment],
-) -> Dict[str, Any]:
+) -> Dict[Any, Any]:
     """Resolve short citations to antecedents within the same string group.
 
     This handles cases where a short citation appears in the same string
@@ -484,21 +485,20 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 continue
 
     # Step 3: Process each segment with eyecite
-    all_resolutions: Dict[str, Any] = {}
+    all_resolutions: Dict[Any, Any] = {}  # Changed from Dict[str, Any]
     all_segment_metadata: Dict[int, CitationSegment] = {}
-    adjusted_spans: _AdjustedSpans = {}  # Track all adjusted spans
+    adjusted_spans: _AdjustedSpans = {}
 
     for segment in all_segments:
         seg_resolutions, seg_metadata = _process_citation_segment(
-            segment, 
-            adjusted_spans  # Pass the tracking dict
+            segment,
+            adjusted_spans
         )
         _merge_resolutions(all_resolutions, seg_resolutions)
         all_segment_metadata.update(seg_metadata)
 
     # Step 4: Process non-string portions (fallback to original eyecite flow)
     if not all_segments:
-        # No string citations detected; use original flow
         logger.info("No string citations detected; using standard eyecite processing")
         cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
         citations = get_citations(cleaned_text)
@@ -514,6 +514,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 f"raw:{idx}": [citation]
                 for idx, citation in enumerate(citations)
             }
+
 
     # Step 5: Resolve short citations within string groups
     all_resolutions = _resolve_string_local_shorts(
@@ -564,7 +565,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 fallback_citation=fallback_value,
             )
 
-        elif entry_type == "law":
+        elif entry_type == "testing": ##"law":
             jurisdiction = None
             if isinstance(primary_full, FullLawCitation):
                 jurisdiction = classify_full_law_jurisdiction(primary_full)
@@ -591,6 +592,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                         )
                     )
                 )
+
             else:
                 logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
                 status = "error"
@@ -598,6 +600,13 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 verification_details = {
                     "jurisdiction": jurisdiction or "unknown",
                 }
+
+        elif entry_type == "journal":
+            status, substatus, verification_details = verify_journal_citation(
+                primary_full,
+                normalized_key,
+                resource_dict,
+            )
 
         citation_db[resource_key] = {
             "type": entry_type,

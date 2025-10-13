@@ -389,7 +389,7 @@ def _extract_pdf_page_text(page: fitz.Page) -> str:
 
     if not main_blocks:
         if footnotes:
-            logger.debug(
+            logger.info(
                 "Detected footnotes without main text on page %s", getattr(page, "number", 0) + 1
             )
         return page.get_text("text")
