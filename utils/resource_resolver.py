@@ -68,7 +68,6 @@ def get_journal_author_title(obj) -> Dict[str, str | None] | None:
 
     return {"author": author, "title": title}
 
-
 def _find_citation_start(text: str) -> int:
     """Find where the citation begins by looking for citation start markers.
     
@@ -187,8 +186,6 @@ def _clean_author_segment(segment: str) -> str:
         author_text = parts[0].strip()
     
     return author_text
-
-
 
 def resolve_case_name(case_name: str | None, obj=None) -> str | None:
     """Resolve case name from the citation object if possible.
@@ -391,3 +388,4 @@ def resolve_case_court_year(case_year: str | None, obj) -> dict[str | Any | None
             return fallback
 
     return {"year": raw_year or case_year, "court": raw_court}
+

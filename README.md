@@ -21,7 +21,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 ## Overview
 - **Document ingestion**: Accepts PDF (text or scanned), DOCX, and plain text files up to 10 MB. Compatible with both inline citations and footnote citations. 
 - **Text normalization**: Uses PyMuPDF, python-docx, and Tesseract OCR when needed to produce a clean text stream with inline footnote content.
-- **Citation resolution**: eyecite identifies full, short, id., supra, and reference citations, clusters short forms with their full cite, and records pin cites and spans.
+- **Citation resolution**: Eyecite identifies full, short, id., supra, and reference citations, clusters short forms with their full cite, and records pin cites and spans. Proprietary functionality accurately extracts footnote citations, string citations, and citations to secondary legal sources, clusters short forms, and maintains the sequential order of citations in document. 
 - **Verification**:
   - **Case law**: CourtListener citation lookup with fuzzy matching (RapidFuzz) to flag name/year discrepancies.
   - **Federal law**: GovInfo link service with reporter-aware URL building for U.S.C., C.F.R., Stat., Pub. L., Fed. Reg., and related materials.

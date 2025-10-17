@@ -110,7 +110,10 @@ def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
             continue
         if run.text:
             parts.append(run.text)
-    return "".join(parts).strip()
+    text = "".join(parts)
+    # Remove stray spaces inserted before closing punctuation such as periods.
+    text = re.sub(r"[ \t]+([.,;:?!])", r"\1", text)
+    return text.strip()
 
 def _normalize(text: str) -> str:
     """Normalize text by removing artifacts and standardizing formatting.

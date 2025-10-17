@@ -6,6 +6,7 @@ import { ReactNode } from 'react';
 export const metadata: Metadata = {
   title: 'Citation Verifier',
   description: 'Upload documents and compile legal citations in seconds.',
+  icons: '/favicon.ico',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
