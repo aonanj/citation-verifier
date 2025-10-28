@@ -117,7 +117,21 @@ export default function HomePage() {
               textDecoration: 'underline',
             }}
           >
-            VeriCite: Citation Verification Service
+            Veri
+          </h1>
+          <img src="/images/scales-of-justice.png" alt="Scales of Justice" style={{ display: 'block', margin: '0 auto 1rem', height: '120px' }} />
+          <h1
+            style={{
+              fontSize: '3.1rem',
+              fontWeight: 700,
+              color: '#e8eaed',
+              marginBottom: '0.75rem',
+              marginTop: 0,
+              textAlign: 'center',
+              textDecoration: 'underline',
+            }}
+          >
+            Cite
           </h1>
           <p
             style={{
@@ -313,6 +327,7 @@ export default function HomePage() {
                 alignSelf: 'center',
                 width: '35%',
                 background: isLoading || !selectedFile ? '#5f6368' : '#5FA8D2',
+                boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
                 color: '#ffffff',
                 fontWeight: 600,
                 fontSize: '1rem',
