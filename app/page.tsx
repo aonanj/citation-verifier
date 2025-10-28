@@ -160,6 +160,9 @@ export default function HomePage() {
             borderRadius: '16px',
             padding: '3rem 2.5rem',
             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+            alignItems: 'center',
+            alignContent: 'center',
+            justifyContent: 'center'
           }}
         >
           <h2
