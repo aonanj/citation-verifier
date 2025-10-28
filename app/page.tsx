@@ -114,24 +114,58 @@ export default function HomePage() {
               marginBottom: '0.75rem',
               marginTop: 0,
               textAlign: 'center',
-              textDecoration: 'underline',
             }}
           >
-            Veri
-          </h1>
-          <img src="/images/scales-of-justice.png" alt="Scales of Justice" style={{ display: 'block', margin: '0 auto 1rem', height: '120px' }} />
-          <h1
-            style={{
-              fontSize: '3.1rem',
-              fontWeight: 700,
-              color: '#e8eaed',
-              marginBottom: '0.75rem',
-              marginTop: 0,
-              textAlign: 'center',
-              textDecoration: 'underline',
-            }}
-          >
-            Cite
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '1rem',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span
+                style={{
+                  textDecoration: 'underline',
+                  textDecorationThickness: '3px',
+                  textUnderlineOffset: '8px',
+                }}
+              >
+                Veri
+              </span>
+              <img
+                src="/images/scales-of-justice.png"
+                alt="Scales of Justice"
+                style={{
+                  height: '72px',
+                  width: '72px',
+                  objectFit: 'contain',
+                }}
+              />
+              <span
+                style={{
+                  textDecoration: 'underline',
+                  textDecorationThickness: '3px',
+                  textUnderlineOffset: '8px',
+                }}
+              >
+                Cite
+              </span>
+            </span>
+            <span
+              style={{
+                display: 'block',
+                fontSize: '1.4rem',
+                fontWeight: 500,
+                marginTop: '0.6rem',
+                textDecoration: 'underline',
+                textDecorationThickness: '2px',
+                textUnderlineOffset: '6px',
+              }}
+            >
+              Citation Verification Service
+            </span>
           </h1>
           <p
             style={{
