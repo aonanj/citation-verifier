@@ -160,9 +160,10 @@ export default function HomePage() {
             borderRadius: '16px',
             padding: '3rem 2.5rem',
             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+            display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            alignContent: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
           }}
         >
           <h2
@@ -188,13 +189,21 @@ export default function HomePage() {
             The service supports documents in PDF, DOCX, and TXT formats. Documents cannot exceed 10 MB. Processing times can vary substantially depending on the number of citations and types of sources being verified.
           </p>
 
-          <form onSubmit={handleSubmit}>
+          <form
+            onSubmit={handleSubmit}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
             <div
               style={{
                 position: 'relative',
                 marginBottom: '1.5rem',
-                alignContent: 'center',
-                alignItems: 'center',
+                width: '100%',
+                display: 'flex',
                 justifyContent: 'center',
               }}
               onDragEnter={handleDrag}
@@ -212,7 +221,9 @@ export default function HomePage() {
                 
                 style={{
                   position: 'absolute',
-                  width: '35%',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
                   height: '100%',
                   opacity: 0,
                   cursor: isLoading ? 'not-allowed' : 'pointer',
@@ -228,6 +239,7 @@ export default function HomePage() {
                   border: `2px dashed ${dragActive ? '#5f9ea0' : '#80868b'}`,
                   borderRadius: '20px',
                   maxWidth: '400px',
+                  width: '100%',
                   background: '#333',
                   boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
@@ -279,6 +291,7 @@ export default function HomePage() {
               <div
                 role="alert"
                 style={{
+                  width: '100%',
                   backgroundColor: 'rgba(242, 139, 130, 0.15)',
                   border: '1px solid rgba(242, 139, 130, 0.4)',
                   color: '#f28b82',
@@ -297,6 +310,7 @@ export default function HomePage() {
               disabled={isLoading || !selectedFile}
               style={{
                 marginTop: '1rem',
+                alignSelf: 'center',
                 width: '35%',
                 background: isLoading || !selectedFile ? '#5f6368' : '#5FA8D2',
                 color: '#ffffff',
