@@ -117,7 +117,7 @@ export default function HomePage() {
               textDecoration: 'underline',
             }}
           >
-            VeriCite - Legal Citation Verifier
+            VeriCite: Citation Verification Service
           </h1>
           <p
             style={{
@@ -142,11 +142,14 @@ export default function HomePage() {
               VeriCite is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles, law review notes, and other documents citing primarily to US state and federal case law and statutes, academic and professional journals and periodicals, and secondary legal sources (limited).
             </p>
             <p style={{ marginTop: 1 }}>
-              VeriCite is specifically configured to work with both inline and footnote citations, including string citations, that follow the Bluebook format. Accordingly, reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>, are likewise verified and grouped with their corresponding parent citations.
+              VeriCite is specifically configured to work with both inline and footnote citations, including string citations, that follow the Bluebook format. Accordingly, reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>, are likewise verified and grouped with their corresponding parent citations. Other notes regarding this service:
             </p>
-            <p style={{ marginTop: 1 }}>
-               Notes: sources such as URLs and reference and text books are not able to be verified at this time. Further, <em>infra</em> is ignored. Do not use this web service on documents with block quotes.
-            </p>
+            <ul style={{ marginTop: 1 }}>
+              <li>Web sites, reference and text books, and other sources not listed above will not be verified.</li>
+              <li><em>infra</em> signals are not recognized as citations. The service ignores them.</li>
+              <li>Incorrect or unexpected citations will introduce offsets in the citation numbering when footnotes are used.</li>
+              <li>Block quotes will not be verified. Block quotes can also cause corrupted outputs due to the disruption in page formatting.</li>
+            </ul>
           </div>
         </div>
 
@@ -203,12 +206,21 @@ export default function HomePage() {
                 
                 style={{
                   position: 'absolute',
-                  width: '100%',
-                  maxWidth: '450px',
-                  background: '#333',
-                  maxHeight: '400px',
-                  boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
+                  width: '35%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  gap: '25px',
+                  zIndex: 2,
+                }}
+              />
+              <div
+                style={{
+                  border: `2px dashed ${dragActive ? '#5f9ea0' : '#80868b'}`,
                   borderRadius: '20px',
+                  maxWidth: '500px',
+                  background: '#333',
+                  boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -216,38 +228,20 @@ export default function HomePage() {
                   cursor: isLoading ? 'not-allowed' : 'pointer',
                   gap: '25px',
                   padding: '40px',
-                  zIndex: 2,
-                }}
-              />
-              <div
-                style={{
-                  border: `2px dashed ${dragActive ? '#5f9ea0' : '#80868b'}`,
-                  borderRadius: '12px',
-                  padding: '3rem 2rem',
-                  textAlign: 'center',
                   backgroundColor: dragActive ? 'rgba(95, 158, 160, 0.05)' : 'transparent',
                   transition: 'all 0.2s ease',
                 }}
               >
-                <svg
+                <img
+                  src="/images/folder-upload-icon.svg"
+                  alt="Upload Icon"
                   style={{
                     width: '80px',
                     height: '80px',
                     margin: '0 auto 1.5rem',
                     display: 'block',
                   }}
-                  fill="none"
-                  stroke="#9aa0a6"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  xmlns="/images/folder-upload-icon.svg"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                  />
-                </svg>
+                />
                 <p
                   style={{
                     fontSize: '1.125rem',
@@ -291,8 +285,8 @@ export default function HomePage() {
               type="submit"
               disabled={isLoading || !selectedFile}
               style={{
-                width: '100%',
-                background: isLoading || !selectedFile ? '#5f6368' : '#5f9ea0',
+                width: '35%',
+                background: isLoading || !selectedFile ? '#5f6368' : '#5FA8D2',
                 color: '#ffffff',
                 fontWeight: 600,
                 fontSize: '1rem',
@@ -336,7 +330,7 @@ export default function HomePage() {
               fontStyle: 'italic',
             }}
           >
-            <strong style={{ color: '#f28b82' }}>Note:</strong> Please do not upload any confidential or privileged information to this web service. The Word Add-In offers the same functionality, but all sensitive data remains on the local device. Contact <a href="mailto:support@phaethon.llc" className="text-[#EAF6FF] text-sm hover:underline hover:text-[#5FA8D2]">support@phaethon.llc</a> for access.
+            <strong style={{ color: '#F15F5C' }}>Note:</strong> Please do not upload any confidential or privileged information to this web service. A Word Add-In is also available with the same functionality, but all sensitive data remains on the local device. Contact <a href="mailto:support@phaethon.llc" style={{ color: '#9BC7FF' }}>support@phaethon.llc</a> for access.
           </p>
         </div>
       </div>
