@@ -211,6 +211,9 @@ export default function HomePage() {
                   opacity: 0,
                   cursor: isLoading ? 'not-allowed' : 'pointer',
                   gap: '25px',
+                  alignContent: 'center',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   zIndex: 2,
                 }}
               />
@@ -218,7 +221,7 @@ export default function HomePage() {
                 style={{
                   border: `2px dashed ${dragActive ? '#5f9ea0' : '#80868b'}`,
                   borderRadius: '20px',
-                  maxWidth: '500px',
+                  maxWidth: '400px',
                   background: '#333',
                   boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
@@ -238,8 +241,10 @@ export default function HomePage() {
                   style={{
                     width: '80px',
                     height: '80px',
-                    margin: '0 auto 1.5rem',
+                    margin: '0 auto 0.5rem',
                     display: 'block',
+                    filter: 'invert(100%)',
+                    color: '#ffffff'
                   }}
                 />
                 <p
@@ -254,8 +259,8 @@ export default function HomePage() {
                 </p>
                 <p
                   style={{
-                    fontSize: '0.875rem',
-                    color: '#9aa0a6',
+                    fontSize: '1rem',
+                    color: '#ffffff',
                     margin: 0,
                   }}
                 >
@@ -285,6 +290,7 @@ export default function HomePage() {
               type="submit"
               disabled={isLoading || !selectedFile}
               style={{
+                marginTop: '1rem',
                 width: '35%',
                 background: isLoading || !selectedFile ? '#5f6368' : '#5FA8D2',
                 color: '#ffffff',
