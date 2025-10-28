@@ -108,22 +108,25 @@ export default function HomePage() {
         >
           <h1
             style={{
-              fontSize: '3rem',
+              fontSize: '3.1rem',
               fontWeight: 700,
               color: '#e8eaed',
               marginBottom: '0.75rem',
               marginTop: 0,
+              textAlign: 'center',
+              textDecoration: 'underline',
             }}
           >
-            VeriCite
+            VeriCite - Legal Citation Verifier
           </h1>
           <p
             style={{
-              fontSize: '1.25rem',
+              fontSize: '1.2rem',
               color: '#bdc1c6',
               marginBottom: '1.5rem',
               marginTop: 0,
               fontStyle: 'italic',
+              textAlign: 'center',
             }}
           >
             Citation verification web service for briefs, memos, and other court filings and legal documents.
@@ -136,13 +139,13 @@ export default function HomePage() {
             }}
           >
             <p style={{ marginTop: 0 }}>
-              VeriCite is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles, law review notes, and other documents citing primarily to case law, statutes, secondary legal sources, and most academic journals and periodicals.
+              VeriCite is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles, law review notes, and other documents citing primarily to US state and federal case law and statutes, academic and professional journals and periodicals, and secondary legal sources (limited).
             </p>
-            <p>
-              VeriCite is specifically configured to work with both inline and footnote citations, including string citations, following the Bluebook format. VeriCite is configured to verify full citations to (1) federal and state laws, (2) federal and state cases, (3) academic and legal journals, and (4) secondary legal sources (limited).
+            <p style={{ marginTop: 1 }}>
+              VeriCite is specifically configured to work with both inline and footnote citations, including string citations, that follow the Bluebook format. Accordingly, reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>, are likewise verified and grouped with their corresponding parent citations.
             </p>
-            <p style={{ marginBottom: 0 }}>
-              Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>, will be verified and grouped with their corresponding parent citations (note: <em>infra</em> is not recognized). Other sources, such as URLs and reference and text books, are not able to be verified at this time. Citations can include signals and parentheticals; however, block quotes will cause errors.
+            <p style={{ marginTop: 1 }}>
+               Notes: sources such as URLs and reference and text books are not able to be verified at this time. Further, <em>infra</em> is ignored. Do not use this web service on documents with block quotes.
             </p>
           </div>
         </div>
@@ -158,7 +161,7 @@ export default function HomePage() {
         >
           <h2
             style={{
-              fontSize: '2rem',
+              fontSize: '1.5rem',
               fontWeight: 600,
               color: '#e8eaed',
               marginBottom: '1rem',
@@ -166,7 +169,7 @@ export default function HomePage() {
               textAlign: 'center',
             }}
           >
-            Document Upload
+            Upload Document
           </h2>
           <p
             style={{
@@ -176,7 +179,7 @@ export default function HomePage() {
               textAlign: 'center',
             }}
           >
-            Upload a technology transactions document (pdf, txt, or docx only; max 10MB)
+            The service supports documents in PDF, DOCX, and TXT formats. Documents cannot exceed 10 MB. Processing times can vary substantially depending on the number of citations and types of sources being verified.
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -197,12 +200,22 @@ export default function HomePage() {
                 accept=".pdf,.docx,.txt"
                 onChange={handleFileChange}
                 disabled={isLoading}
+                
                 style={{
                   position: 'absolute',
                   width: '100%',
-                  height: '100%',
-                  opacity: 0,
+                  maxWidth: '450px',
+                  background: '#333',
+                  maxHeight: '400px',
+                  boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
+                  borderRadius: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column',
                   cursor: isLoading ? 'not-allowed' : 'pointer',
+                  gap: '25px',
+                  padding: '40px',
                   zIndex: 2,
                 }}
               />
@@ -227,7 +240,7 @@ export default function HomePage() {
                   stroke="#9aa0a6"
                   strokeWidth="2"
                   viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
+                  xmlns="/images/folder-upload-icon.svg"
                 >
                   <path
                     strokeLinecap="round"
@@ -323,7 +336,7 @@ export default function HomePage() {
               fontStyle: 'italic',
             }}
           >
-            <strong style={{ color: '#f28b82' }}>IMPORTANT:</strong> Documents uploaded to this platform are publicly accessible. Do NOT upload any confidential information. This includes PDF documents with redactions. This service uses frontier-level AI models for plain text conversion, and redacted content can be inadvertently extracted. Plain text files are recommended for this reason.
+            <strong style={{ color: '#f28b82' }}>Note:</strong> Please do not upload any confidential or privileged information to this web service. The Word Add-In offers the same functionality, but all sensitive data remains on the local device. Contact <a href="mailto:support@phaethon.llc" className="text-[#EAF6FF] text-sm hover:underline hover:text-[#5FA8D2]">support@phaethon.llc</a> for access.
           </p>
         </div>
       </div>
