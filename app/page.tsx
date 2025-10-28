@@ -111,7 +111,7 @@ export default function HomePage() {
               fontSize: '3.1rem',
               fontWeight: 700,
               color: '#e8eaed',
-              marginBottom: '0.75rem',
+              marginBottom: '1.5rem',
               marginTop: 0,
               textAlign: 'center',
             }}
@@ -132,7 +132,7 @@ export default function HomePage() {
                   textUnderlineOffset: '8px',
                 }}
               >
-                Veri
+                V e r i
               </span>
               <img
                 src="/images/scales-of-justice.png"
@@ -150,21 +150,8 @@ export default function HomePage() {
                   textUnderlineOffset: '8px',
                 }}
               >
-                Cite
+                C i t e
               </span>
-            </span>
-            <span
-              style={{
-                display: 'block',
-                fontSize: '1.4rem',
-                fontWeight: 500,
-                marginTop: '0.6rem',
-                textDecoration: 'underline',
-                textDecorationThickness: '2px',
-                textUnderlineOffset: '6px',
-              }}
-            >
-              Citation Verification Service
             </span>
           </h1>
           <p
