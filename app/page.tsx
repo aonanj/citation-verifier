@@ -77,58 +77,58 @@ type HighlightRange = {
 
 const STATUS_THEMES: Record<string, StatusTheme> = {
   verified: {
-    badgeBackground: 'rgba(22, 163, 74, 0.12)',
-    badgeBorder: 'rgba(34, 197, 94, 0.35)',
+    badgeBackground: '#dcfce7',
+    badgeBorder: '#86efac',
     badgeText: '#166534',
-    pillBackground: 'rgba(34, 197, 94, 0.14)',
-    pillText: '#14532d',
+    pillBackground: '#dcfce7',
+    pillText: '#166534',
     highlight: 'rgba(34, 197, 94, 0.25)',
-    indicator: '#16a34a',
+    indicator: '#22c55e',
   },
   warning: {
-    badgeBackground: 'rgba(234, 179, 8, 0.15)',
-    badgeBorder: 'rgba(234, 179, 8, 0.35)',
+    badgeBackground: '#fef3c7',
+    badgeBorder: '#fcd34d',
     badgeText: '#92400e',
-    pillBackground: 'rgba(250, 204, 21, 0.18)',
-    pillText: '#854d0e',
+    pillBackground: '#fef3c7',
+    pillText: '#92400e',
     highlight: 'rgba(250, 204, 21, 0.28)',
     indicator: '#f59e0b',
   },
   'no match': {
-    badgeBackground: 'rgba(248, 113, 113, 0.14)',
-    badgeBorder: 'rgba(248, 113, 113, 0.35)',
+    badgeBackground: '#fee2e2',
+    badgeBorder: '#fca5a5',
     badgeText: '#991b1b',
-    pillBackground: 'rgba(248, 113, 113, 0.16)',
-    pillText: '#7f1d1d',
+    pillBackground: '#fee2e2',
+    pillText: '#991b1b',
     highlight: 'rgba(220, 38, 38, 0.25)',
-    indicator: '#dc2626',
+    indicator: '#ef4444',
   },
   no_match: {
-    badgeBackground: 'rgba(248, 113, 113, 0.14)',
-    badgeBorder: 'rgba(248, 113, 113, 0.35)',
+    badgeBackground: '#fee2e2',
+    badgeBorder: '#fca5a5',
     badgeText: '#991b1b',
-    pillBackground: 'rgba(248, 113, 113, 0.16)',
-    pillText: '#7f1d1d',
+    pillBackground: '#fee2e2',
+    pillText: '#991b1b',
     highlight: 'rgba(220, 38, 38, 0.25)',
-    indicator: '#dc2626',
+    indicator: '#ef4444',
   },
   error: {
-    badgeBackground: 'rgba(148, 163, 184, 0.18)',
-    badgeBorder: 'rgba(148, 163, 184, 0.38)',
-    badgeText: '#1f2937',
-    pillBackground: 'rgba(148, 163, 184, 0.18)',
-    pillText: '#1f2937',
+    badgeBackground: '#e2e8f0',
+    badgeBorder: '#cbd5e1',
+    badgeText: '#475569',
+    pillBackground: '#e2e8f0',
+    pillText: '#475569',
     highlight: 'rgba(148, 163, 184, 0.3)',
-    indicator: '#475569',
+    indicator: '#64748b',
   },
   unknown: {
-    badgeBackground: 'rgba(59, 130, 246, 0.15)',
-    badgeBorder: 'rgba(59, 130, 246, 0.32)',
-    badgeText: '#1d4ed8',
-    pillBackground: 'rgba(59, 130, 246, 0.16)',
-    pillText: '#1e3a8a',
+    badgeBackground: '#dbeafe',
+    badgeBorder: '#93c5fd',
+    badgeText: '#1e40af',
+    pillBackground: '#dbeafe',
+    pillText: '#1e40af',
     highlight: 'rgba(59, 130, 246, 0.25)',
-    indicator: '#2563eb',
+    indicator: '#3b82f6',
   },
 };
 
@@ -523,33 +523,34 @@ export default function HomePage() {
     <main
       style={{
         minHeight: '100vh',
-        background: 'linear-gradient(145deg, #ebf1ff 0%, #f7f9fc 50%, #eef2ff 100%)',
-        padding: '3rem 1.5rem',
+        background: 'linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%)',
+        padding: '2rem 1rem',
       }}
     >
       <div
         style={{
-          maxWidth: '1080px',
+          maxWidth: '1200px',
           margin: '0 auto',
           backgroundColor: '#ffffff',
-          borderRadius: '20px',
-          padding: '3rem',
-          boxShadow: '0 30px 80px rgba(30, 64, 175, 0.12)',
-          border: '1px solid rgba(15, 23, 42, 0.06)',
+          borderRadius: '16px',
+          padding: '2.5rem',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          border: '1px solid #e2e8f0',
         }}
       >
-        <header style={{ marginBottom: '2.5rem' }}>
+        <header style={{ marginBottom: '2rem' }}>
           <h1
             style={{
-              fontSize: '2.75rem',
+              fontSize: '2.25rem',
               fontWeight: 700,
               color: '#0f172a',
-              marginBottom: '0.75rem',
+              marginBottom: '0.5rem',
+              letterSpacing: '-0.025em',
             }}
           >
             Citation Verifier
           </h1>
-          <p style={{ color: '#475569', fontSize: '1.05rem', lineHeight: 1.7 }}>
+          <p style={{ color: '#64748b', fontSize: '1rem', lineHeight: 1.6, maxWidth: '42rem' }}>
             Upload a legal brief or memo in PDF, DOCX, or TXT format. The verifier extracts the text,
             clusters short forms with their full citation, and surfaces verification details below.
           </p>
@@ -559,11 +560,11 @@ export default function HomePage() {
           onSubmit={handleSubmit}
           style={{
             display: 'grid',
-            gap: '2rem',
-            padding: '2rem',
-            border: '1px solid rgba(59, 130, 246, 0.18)',
-            borderRadius: '18px',
-            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.06) 0%, rgba(59, 130, 246, 0.02) 100%)',
+            gap: '1.5rem',
+            padding: '1.5rem',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            background: '#f8fafc',
           }}
         >
           <div>
@@ -572,9 +573,9 @@ export default function HomePage() {
               style={{
                 display: 'block',
                 fontWeight: 600,
-                color: '#1e293b',
-                marginBottom: '0.65rem',
-                fontSize: '1.05rem',
+                color: '#0f172a',
+                marginBottom: '0.5rem',
+                fontSize: '0.875rem',
               }}
             >
               Document upload
@@ -585,63 +586,65 @@ export default function HomePage() {
               type="file"
               accept=".pdf,.docx,.txt"
               style={{
-                width: '75%',
-                maxWidth: '100%',
-                padding: '0.85rem 1.1rem',
-                border: '1px solid rgba(37, 99, 235, 0.35)',
-                borderRadius: '14px',
-                backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                fontSize: '0.95rem',
+                width: '100%',
+                padding: '0.625rem 0.875rem',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                fontSize: '0.875rem',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
               }}
               disabled={isLoading}
             />
-            <p style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '0.65rem' }}>
+            <p style={{ fontSize: '0.8125rem', color: '#64748b', marginTop: '0.5rem' }}>
               Maximum size 10MB. Supported formats: PDF, DOCX, TXT.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="submit"
               disabled={isLoading}
               style={{
-                background: isLoading
-                  ? 'linear-gradient(135deg, #94a3b8 0%, #cbd5f5 100%)'
-                  : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                background: isLoading ? '#94a3b8' : '#3b82f6',
                 color: '#ffffff',
                 fontWeight: 600,
-                padding: '0.95rem 2.2rem',
-                borderRadius: '999px',
+                padding: '0.625rem 1.5rem',
+                borderRadius: '8px',
                 border: 'none',
                 cursor: isLoading ? 'not-allowed' : 'pointer',
-                boxShadow: isLoading
-                  ? 'none'
-                  : '0 16px 40px rgba(37, 99, 235, 0.22)',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                fontSize: '0.875rem',
+                transition: 'background-color 0.2s ease',
+              }}
+              onMouseOver={(e) => {
+                if (!isLoading) e.currentTarget.style.background = '#2563eb';
+              }}
+              onMouseOut={(e) => {
+                if (!isLoading) e.currentTarget.style.background = '#3b82f6';
               }}
             >
               {isLoading ? 'Processing...' : 'Verify citations'}
             </button>
             {citationCount > 0 && (
-              <span style={{ color: '#0f172a', fontWeight: 600, fontSize: '1.05rem' }}>
-                {citationCount} grouped citation{citationCount === 1 ? '' : 's'}
+              <span style={{ color: '#475569', fontWeight: 500, fontSize: '0.875rem' }}>
+                {citationCount} grouped citation{citationCount === 1 ? '' : 's'} found
               </span>
             )}
           </div>
         </form>
 
         {(error || successMessage) && (
-          <div style={{ marginTop: '1.75rem', display: 'grid', gap: '1rem' }}>
+          <div style={{ marginTop: '1.5rem', display: 'grid', gap: '0.75rem' }}>
             {error && (
               <div
                 role="alert"
                 style={{
-                  backgroundColor: 'rgba(254, 202, 202, 0.4)',
-                  border: '1px solid rgba(248, 113, 113, 0.6)',
-                  color: '#7f1d1d',
-                  borderRadius: '14px',
-                  padding: '1rem 1.25rem',
-                  fontWeight: 500,
+                  backgroundColor: '#fee2e2',
+                  border: '1px solid #fca5a5',
+                  color: '#991b1b',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.875rem',
                 }}
               >
                 {error}
@@ -651,12 +654,12 @@ export default function HomePage() {
               <div
                 role="status"
                 style={{
-                  backgroundColor: 'rgba(187, 247, 208, 0.75)',
-                  border: '1px solid rgba(34, 197, 94, 0.5)',
-                  color: '#14532d',
-                  borderRadius: '14px',
-                  padding: '1rem 1.25rem',
-                  fontWeight: 500,
+                  backgroundColor: '#d1fae5',
+                  border: '1px solid #6ee7b7',
+                  color: '#065f46',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.875rem',
                 }}
               >
                 {successMessage}
@@ -666,24 +669,24 @@ export default function HomePage() {
         )}
 
         {citationCount > 0 && (
-          <section style={{ marginTop: '3rem' }}>
-            <header style={{ marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.85rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.6rem' }}>
+          <section style={{ marginTop: '2.5rem' }}>
+            <header style={{ marginBottom: '1.25rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.5rem', letterSpacing: '-0.025em' }}>
                 Compiled citations
               </h2>
               {citationSummary.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                   {citationSummary.map(({ label, value }) => (
                     <span
                       key={label}
                       style={{
-                        backgroundColor: 'rgba(15, 23, 42, 0.05)',
-                        color: '#1e293b',
-                        borderRadius: '999px',
-                        padding: '0.35rem 0.85rem',
-                        fontSize: '0.85rem',
+                        backgroundColor: '#f1f5f9',
+                        color: '#475569',
+                        borderRadius: '6px',
+                        padding: '0.25rem 0.625rem',
+                        fontSize: '0.8125rem',
                         fontWeight: 500,
-                        border: '1px solid rgba(148, 163, 184, 0.35)',
+                        border: '1px solid #e2e8f0',
                       }}
                     >
                       {label}: {value}
@@ -693,7 +696,7 @@ export default function HomePage() {
               )}
             </header>
 
-            <div style={{ display: 'grid', gap: '1.75rem' }}>
+            <div style={{ display: 'grid', gap: '1.25rem' }}>
               {citations.map((citation, index) => {
                 const theme = getStatusTheme(citation.status);
                 const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
@@ -724,11 +727,11 @@ export default function HomePage() {
                   <article
                     key={citation.resource_key}
                     style={{
-                      border: '1px solid rgba(15, 23, 42, 0.08)',
-                      borderRadius: '18px',
-                      padding: '1.8rem',
-                      background: 'linear-gradient(145deg, rgba(248, 250, 252, 0.95) 0%, #ffffff 70%)',
-                      boxShadow: '0 24px 60px rgba(15, 23, 42, 0.08)',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '1.25rem',
+                      background: '#ffffff',
+                      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
                     }}
                   >
                     <div
@@ -737,33 +740,34 @@ export default function HomePage() {
                         justifyContent: 'space-between',
                         alignItems: 'flex-start',
                         gap: '1rem',
-                        marginBottom: '1.4rem',
+                        marginBottom: '1rem',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: '1.05rem', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flex: 1 }}>
                         <span
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: '2.5rem',
-                            height: '2.5rem',
-                            borderRadius: '12px',
-                            fontWeight: 700,
+                            width: '2rem',
+                            height: '2rem',
+                            borderRadius: '6px',
+                            fontWeight: 600,
                             color: theme.indicator,
-                            backgroundColor: 'rgba(37, 99, 235, 0.06)',
-                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                            fontSize: '1rem',
+                            backgroundColor: '#f8fafc',
+                            border: '1px solid #e2e8f0',
+                            fontSize: '0.875rem',
+                            flexShrink: 0,
                           }}
                         >
                           #{index + 1}
                         </span>
-                        <div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <h3
                             style={{
-                              fontSize: '1.25rem',
-                              fontWeight: 700,
-                              color: '#111827',
+                              fontSize: '1rem',
+                              fontWeight: 600,
+                              color: '#0f172a',
                               marginBottom: '0.5rem',
                               lineHeight: 1.5,
                             }}
@@ -774,16 +778,16 @@ export default function HomePage() {
                             style={{
                               display: 'flex',
                               flexWrap: 'wrap',
-                              gap: '0.5rem',
-                              color: '#475569',
-                              fontSize: '0.9rem',
+                              gap: '0.375rem',
+                              fontSize: '0.8125rem',
                             }}
                           >
                             <span
                               style={{
-                                backgroundColor: 'rgba(148, 163, 184, 0.15)',
-                                borderRadius: '999px',
-                                padding: '0.25rem 0.7rem',
+                                backgroundColor: '#f1f5f9',
+                                color: '#64748b',
+                                borderRadius: '6px',
+                                padding: '0.125rem 0.5rem',
                               }}
                             >
                               Type: {formatIdentifier(citation.type) ?? 'Unknown'}
@@ -791,10 +795,10 @@ export default function HomePage() {
                             {occurrences.length > 0 && (
                               <span
                                 style={{
-                                  backgroundColor: 'rgba(59, 130, 246, 0.14)',
-                                  color: '#1d4ed8',
-                                  borderRadius: '999px',
-                                  padding: '0.25rem 0.7rem',
+                                  backgroundColor: '#dbeafe',
+                                  color: '#1e40af',
+                                  borderRadius: '6px',
+                                  padding: '0.125rem 0.5rem',
                                 }}
                               >
                                 {occurrences.length} occurrence{occurrences.length === 1 ? '' : 's'}
@@ -808,17 +812,18 @@ export default function HomePage() {
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'flex-end',
-                          gap: '0.5rem',
+                          gap: '0.375rem',
+                          flexShrink: 0,
                         }}
                       >
                         <span
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.4rem',
-                            borderRadius: '999px',
-                            padding: '0.4rem 0.9rem',
-                            fontSize: '0.9rem',
+                            gap: '0.375rem',
+                            borderRadius: '6px',
+                            padding: '0.375rem 0.75rem',
+                            fontSize: '0.8125rem',
                             fontWeight: 600,
                             color: theme.badgeText,
                             backgroundColor: theme.badgeBackground,
@@ -829,8 +834,8 @@ export default function HomePage() {
                             aria-hidden
                             style={{
                               display: 'inline-block',
-                              width: '0.65rem',
-                              height: '0.65rem',
+                              width: '0.5rem',
+                              height: '0.5rem',
                               borderRadius: '50%',
                               backgroundColor: theme.indicator,
                             }}
@@ -842,9 +847,9 @@ export default function HomePage() {
                             style={{
                               backgroundColor: theme.pillBackground,
                               color: theme.pillText,
-                              borderRadius: '8px',
-                              padding: '0.35rem 0.65rem',
-                              fontSize: '0.82rem',
+                              borderRadius: '6px',
+                              padding: '0.25rem 0.5rem',
+                              fontSize: '0.75rem',
                               fontWeight: 500,
                             }}
                           >
@@ -857,32 +862,32 @@ export default function HomePage() {
                     {showUnverifiedDetailBlock && (
                       <div
                         style={{
-                          border: '1px solid rgba(234, 179, 8, 0.3)',
-                          backgroundColor: 'rgba(250, 204, 21, 0.18)',
-                          borderRadius: '12px',
-                          padding: '1rem 1.1rem',
-                          marginBottom: '1.25rem',
+                          border: '1px solid #fcd34d',
+                          backgroundColor: '#fef3c7',
+                          borderRadius: '8px',
+                          padding: '0.875rem',
+                          marginBottom: '1rem',
                         }}
                       >
-                        <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#92400e' }}>
+                        <p style={{ fontWeight: 600, marginBottom: '0.625rem', color: '#92400e', fontSize: '0.8125rem' }}>
                           Verification details
                         </p>
-                        <div style={{ display: 'grid', gap: '0.6rem', fontSize: '0.92rem', color: '#78350f' }}>
+                        <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.8125rem', color: '#78350f' }}>
                           {formattedDetailSource && (
                             <div>
-                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Source</strong>
+                              <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Source</strong>
                               <div>{formattedDetailSource}</div>
                             </div>
                           )}
                           {unverifiedFieldsDisplay && (
                             <div>
-                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Unverified fields</strong>
+                              <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Unverified fields</strong>
                               <div>{unverifiedFieldsDisplay}</div>
                             </div>
                           )}
                           {returnedEntries.length > 0 && (
                             <div>
-                              <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Returned values</strong>
+                              <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Returned values</strong>
                               <div style={{ display: 'grid', gap: '0.25rem' }}>
                                 {returnedEntries.map(([field, value]) => (
                                   <div key={`${citation.resource_key}-returned-${field}`}>
@@ -901,17 +906,17 @@ export default function HomePage() {
                       citation.verification_details.mismatched_fields.length > 0 && (
                         <div
                           style={{
-                            border: '1px solid rgba(234, 179, 8, 0.3)',
-                            backgroundColor: 'rgba(250, 204, 21, 0.18)',
-                            borderRadius: '12px',
-                            padding: '1rem 1.1rem',
-                            marginBottom: '1.25rem',
+                            border: '1px solid #fcd34d',
+                            backgroundColor: '#fef3c7',
+                            borderRadius: '8px',
+                            padding: '0.875rem',
+                            marginBottom: '1rem',
                           }}
                         >
-                          <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#92400e' }}>
+                          <p style={{ fontWeight: 600, marginBottom: '0.625rem', color: '#92400e', fontSize: '0.8125rem' }}>
                             Verification discrepancy details
                           </p>
-                          <div style={{ display: 'grid', gap: '0.85rem' }}>
+                          <div style={{ display: 'grid', gap: '0.625rem' }}>
                             {citation.verification_details.mismatched_fields.map((field) => {
                               const label = formatIdentifier(field) ?? field;
                               const key = field as 'case_name' | 'year';
@@ -919,8 +924,8 @@ export default function HomePage() {
                               const courtValue = citation.verification_details?.court_listener?.[key];
 
                               return (
-                                <div key={`${citation.resource_key}-${field}`} style={{ fontSize: '0.92rem', color: '#78350f' }}>
-                                  <strong style={{ display: 'block', marginBottom: '0.35rem' }}>{label}</strong>
+                                <div key={`${citation.resource_key}-${field}`} style={{ fontSize: '0.8125rem', color: '#78350f' }}>
+                                  <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>{label}</strong>
                                   <div>Document: {extractedValue ?? '—'}</div>
                                   <div>CourtListener: {courtValue ?? '—'}</div>
                                 </div>
@@ -931,25 +936,25 @@ export default function HomePage() {
                       )}
 
                     {occurrences.length > 0 ? (
-                      <div style={{ display: 'grid', gap: '0.9rem' }}>
+                      <div style={{ display: 'grid', gap: '0.625rem' }}>
                         {occurrences.map((occurrence, occurrenceIndex) => (
                           <div
                             key={`${citation.resource_key}-${occurrenceIndex}`}
                             style={{
-                              backgroundColor: 'rgba(248, 250, 252, 0.9)',
-                              borderRadius: '12px',
-                              border: '1px solid rgba(148, 163, 184, 0.25)',
-                              padding: '1rem 1.15rem',
+                              backgroundColor: '#f8fafc',
+                              borderRadius: '8px',
+                              border: '1px solid #e2e8f0',
+                              padding: '0.75rem',
                               display: 'grid',
-                              gap: '0.6rem',
+                              gap: '0.5rem',
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <p style={{ margin: 0, color: '#1f2937', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              <p style={{ margin: 0, color: '#475569', fontWeight: 600, fontSize: '0.8125rem' }}>
                                 Occurrence {occurrenceIndex + 1}{' '}
                                 {occurrence.citation_category && `· ${formatIdentifier(occurrence.citation_category)}`}
                               </p>
-                              <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.8rem', color: '#475569' }}>
+                              <div style={{ display: 'flex', gap: '0.625rem', fontSize: '0.75rem', color: '#64748b' }}>
                                 {occurrence.pin_cite && <span>Pin cite: {occurrence.pin_cite}</span>}
                                 {occurrence.span && (
                                   <span>
@@ -959,7 +964,7 @@ export default function HomePage() {
                               </div>
                             </div>
                             {occurrence.matched_text && (
-                              <p style={{ margin: 0, color: '#111827', lineHeight: 1.6 }}>
+                              <p style={{ margin: 0, color: '#0f172a', lineHeight: 1.6, fontSize: '0.875rem' }}>
                                 {occurrence.matched_text}
                               </p>
                             )}
@@ -967,7 +972,7 @@ export default function HomePage() {
                         ))}
                       </div>
                     ) : (
-                      <p style={{ color: '#475569' }}>No occurrences found for this citation.</p>
+                      <p style={{ color: '#64748b', fontSize: '0.875rem' }}>No occurrences found for this citation.</p>
                     )}
                   </article>
                 );
@@ -977,34 +982,34 @@ export default function HomePage() {
         )}
 
         {extractedText && (
-          <section style={{ marginTop: '3rem' }}>
+          <section style={{ marginTop: '2.5rem' }}>
             <div
               style={{
-                borderRadius: '18px',
-                background: '#0f172a',
+                borderRadius: '12px',
+                background: '#1e293b',
                 color: '#e2e8f0',
-                padding: '1.5rem',
-                boxShadow: '0 20px 60px rgba(15, 23, 42, 0.45)',
+                padding: '1.25rem',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>Extracted document text</h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(226, 232, 240, 0.7)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, letterSpacing: '-0.025em' }}>Extracted document text</h3>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: '#cbd5e1' }}>
                   Highlight colors align with citation status and numbering above.
                 </p>
               </div>
               <div
                 style={{
-                  marginTop: '1.25rem',
-                  backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                  borderRadius: '12px',
-                  padding: '1rem 1.25rem',
+                  marginTop: '1rem',
+                  backgroundColor: '#0f172a',
+                  borderRadius: '8px',
+                  padding: '0.875rem',
                   maxHeight: '420px',
                   overflowY: 'auto',
-                  border: '1px solid rgba(226, 232, 240, 0.2)',
+                  border: '1px solid #334155',
                   fontFamily:
                     "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                  fontSize: '0.9rem',
+                  fontSize: '0.8125rem',
                   lineHeight: 1.6,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
@@ -1020,9 +1025,8 @@ export default function HomePage() {
                       key={segment.key}
                       style={{
                         backgroundColor: segment.highlight.color,
-                        borderRadius: '6px',
-                        padding: '0 0.2rem',
-                        margin: '0 -0.05rem',
+                        borderRadius: '4px',
+                        padding: '0.125rem 0.25rem',
                         position: 'relative',
                         display: 'inline-block',
                       }}
@@ -1030,9 +1034,9 @@ export default function HomePage() {
                       <span
                         style={{
                           position: 'absolute',
-                          top: '-1rem',
+                          top: '-0.875rem',
                           right: '0',
-                          fontSize: '0.65rem',
+                          fontSize: '0.625rem',
                           fontWeight: 700,
                           color: segment.highlight.indicatorColor,
                         }}
