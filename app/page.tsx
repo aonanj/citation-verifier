@@ -193,6 +193,9 @@ export default function HomePage() {
               style={{
                 position: 'relative',
                 marginBottom: '1.5rem',
+                alignContent: 'center',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
