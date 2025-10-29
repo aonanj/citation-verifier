@@ -137,18 +137,19 @@
 .summaryRow {
   display: grid;
   gap: clamp(1.5rem, 3vw, 2.25rem);
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .summaryLead {
-  padding: clamp(1.75rem, 4vw, 2.5rem);
+  padding: clamp(1.3rem, 3.4vw, 1.9rem);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   background: linear-gradient(135deg, rgba(12, 34, 60, 0.92), rgba(8, 20, 37, 0.9));
   box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: 0.9rem;
+  width: 100%;
 }
 
 .summaryLeadHeader {
@@ -183,8 +184,10 @@
 
 .summaryPills {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
 }
 
 .summaryPill {
@@ -197,6 +200,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  flex: 0 0 auto;
 }
 
 .metricCard {

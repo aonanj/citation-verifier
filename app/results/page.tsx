@@ -600,7 +600,7 @@ export default function ResultsPage() {
       writeText(`Generated: ${new Date().toLocaleString()}`);
 
       if (citationCount > 0) {
-        writeText(`Total citations analysed: ${citationCount}`);
+        writeText(`Total citations analyzed: ${citationCount}`);
       }
 
       if (verificationSummary.length > 0 || citationSummary.length > 0) {
@@ -821,11 +821,6 @@ export default function ResultsPage() {
               <span className={styles.summaryLeadTitle}>Total citations analysed</span>
               <span className={styles.summaryLeadCount}>{citationCount}</span>
             </div>
-            <p className={styles.summaryLeadSubcopy}>
-              {citationCount > 0
-                ? 'Every citation below is grouped by verification outcome so you can focus on what needs attention first.'
-                : 'Upload a document from the home page to run a verification. Results will appear here once complete.'}
-            </p>
             {verificationSummary.length > 0 && (
               <div className={styles.summaryPills}>
                 {verificationSummary.map(({ label, value }) => (
@@ -837,37 +832,6 @@ export default function ResultsPage() {
             )}
           </div>
 
-          <article className={styles.metricCard}>
-            <h2 className={styles.metricTitle}>Verification status</h2>
-            {verificationSummary.length > 0 ? (
-              <ul className={styles.metricList}>
-                {verificationSummary.map(({ label, value }) => (
-                  <li key={label} className={styles.metricItem}>
-                    <span>{label}</span>
-                    <span className={styles.metricValue}>{value}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className={styles.emptyState}>No verification outcomes recorded.</p>
-            )}
-          </article>
-
-          <article className={styles.metricCard}>
-            <h2 className={styles.metricTitle}>Citation types</h2>
-            {citationSummary.length > 0 ? (
-              <ul className={styles.metricList}>
-                {citationSummary.map(({ label, value }) => (
-                  <li key={label} className={styles.metricItem}>
-                    <span>{label}</span>
-                    <span className={styles.metricValue}>{value}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className={styles.emptyState}>No citation data captured yet.</p>
-            )}
-          </article>
         </section>
 
         {hasSummaries && (
@@ -875,7 +839,7 @@ export default function ResultsPage() {
             {citationSummary.length > 0 && (
               <div className={styles.tableCard}>
                 <div className={styles.splitHeader}>
-                  <h2>Citation breakdown</h2>
+                  <h2>Citation Breakdown</h2>
                   <span>Grouped by citation type</span>
                 </div>
                 <table className={styles.dataTable}>
@@ -900,7 +864,7 @@ export default function ResultsPage() {
             {verificationSummary.length > 0 && (
               <div className={styles.tableCard}>
                 <div className={styles.splitHeader}>
-                  <h2>Verification status</h2>
+                  <h2>Verification Status</h2>
                   <span>Outcome distribution</span>
                 </div>
                 <table className={styles.dataTable}>
