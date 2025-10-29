@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
+import { jsPDF } from 'jspdf';
+import styles from './page.module.css';
 
 type CitationOccurrence = {
   citation_category: string | null;
@@ -74,58 +77,58 @@ type HighlightRange = {
 
 const STATUS_THEMES: Record<string, StatusTheme> = {
   verified: {
-    badgeBackground: '#1e5f3f',
-    badgeBorder: '#2e8b57',
-    badgeText: '#81c995',
-    pillBackground: '#1e5f3f',
-    pillText: '#81c995',
-    highlight: 'rgba(34, 197, 94, 0.25)',
-    indicator: '#22c55e',
+    badgeBackground: 'rgba(34, 197, 94, 0.18)',
+    badgeBorder: 'rgba(34, 197, 94, 0.45)',
+    badgeText: '#5ef2c3',
+    pillBackground: 'rgba(34, 197, 94, 0.22)',
+    pillText: '#5ef2c3',
+    highlight: 'rgba(34, 197, 94, 0.22)',
+    indicator: '#34d399',
   },
   warning: {
-    badgeBackground: '#805b20',
-    badgeBorder: '#b8860b',
-    badgeText: '#ffd966',
-    pillBackground: '#805b20',
-    pillText: '#ffd966',
+    badgeBackground: 'rgba(250, 204, 21, 0.18)',
+    badgeBorder: 'rgba(250, 204, 21, 0.45)',
+    badgeText: '#fde68a',
+    pillBackground: 'rgba(250, 204, 21, 0.2)',
+    pillText: '#fde68a',
     highlight: 'rgba(250, 204, 21, 0.28)',
     indicator: '#f59e0b',
   },
   'no match': {
-    badgeBackground: '#7a2e2e',
-    badgeBorder: '#a94442',
-    badgeText: '#f28b82',
-    pillBackground: '#7a2e2e',
-    pillText: '#f28b82',
-    highlight: 'rgba(220, 38, 38, 0.25)',
-    indicator: '#ef4444',
+    badgeBackground: 'rgba(248, 113, 113, 0.18)',
+    badgeBorder: 'rgba(248, 113, 113, 0.45)',
+    badgeText: '#fda4af',
+    pillBackground: 'rgba(248, 113, 113, 0.2)',
+    pillText: '#fda4af',
+    highlight: 'rgba(248, 113, 113, 0.28)',
+    indicator: '#f87171',
   },
   no_match: {
-    badgeBackground: '#7a2e2e',
-    badgeBorder: '#a94442',
-    badgeText: '#f28b82',
-    pillBackground: '#7a2e2e',
-    pillText: '#f28b82',
-    highlight: 'rgba(220, 38, 38, 0.25)',
-    indicator: '#ef4444',
+    badgeBackground: 'rgba(248, 113, 113, 0.18)',
+    badgeBorder: 'rgba(248, 113, 113, 0.45)',
+    badgeText: '#fda4af',
+    pillBackground: 'rgba(248, 113, 113, 0.2)',
+    pillText: '#fda4af',
+    highlight: 'rgba(248, 113, 113, 0.28)',
+    indicator: '#f87171',
   },
   error: {
-    badgeBackground: '#4a4a4a',
-    badgeBorder: '#6a6a6a',
-    badgeText: '#bdc1c6',
-    pillBackground: '#4a4a4a',
-    pillText: '#bdc1c6',
-    highlight: 'rgba(148, 163, 184, 0.3)',
-    indicator: '#9aa0a6',
+    badgeBackground: 'rgba(148, 163, 184, 0.18)',
+    badgeBorder: 'rgba(148, 163, 184, 0.4)',
+    badgeText: '#d1d8e8',
+    pillBackground: 'rgba(148, 163, 184, 0.22)',
+    pillText: '#d1d8e8',
+    highlight: 'rgba(148, 163, 184, 0.28)',
+    indicator: '#94a3b8',
   },
   unknown: {
-    badgeBackground: '#2b4f7d',
-    badgeBorder: '#4a90e2',
-    badgeText: '#8ab4f8',
-    pillBackground: '#2b4f7d',
-    pillText: '#8ab4f8',
-    highlight: 'rgba(59, 130, 246, 0.25)',
-    indicator: '#3b82f6',
+    badgeBackground: 'rgba(74, 144, 226, 0.18)',
+    badgeBorder: 'rgba(74, 144, 226, 0.45)',
+    badgeText: '#9ecaff',
+    pillBackground: 'rgba(74, 144, 226, 0.22)',
+    pillText: '#9ecaff',
+    highlight: 'rgba(76, 196, 255, 0.26)',
+    indicator: '#60a5fa',
   },
 };
 
@@ -444,6 +447,7 @@ export default function ResultsPage() {
   const [citations, setCitations] = useState<CitationEntry[]>([]);
   const [extractedText, setExtractedText] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const resultsData = sessionStorage.getItem('verificationResults');
@@ -510,312 +514,410 @@ export default function ResultsPage() {
   };
 
   const handleExportPDF = () => {
-    // TODO: Implement PDF export
-    alert('PDF export functionality will be implemented soon.');
+    if (isExporting) {
+      return;
+    }
+    if (citations.length === 0 && !extractedText) {
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'letter',
+      });
+      const margin = 56;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const contentWidth = pageWidth - margin * 2;
+      let cursorY = margin;
+
+      const addPage = () => {
+        doc.addPage();
+        cursorY = margin;
+      };
+
+      const ensureSpace = (lineHeight = 0) => {
+        if (cursorY + lineHeight > pageHeight - margin) {
+          addPage();
+        }
+      };
+
+      const writeText = (
+        text: string | string[],
+        {
+          fontSize = 11,
+          fontStyle = 'normal' as 'normal' | 'bold' | 'italic' | 'bolditalic',
+          lineHeight = 16,
+          indent = 0,
+        } = {},
+      ) => {
+        if (!text) {
+          return;
+        }
+
+        doc.setFont('helvetica', fontStyle);
+        doc.setFontSize(fontSize);
+        const availableWidth = Math.max(contentWidth - indent, 1);
+        const lines = Array.isArray(text) ? text : doc.splitTextToSize(text, availableWidth);
+        lines.forEach((line) => {
+          ensureSpace(lineHeight);
+          doc.text(line, margin + indent, cursorY);
+          cursorY += lineHeight;
+        });
+      };
+
+      const addSectionHeading = (heading: string) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        ensureSpace(22);
+        doc.text(heading, margin, cursorY);
+        cursorY += 22;
+      };
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text('VeriCite Verification Report', margin, cursorY);
+      cursorY += 26;
+
+      writeText(`Generated: ${new Date().toLocaleString()}`);
+
+      if (citationCount > 0) {
+        writeText(`Total citations analysed: ${citationCount}`);
+      }
+
+      if (verificationSummary.length > 0 || citationSummary.length > 0) {
+        addSectionHeading('Summary');
+      }
+
+      if (verificationSummary.length > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        ensureSpace(18);
+        doc.text('Verification outcomes', margin, cursorY);
+        cursorY += 18;
+        verificationSummary.forEach(({ label, value }) => {
+          writeText(`• ${label}: ${value}`, { indent: 12, lineHeight: 16 });
+        });
+      }
+
+      if (citationSummary.length > 0) {
+        ensureSpace(22);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('Citation types', margin, cursorY);
+        cursorY += 18;
+        citationSummary.forEach(({ label, value }) => {
+          writeText(`• ${label}: ${value}`, { indent: 12, lineHeight: 16 });
+        });
+      }
+
+      if (citations.length > 0) {
+        addSectionHeading('Citation details');
+      }
+
+      citations.forEach((citation, index) => {
+        const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
+        const formattedSubstatus = formatIdentifier(citation.substatus);
+        const displayCitation = getDisplayCitation(citation);
+        const occurrences = sortOccurrences(citation.occurrences);
+        const isNoMatch =
+          normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+        const unverifiedFields = citation.verification_details?.unverified_fields;
+        const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
+          ? unverifiedFields.join(', ')
+          : unverifiedFields ?? null;
+        const returnedValues = citation.verification_details?.returned_values;
+        const returnedEntries =
+          returnedValues && typeof returnedValues === 'object'
+            ? Object.entries(returnedValues as Record<string, unknown>)
+            : [];
+        const detailSourceRaw = citation.verification_details?.source ?? null;
+        const formattedDetailSource = detailSourceRaw
+          ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
+          : null;
+        const extractedCaseName = citation.verification_details?.extracted?.case_name ?? '—';
+        const extractedYear = citation.verification_details?.extracted?.year ?? '—';
+        const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
+        const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
+
+        ensureSpace(24);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        const citationHeading = doc.splitTextToSize(`${index + 1}. ${displayCitation}`, contentWidth);
+        citationHeading.forEach((line) => {
+          ensureSpace(18);
+          doc.text(line, margin, cursorY);
+          cursorY += 18;
+        });
+
+        writeText(
+          `Status: ${formattedStatus}${formattedSubstatus ? ` — ${formattedSubstatus}` : ''}`,
+          {
+            lineHeight: 14,
+          },
+        );
+        writeText(`Occurrences: ${occurrences.length}`, { lineHeight: 14 });
+
+        if (isNoMatch) {
+          writeText(`Reference key: ${citation.resource_key}`, { lineHeight: 14 });
+        }
+
+        if (formattedDetailSource || unverifiedFieldsDisplay || returnedEntries.length > 0) {
+          writeText('Verification notes:', { fontStyle: 'bold', lineHeight: 16 });
+          if (formattedDetailSource) {
+            writeText(`Source: ${formattedDetailSource}`, { indent: 12, lineHeight: 14 });
+          }
+          if (unverifiedFieldsDisplay) {
+            writeText(`Unverified fields: ${unverifiedFieldsDisplay}`, { indent: 12, lineHeight: 14 });
+          }
+          if (formattedDetailSource || unverifiedFieldsDisplay) {
+            writeText(`Document case: ${extractedCaseName} (${extractedYear})`, {
+              indent: 12,
+              lineHeight: 14,
+            });
+            writeText(`Reference case: ${referenceCaseName} (${referenceYear})`, {
+              indent: 12,
+              lineHeight: 14,
+            });
+          }
+          if (returnedEntries.length > 0) {
+            returnedEntries.forEach(([key, value]) => {
+              writeText(`${formatIdentifier(key) ?? key}: ${formatDetailValue(value)}`, {
+                indent: 12,
+                lineHeight: 14,
+              });
+            });
+          }
+        }
+
+        if (occurrences.length > 0) {
+          writeText('Occurrences:', { fontStyle: 'bold', lineHeight: 16 });
+          occurrences.forEach((occurrence, occurrenceIndex) => {
+            const occurrenceLabelParts = [`${occurrenceIndex + 1}`];
+            if (occurrence.citation_category) {
+              occurrenceLabelParts.push(formatIdentifier(occurrence.citation_category) ?? '');
+            }
+            writeText(`• Occurrence ${occurrenceLabelParts.filter(Boolean).join(' ')}`, {
+              indent: 12,
+              lineHeight: 14,
+            });
+            if (occurrence.matched_text) {
+              writeText(occurrence.matched_text, { indent: 24, lineHeight: 14, fontSize: 10 });
+            }
+            if (occurrence.span && occurrence.span.length === 2) {
+              writeText(`Span: ${occurrence.span[0]} – ${occurrence.span[1]}`, {
+                indent: 24,
+                lineHeight: 14,
+                fontSize: 10,
+              });
+            }
+          });
+        }
+
+        cursorY += 6;
+      });
+
+      if (extractedText) {
+        addSectionHeading('Extracted document text');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const lines = doc.splitTextToSize(extractedText, contentWidth);
+        lines.forEach((line) => {
+          ensureSpace(14);
+          doc.text(line, margin, cursorY);
+          cursorY += 14;
+        });
+      }
+
+      const timestampSlug = new Date().toISOString().replace(/[:.]/g, '-');
+      doc.save(`vericite-report-${timestampSlug}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate PDF export', error);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
+  const hasSummaries = citationSummary.length > 0 || verificationSummary.length > 0;
+  const listTabClassName = [
+    styles.tabButton,
+    activeTab === 'list' ? styles.tabButtonActive : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const documentTabClassName = [
+    styles.tabButton,
+    activeTab === 'document' ? styles.tabButtonActive : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a2540 0%, #0d3a5f 100%)' }}>
-      {/* Navigation Bar */}
-      <nav
-        style={{
-          backgroundColor: '#3d4043',
-          padding: '1rem 3rem',
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#e8eaed' }}>
-          VeriCite
-        </h1>
-        <div style={{ display: 'flex', gap: '1rem' }}>
+    <div className={styles.page}>
+      <nav className={styles.nav}>
+        <div className={styles.navBrand}>
+          <span className={styles.navIcon}>
+            <img src="/images/scales-of-justice.png" alt="" />
+          </span>
+          <div className={styles.navText}>
+            <span className={styles.navEyebrow}>Verification results</span>
+            <h1 className={styles.navTitle}>Document insights</h1>
+          </div>
+        </div>
+        <div className={styles.navActions}>
           <button
-            onClick={handleExportPDF}
-            style={{
-              background: '#5f6368',
-              color: '#ffffff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#4d5256';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#5f6368';
-            }}
+            type="button"
+            className={`${styles.button} ${styles.buttonGhost}`}
+            onClick={handleNewVerification}
           >
-            Export PDF
+            New verification
           </button>
           <button
-            onClick={handleNewVerification}
-            style={{
-              background: '#5f9ea0',
-              color: '#ffffff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#4d8588';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#5f9ea0';
-            }}
+            type="button"
+            className={`${styles.button} ${styles.buttonPrimary}`}
+            onClick={handleExportPDF}
+            disabled={isExporting || (citations.length === 0 && !extractedText)}
           >
-            New Verification
+            {isExporting ? 'Preparing PDF...' : 'Export PDF'}
           </button>
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main style={{ padding: '2rem 3rem' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          {/* Stats Section */}
-          <div style={{ marginBottom: '2rem' }}>
-            {/* Table of Citations Stats */}
-            <div
-              style={{
-                backgroundColor: '#bdc1c6',
-                padding: '1.5rem 2rem',
-                borderRadius: '12px',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 1rem 0',
-                  fontSize: '1.125rem',
-                  fontWeight: 600,
-                  color: '#3d4043',
-                  textAlign: 'center',
-                }}
-              >
-                Table of Citations Stats
-              </h2>
-              {citationSummary.length > 0 ? (
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    backgroundColor: '#ffffff',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                  }}
-                >
+      <main className={styles.main}>
+        <section className={styles.summaryRow}>
+          <div className={styles.summaryLead}>
+            <div className={styles.summaryLeadHeader}>
+              <span className={styles.summaryLeadTitle}>Total citations analysed</span>
+              <span className={styles.summaryLeadCount}>{citationCount}</span>
+            </div>
+            <p className={styles.summaryLeadSubcopy}>
+              {citationCount > 0
+                ? 'Every citation below is grouped by verification outcome so you can focus on what needs attention first.'
+                : 'Upload a document from the home page to run a verification. Results will appear here once complete.'}
+            </p>
+            {verificationSummary.length > 0 && (
+              <div className={styles.summaryPills}>
+                {verificationSummary.map(({ label, value }) => (
+                  <span key={label} className={styles.summaryPill}>
+                    {label}: {value}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <article className={styles.metricCard}>
+            <h2 className={styles.metricTitle}>Verification status</h2>
+            {verificationSummary.length > 0 ? (
+              <ul className={styles.metricList}>
+                {verificationSummary.map(({ label, value }) => (
+                  <li key={label} className={styles.metricItem}>
+                    <span>{label}</span>
+                    <span className={styles.metricValue}>{value}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.emptyState}>No verification outcomes recorded.</p>
+            )}
+          </article>
+
+          <article className={styles.metricCard}>
+            <h2 className={styles.metricTitle}>Citation types</h2>
+            {citationSummary.length > 0 ? (
+              <ul className={styles.metricList}>
+                {citationSummary.map(({ label, value }) => (
+                  <li key={label} className={styles.metricItem}>
+                    <span>{label}</span>
+                    <span className={styles.metricValue}>{value}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.emptyState}>No citation data captured yet.</p>
+            )}
+          </article>
+        </section>
+
+        {hasSummaries && (
+          <div className={styles.tablesRow}>
+            {citationSummary.length > 0 && (
+              <div className={styles.tableCard}>
+                <div className={styles.splitHeader}>
+                  <h2>Citation breakdown</h2>
+                  <span>Grouped by citation type</span>
+                </div>
+                <table className={styles.dataTable}>
                   <thead>
-                    <tr style={{ backgroundColor: '#5f6368' }}>
-                      <th
-                        style={{
-                          padding: '0.75rem 1rem',
-                          textAlign: 'left',
-                          color: '#ffffff',
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        Citation Type
-                      </th>
-                      <th
-                        style={{
-                          padding: '0.75rem 1rem',
-                          textAlign: 'right',
-                          color: '#ffffff',
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        Count
-                      </th>
+                    <tr>
+                      <th>Type</th>
+                      <th>Count</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {citationSummary.map(({ label, value }, index) => (
-                      <tr
-                        key={label}
-                        style={{
-                          backgroundColor: index % 2 === 0 ? '#f5f5f5' : '#ffffff',
-                        }}
-                      >
-                        <td
-                          style={{
-                            padding: '0.75rem 1rem',
-                            color: '#202124',
-                            fontSize: '0.875rem',
-                          }}
-                        >
-                          {label}
-                        </td>
-                        <td
-                          style={{
-                            padding: '0.75rem 1rem',
-                            textAlign: 'right',
-                            color: '#202124',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {value}
-                        </td>
+                    {citationSummary.map(({ label, value }) => (
+                      <tr key={label}>
+                        <td>{label}</td>
+                        <td>{value}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              ) : (
-                <p style={{ margin: 0, textAlign: 'center', color: '#5f6368' }}>No citations found</p>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Table of Verifications Stats */}
-            <div
-              style={{
-                backgroundColor: '#bdc1c6',
-                padding: '1.5rem 2rem',
-                borderRadius: '12px',
-              }}
-            >
-              <h2
-                style={{
-                  margin: '0 0 1rem 0',
-                  fontSize: '1.125rem',
-                  fontWeight: 600,
-                  color: '#3d4043',
-                  textAlign: 'center',
-                }}
-              >
-                Table of Verifications Stats
-              </h2>
-              {verificationSummary.length > 0 ? (
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    backgroundColor: '#ffffff',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                  }}
-                >
+            {verificationSummary.length > 0 && (
+              <div className={styles.tableCard}>
+                <div className={styles.splitHeader}>
+                  <h2>Verification status</h2>
+                  <span>Outcome distribution</span>
+                </div>
+                <table className={styles.dataTable}>
                   <thead>
-                    <tr style={{ backgroundColor: '#5f6368' }}>
-                      <th
-                        style={{
-                          padding: '0.75rem 1rem',
-                          textAlign: 'left',
-                          color: '#ffffff',
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        Verification Status
-                      </th>
-                      <th
-                        style={{
-                          padding: '0.75rem 1rem',
-                          textAlign: 'right',
-                          color: '#ffffff',
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                        }}
-                      >
-                        Count
-                      </th>
+                    <tr>
+                      <th>Status</th>
+                      <th>Count</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {verificationSummary.map(({ label, value }, index) => (
-                      <tr
-                        key={label}
-                        style={{
-                          backgroundColor: index % 2 === 0 ? '#f5f5f5' : '#ffffff',
-                        }}
-                      >
-                        <td
-                          style={{
-                            padding: '0.75rem 1rem',
-                            color: '#202124',
-                            fontSize: '0.875rem',
-                          }}
-                        >
-                          {label}
-                        </td>
-                        <td
-                          style={{
-                            padding: '0.75rem 1rem',
-                            textAlign: 'right',
-                            color: '#202124',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {value}
-                        </td>
+                    {verificationSummary.map(({ label, value }) => (
+                      <tr key={label}>
+                        <td>{label}</td>
+                        <td>{value}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              ) : (
-                <p style={{ margin: 0, textAlign: 'center', color: '#5f6368' }}>No verification data found</p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
+        )}
 
-          {/* Tabs */}
-          <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-            <button
-              onClick={() => setActiveTab('list')}
-              style={{
-                backgroundColor: activeTab === 'list' ? '#bdc1c6' : '#5f6368',
-                color: activeTab === 'list' ? '#3d4043' : '#e8eaed',
-                padding: '0.75rem 2rem',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                fontWeight: 500,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              Verified Cites List
-            </button>
-            <button
-              onClick={() => setActiveTab('document')}
-              style={{
-                backgroundColor: activeTab === 'document' ? '#bdc1c6' : '#5f6368',
-                color: activeTab === 'document' ? '#3d4043' : '#e8eaed',
-                padding: '0.75rem 2rem',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                fontWeight: 500,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              Highlighted Document
-            </button>
-          </div>
-
-          {/* Verified Cites List Tab */}
-          {activeTab === 'list' && citationCount > 0 && (
-            <section style={{ marginBottom: '2.5rem' }}>
-
-              <div
-                style={{
-                  backgroundColor: '#bdc1c6',
-                  borderRadius: '16px',
-                  padding: '2rem',
-                }}
+        {citationCount > 0 ? (
+          <>
+            <div className={styles.tabRow}>
+              <button
+                type="button"
+                className={listTabClassName}
+                onClick={() => setActiveTab('list')}
               >
+                Verified cites list
+              </button>
+              <button
+                type="button"
+                className={documentTabClassName}
+                onClick={() => setActiveTab('document')}
+              >
+                Highlighted document
+              </button>
+            </div>
+
+            {activeTab === 'list' && (
+              <section className={styles.citationsSection}>
                 {citations.map((citation, index) => {
                   const theme = getStatusTheme(citation.status);
                   const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
@@ -841,240 +943,156 @@ export default function ResultsPage() {
                   const hasVerificationDetailContent =
                     Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
                   const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
-
-                  const isNoMatch = normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+                  const cardStyle = {
+                    '--status-badge-bg': theme.badgeBackground,
+                    '--status-border': theme.badgeBorder,
+                    '--status-text': theme.badgeText,
+                    '--status-pill-bg': theme.pillBackground,
+                    '--status-pill-text': theme.pillText,
+                    '--status-indicator': theme.indicator,
+                  } as CSSProperties;
+                  const isNoMatch =
+                    normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+                  const extractedCaseName = citation.verification_details?.extracted?.case_name ?? '—';
+                  const extractedYear = citation.verification_details?.extracted?.year ?? '—';
+                  const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
+                  const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
 
                   return (
-                    <article
-                      key={citation.resource_key}
-                      style={{
-                        backgroundColor: '#ffffff',
-                        borderRadius: '8px',
-                        padding: '1.5rem',
-                        marginBottom: '1rem',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          gap: '1rem',
-                        }}
-                      >
-                        {/* Left side - Citation number and content */}
-                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flex: 1 }}>
-                          <span
-                            style={{
-                              fontSize: '0.9rem',
-                              fontWeight: 600,
-                              color: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
-                              flexShrink: 0,
-                            }}
-                          >
-                            #{index + 1}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <h3
-                              style={{
-                                fontSize: '1.1rem',
-                                fontWeight: 700,
-                                color: '#202124',
-                                marginBottom: '0.5rem',
-                                marginTop: 0,
-                              }}
-                            >
-                              {displayCitation}
-                            </h3>
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '0.75rem',
-                                fontSize: '0.875rem',
-                                color: '#5f6368',
-                                marginBottom: '0.5rem',
-                              }}
-                            >
-                              <span>Type: {formatIdentifier(citation.type) ?? 'Unknown'}</span>
-                              {occurrences.length > 0 && (
-                                <span style={{ color: '#1a73e8' }}>
-                                  {occurrences.length} occurrence{occurrences.length === 1 ? '' : 's'}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                    <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
+                      <header className={styles.citationHeader}>
+                        <div>
+                          <span className={styles.citationIndex}>#{index + 1}</span>
+                          <h3 className={styles.citationTitle}>{displayCitation}</h3>
                         </div>
+                        <span className={styles.statusBadge}>{formattedStatus}</span>
+                      </header>
 
-                        {/* Right side - Status */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'flex-end',
-                            gap: '0.5rem',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.375rem',
-                              fontSize: '0.875rem',
-                              fontWeight: 600,
-                              color: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
-                            }}
-                          >
-                            <span
-                              aria-hidden
-                              style={{
-                                display: 'inline-block',
-                                width: '0.5rem',
-                                height: '0.5rem',
-                                borderRadius: '50%',
-                                backgroundColor: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
-                              }}
-                            />
-                            {formattedStatus}
+                      <div className={styles.citationMeta}>
+                        <span>
+                          <strong>Type:</strong> {formatIdentifier(citation.type) ?? 'Unknown'}
+                        </span>
+                        <span>
+                          <strong>Occurrences:</strong> {occurrences.length}
+                        </span>
+                        {formattedSubstatus && (
+                          <span className={styles.statusPill}>{formattedSubstatus}</span>
+                        )}
+                        {isNoMatch && (
+                          <span>
+                            <strong>Resource:</strong> {citation.resource_key}
                           </span>
-                          {formattedSubstatus && (
-                            <span
-                              style={{
-                                fontSize: '0.8125rem',
-                                fontWeight: 500,
-                                color: '#5f6368',
-                              }}
-                            >
-                              {formattedSubstatus}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
 
                       {showUnverifiedDetailBlock && (
-                        <div
-                          style={{
-                            backgroundColor: '#f5f5f5',
-                            borderRadius: '6px',
-                            padding: '1rem',
-                            marginTop: '1rem',
-                          }}
-                        >
-                          <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#202124', fontSize: '0.875rem', marginTop: 0 }}>
-                            Verification discrepancy details
-                          </p>
-                          <div style={{ display: 'grid', gap: '0.625rem', fontSize: '0.8125rem', color: '#5f6368' }}>
-                            {unverifiedFieldsDisplay && (
-                              <div>
-                                <strong style={{ display: 'block', marginBottom: '0.25rem', color: '#202124' }}>Case Name</strong>
-                                <div>Document: {citation.verification_details?.extracted?.case_name ?? '—'}</div>
-                                <div>CourtListener: {citation.verification_details?.court_listener?.case_name ?? '—'}</div>
-                              </div>
-                            )}
+                        <div className={styles.verificationDetails}>
+                          <div>
+                            <strong>Issue</strong>
+                            <div>{formattedDetailSource ?? 'Unspecified source'}</div>
                           </div>
+                          {unverifiedFieldsDisplay && (
+                            <div>
+                              <strong>Unverified fields</strong>
+                              <div>{unverifiedFieldsDisplay}</div>
+                              <div>Document: {extractedCaseName}</div>
+                              <div>Reference: {referenceCaseName}</div>
+                              <div>
+                                Year (doc / ref): {extractedYear} / {referenceYear}
+                              </div>
+                            </div>
+                          )}
+                          {returnedEntries.length > 0 && (
+                            <div>
+                              <strong>Lookup values</strong>
+                              <div>
+                                {returnedEntries.map(([key, value]) => (
+                                  <div key={key}>
+                                    {formatIdentifier(key) ?? key}: {formatDetailValue(value)}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {occurrences.length > 0 && (
-                        <div style={{ marginTop: '1rem' }}>
+                        <ul className={styles.occurrenceList}>
                           {occurrences.map((occurrence, occurrenceIndex) => (
-                            <div
+                            <li
                               key={`${citation.resource_key}-${occurrenceIndex}`}
-                              style={{
-                                marginBottom: '0.5rem',
-                              }}
+                              className={styles.occurrenceItem}
                             >
-                              <p style={{ margin: 0, color: '#5f6368', fontSize: '0.8125rem' }}>
-                                <strong>Occurrence {occurrenceIndex + 1}</strong>{' '}
-                                {occurrence.citation_category && `· ${formatIdentifier(occurrence.citation_category)}`}
-                              </p>
+                              <div>
+                                <strong>Occurrence {occurrenceIndex + 1}</strong>
+                                {occurrence.citation_category &&
+                                  ` - ${formatIdentifier(occurrence.citation_category)}`}
+                              </div>
                               {occurrence.matched_text && (
-                                <p style={{ margin: '0.25rem 0 0 0', color: '#202124', fontSize: '0.875rem' }}>
-                                  {occurrence.matched_text}
-                                </p>
+                                <p className={styles.occurrenceText}>{occurrence.matched_text}</p>
                               )}
                               {occurrence.span && (
-                                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#9aa0a6' }}>
+                                <div className={styles.occurrenceSpan}>
                                   Span: {occurrence.span[0]} – {occurrence.span[1]}
-                                </p>
+                                </div>
                               )}
-                            </div>
+                            </li>
                           ))}
-                        </div>
+                        </ul>
                       )}
                     </article>
                   );
                 })}
-              </div>
-            </section>
-          )}
+              </section>
+            )}
 
-          {/* Highlighted Document Tab */}
-          {activeTab === 'document' && extractedText && (
-            <section style={{ marginBottom: '2rem' }}>
-              <div
-                style={{
-                  backgroundColor: '#bdc1c6',
-                  borderRadius: '16px',
-                  padding: '2rem',
-                }}
-              >
-                <div
-                  style={{
-                    backgroundColor: '#ffffff',
-                    borderRadius: '8px',
-                    padding: '1.5rem',
-                    maxHeight: '600px',
-                    overflowY: 'auto',
-                    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                    fontSize: '0.95rem',
-                    lineHeight: 1.8,
-                    color: '#202124',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
+            {activeTab === 'document' && extractedText && (
+              <section className={styles.documentSection}>
+                <h2>Highlighted document</h2>
+                <div className={styles.documentScroll}>
                   {highlightedExtractSegments.map((segment) => {
                     if (!segment.highlight) {
                       return <span key={segment.key}>{segment.content}</span>;
                     }
 
-                    const isNoMatch = segment.highlight.indicatorColor === '#ef4444';
-                    const isWarning = segment.highlight.indicatorColor === '#f59e0b';
-                    const isVerified = segment.highlight.indicatorColor === '#22c55e';
-
-                    const highlightColor = isNoMatch
-                      ? 'rgba(242, 139, 130, 0.3)'
-                      : isWarning
-                      ? 'rgba(255, 217, 102, 0.4)'
-                      : 'rgba(129, 201, 149, 0.3)';
-
-                    const textColor = isNoMatch
-                      ? '#d32f2f'
-                      : isWarning
-                      ? '#e65100'
-                      : '#2e7d32';
+                    const highlightStyle = {
+                      '--highlight-bg': segment.highlight.color,
+                      '--highlight-indicator': segment.highlight.indicatorColor,
+                      '--highlight-text': segment.highlight.indicatorColor,
+                    } as CSSProperties;
 
                     return (
                       <span
                         key={segment.key}
-                        style={{
-                          backgroundColor: highlightColor,
-                          color: textColor,
-                          fontStyle: 'italic',
-                          fontWeight: 500,
-                        }}
+                        className={styles.highlightSpan}
+                        data-indicator={segment.highlight.indicator}
+                        style={highlightStyle}
                       >
                         {segment.content}
                       </span>
                     );
                   })}
                 </div>
-              </div>
-            </section>
-          )}
-        </div>
+              </section>
+            )}
+          </>
+        ) : (
+          <section className={styles.citationsSection}>
+            <p className={styles.emptyState}>
+              No verification results are stored in this session. Start a new verification to populate this view.
+            </p>
+            <div className={styles.navActions}>
+              <button
+                type="button"
+                className={`${styles.button} ${styles.buttonPrimary}`}
+                onClick={handleNewVerification}
+              >
+                Start a new verification
+              </button>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );
