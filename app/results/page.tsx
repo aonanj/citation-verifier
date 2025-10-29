@@ -132,6 +132,8 @@ const STATUS_THEMES: Record<string, StatusTheme> = {
   },
 };
 
+const UNVERIFIED_STATUSES = new Set(['warning', 'no match', 'no_match', 'error']);
+
 const normalizeKey = (value: string | null | undefined): string => {
   if (!value) {
     return 'unknown';
@@ -448,6 +450,7 @@ export default function ResultsPage() {
   const [extractedText, setExtractedText] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
+  const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
 
   useEffect(() => {
     const resultsData = sessionStorage.getItem('verificationResults');
@@ -462,6 +465,17 @@ export default function ResultsPage() {
   }, [router]);
 
   const citationCount = citations.length;
+  const annotatedCitations = useMemo(
+    () => citations.map((citation, index) => ({ citation, originalIndex: index })),
+    [citations],
+  );
+  const displayedCitations = useMemo(() => {
+    if (!showUnverifiedOnly) {
+      return annotatedCitations;
+    }
+    return annotatedCitations.filter(({ citation }) => UNVERIFIED_STATUSES.has(normalizeKey(citation.status)));
+  }, [annotatedCitations, showUnverifiedOnly]);
+  const displayedCitationCount = displayedCitations.length;
 
   const citationSummary = useMemo(() => {
     if (citations.length === 0) {
@@ -755,6 +769,19 @@ export default function ResultsPage() {
   ]
     .filter(Boolean)
     .join(' ');
+  const filterToggleClassName = [styles.filterToggle, showUnverifiedOnly ? styles.filterToggleActive : '']
+    .filter(Boolean)
+    .join(' ');
+  const tabRow = (
+    <div className={styles.tabRow}>
+      <button type="button" className={listTabClassName} onClick={() => setActiveTab('list')}>
+        Verified cites list
+      </button>
+      <button type="button" className={documentTabClassName} onClick={() => setActiveTab('document')}>
+        Highlighted document
+      </button>
+    </div>
+  );
 
   return (
     <div className={styles.page}>
@@ -899,73 +926,113 @@ export default function ResultsPage() {
 
         {citationCount > 0 ? (
           <>
-            <div className={styles.tabRow}>
-              <button
-                type="button"
-                className={listTabClassName}
-                onClick={() => setActiveTab('list')}
-              >
-                Verified cites list
-              </button>
-              <button
-                type="button"
-                className={documentTabClassName}
-                onClick={() => setActiveTab('document')}
-              >
-                Highlighted document
-              </button>
-            </div>
-
             {activeTab === 'list' && (
               <section className={styles.citationsSection}>
-                {citations.map((citation, index) => {
-                  const theme = getStatusTheme(citation.status);
-                  const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
-                  const formattedSubstatus = formatIdentifier(citation.substatus);
-                  const displayCitation = getDisplayCitation(citation);
-                  const occurrences = sortOccurrences(citation.occurrences);
-                  const isUnverifiedDetailsWarning =
-                    normalizeKey(citation.status) === 'warning' &&
-                    normalizeKey(citation.substatus) === 'unverified details';
-                  const unverifiedFields = citation.verification_details?.unverified_fields;
-                  const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
-                    ? unverifiedFields.join(', ')
-                    : unverifiedFields ?? null;
-                  const returnedValues = citation.verification_details?.returned_values;
-                  const returnedEntries =
-                    returnedValues && typeof returnedValues === 'object'
-                      ? Object.entries(returnedValues as Record<string, unknown>)
-                      : [];
-                  const detailSourceRaw = citation.verification_details?.source ?? null;
-                  const formattedDetailSource = detailSourceRaw
-                    ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
-                    : null;
-                  const hasVerificationDetailContent =
-                    Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
-                  const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
-                  const cardStyle = {
-                    '--status-badge-bg': theme.badgeBackground,
-                    '--status-border': theme.badgeBorder,
-                    '--status-text': theme.badgeText,
-                    '--status-pill-bg': theme.pillBackground,
-                    '--status-pill-text': theme.pillText,
-                    '--status-indicator': theme.indicator,
-                  } as CSSProperties;
-                  const isNoMatch =
-                    normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
-                  const extractedCaseName = citation.verification_details?.extracted?.case_name ?? '—';
-                  const extractedYear = citation.verification_details?.extracted?.year ?? '—';
-                  const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
-                  const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
+                {tabRow}
+                <div className={styles.listToolbar}>
+                  <span className={styles.listToolbarStatus}>
+                    {showUnverifiedOnly
+                      ? `Showing ${displayedCitationCount} unverified citation${displayedCitationCount === 1 ? '' : 's'}`
+                      : `Showing all ${citationCount} citation${citationCount === 1 ? '' : 's'}`}
+                  </span>
+                  <button
+                    type="button"
+                    className={filterToggleClassName}
+                    onClick={() => setShowUnverifiedOnly((prev) => !prev)}
+                  >
+                    {showUnverifiedOnly ? 'Show all citations' : 'Show unverified only'}
+                  </button>
+                </div>
 
-                  return (
+                {displayedCitationCount === 0 ? (
+                  <div className={styles.filterEmptyState}>
+                    <p className={styles.emptyState}>No unverified citations found.</p>
+                    <button
+                      type="button"
+                      className={styles.filterToggle}
+                      onClick={() => setShowUnverifiedOnly(false)}
+                    >
+                      Show all citations
+                    </button>
+                  </div>
+                ) : (
+                  displayedCitations.map(({ citation, originalIndex }) => {
+                    const theme = getStatusTheme(citation.status);
+                    const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
+                    const formattedSubstatus = formatIdentifier(citation.substatus);
+                    const hasSubstatus = Boolean(formattedSubstatus);
+                    const displayCitation = getDisplayCitation(citation);
+                    const occurrences = sortOccurrences(citation.occurrences);
+                    const isUnverifiedDetailsWarning =
+                      normalizeKey(citation.status) === 'warning' &&
+                      normalizeKey(citation.substatus) === 'unverified details';
+                    const unverifiedFields = citation.verification_details?.unverified_fields;
+                    const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
+                      ? unverifiedFields.join(', ')
+                      : unverifiedFields ?? null;
+                    const returnedValues = citation.verification_details?.returned_values;
+                    const returnedEntries =
+                      returnedValues && typeof returnedValues === 'object'
+                        ? Object.entries(returnedValues as Record<string, unknown>)
+                        : [];
+                    const detailSourceRaw = citation.verification_details?.source ?? null;
+                    const formattedDetailSource = detailSourceRaw
+                      ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
+                      : null;
+                    const hasVerificationDetailContent =
+                      Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
+                    const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
+                    const cardStyle = {
+                      '--status-badge-bg': theme.badgeBackground,
+                      '--status-border': theme.badgeBorder,
+                      '--status-text': theme.badgeText,
+                      '--status-pill-bg': theme.pillBackground,
+                      '--status-pill-text': theme.pillText,
+                      '--status-indicator': theme.indicator,
+                    } as CSSProperties;
+                    const mismatchedFieldsRaw = citation.verification_details?.mismatched_fields ?? [];
+                    const mismatchedFields = Array.isArray(mismatchedFieldsRaw) ? mismatchedFieldsRaw : [];
+                    const extractedDetails = (citation.verification_details?.extracted ?? {}) as Record<string, unknown>;
+                    const referenceDetails = (citation.verification_details?.court_listener ?? {}) as Record<
+                      string,
+                      unknown
+                    >;
+                    const mismatchDetails = mismatchedFields.map((field) => {
+                      const label = formatIdentifier(field) ?? field;
+                      const citationValueRaw = Object.prototype.hasOwnProperty.call(extractedDetails, field)
+                        ? extractedDetails[field]
+                        : null;
+                      const lookupValueRaw = Object.prototype.hasOwnProperty.call(referenceDetails, field)
+                        ? referenceDetails[field]
+                        : null;
+                      return {
+                        field,
+                        label,
+                        citationValue: formatDetailValue(citationValueRaw ?? null),
+                        lookupValue: formatDetailValue(lookupValueRaw ?? null),
+                      };
+                    });
+                    const showMismatchDetails =
+                      normalizeKey(citation.status) === 'warning' && mismatchDetails.length > 0;
+                    const isNoMatch =
+                      normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+                    const extractedCaseName = citation.verification_details?.extracted?.case_name ?? '—';
+                    const extractedYear = citation.verification_details?.extracted?.year ?? '—';
+                    const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
+                    const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
+                    const cardNumber = originalIndex + 1;
+
+                    return (
                     <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
                       <header className={styles.citationHeader}>
-                        <div>
-                          <span className={styles.citationIndex}>#{index + 1}</span>
+                        <div className={styles.citationHeaderInfo}>
+                          <span className={styles.citationIndex}>#{cardNumber}</span>
                           <h3 className={styles.citationTitle}>{displayCitation}</h3>
                         </div>
-                        <span className={styles.statusBadge}>{formattedStatus}</span>
+                        <div className={styles.statusGroup}>
+                          <span className={styles.statusBadge}>{formattedStatus}</span>
+                          {hasSubstatus && <span className={styles.statusPill}>{formattedSubstatus}</span>}
+                        </div>
                       </header>
 
                       <div className={styles.citationMeta}>
@@ -975,15 +1042,36 @@ export default function ResultsPage() {
                         <span>
                           <strong>Occurrences:</strong> {occurrences.length}
                         </span>
-                        {formattedSubstatus && (
-                          <span className={styles.statusPill}>{formattedSubstatus}</span>
-                        )}
                         {isNoMatch && (
                           <span>
                             <strong>Resource:</strong> {citation.resource_key}
                           </span>
                         )}
                       </div>
+
+                      {showMismatchDetails && (
+                        <div className={styles.mismatchDetails}>
+                          <div className={styles.mismatchDetailsHeader}>
+                            <strong>Mismatched values</strong>
+                            <span>Compared to lookup result</span>
+                          </div>
+                          <div className={styles.mismatchGrid}>
+                            {mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
+                              <div key={field} className={styles.mismatchItem}>
+                                <div className={styles.mismatchLabel}>{label}</div>
+                                <div className={styles.mismatchValuePair}>
+                                  <span className={styles.mismatchValueKey}>Citation value</span>
+                                  <span className={styles.mismatchValue}>{citationValue}</span>
+                                </div>
+                                <div className={styles.mismatchValuePair}>
+                                  <span className={styles.mismatchValueKey}>Lookup value</span>
+                                  <span className={styles.mismatchValue}>{lookupValue}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {showUnverifiedDetailBlock && (
                         <div className={styles.verificationDetails}>
@@ -1024,7 +1112,7 @@ export default function ResultsPage() {
                               key={`${citation.resource_key}-${occurrenceIndex}`}
                               className={styles.occurrenceItem}
                             >
-                              <div>
+                              <div className={styles.occurrenceHeader}>
                                 <strong>Occurrence {occurrenceIndex + 1}</strong>
                                 {occurrence.citation_category &&
                                   ` - ${formatIdentifier(occurrence.citation_category)}`}
@@ -1043,37 +1131,43 @@ export default function ResultsPage() {
                       )}
                     </article>
                   );
-                })}
+                })
+                )}
               </section>
             )}
 
-            {activeTab === 'document' && extractedText && (
+            {activeTab === 'document' && (
               <section className={styles.documentSection}>
+                {tabRow}
                 <h2>Highlighted document</h2>
-                <div className={styles.documentScroll}>
-                  {highlightedExtractSegments.map((segment) => {
-                    if (!segment.highlight) {
-                      return <span key={segment.key}>{segment.content}</span>;
-                    }
+                {extractedText ? (
+                  <div className={styles.documentScroll}>
+                    {highlightedExtractSegments.map((segment) => {
+                      if (!segment.highlight) {
+                        return <span key={segment.key}>{segment.content}</span>;
+                      }
 
-                    const highlightStyle = {
-                      '--highlight-bg': segment.highlight.color,
-                      '--highlight-indicator': segment.highlight.indicatorColor,
-                      '--highlight-text': segment.highlight.indicatorColor,
-                    } as CSSProperties;
+                      const highlightStyle = {
+                        '--highlight-bg': segment.highlight.color,
+                        '--highlight-indicator': segment.highlight.indicatorColor,
+                        '--highlight-text': segment.highlight.indicatorColor,
+                      } as CSSProperties;
 
-                    return (
-                      <span
-                        key={segment.key}
-                        className={styles.highlightSpan}
-                        data-indicator={segment.highlight.indicator}
-                        style={highlightStyle}
-                      >
-                        {segment.content}
-                      </span>
-                    );
-                  })}
-                </div>
+                      return (
+                        <span
+                          key={segment.key}
+                          className={styles.highlightSpan}
+                          data-indicator={segment.highlight.indicator}
+                          style={highlightStyle}
+                        >
+                          {segment.content}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className={styles.emptyState}>No document text available for this verification.</p>
+                )}
               </section>
             )}
           </>

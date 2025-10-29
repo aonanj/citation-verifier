@@ -332,6 +332,61 @@
   box-shadow: 0 16px 32px rgba(76, 196, 255, 0.15);
 }
 
+.listToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.listToolbarStatus {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.filterToggle {
+  appearance: none;
+  border-radius: 999px;
+  border: 1px solid rgba(76, 196, 255, 0.28);
+  background: rgba(76, 196, 255, 0.08);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.5rem 1.1rem;
+  cursor: pointer;
+  transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base),
+    box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.filterToggle:hover {
+  transform: translateY(-1px);
+  background: rgba(76, 196, 255, 0.12);
+}
+
+.filterToggle:focus-visible {
+  outline: 2px solid rgba(76, 196, 255, 0.35);
+  outline-offset: 2px;
+}
+
+.filterToggleActive {
+  background: rgba(76, 196, 255, 0.18);
+  border-color: rgba(76, 196, 255, 0.4);
+  color: var(--text-primary);
+  box-shadow: 0 10px 24px rgba(76, 196, 255, 0.18);
+}
+
+.filterEmptyState {
+  margin-top: 0.5rem;
+  padding: 1.5rem;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(76, 196, 255, 0.22);
+  background: rgba(76, 196, 255, 0.06);
+  display: grid;
+  gap: 0.9rem;
+  justify-items: center;
+}
+
 .citationsSection {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
@@ -374,6 +429,12 @@
   flex-wrap: wrap;
 }
 
+.citationHeaderInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .citationIndex {
   font-size: 0.85rem;
   font-weight: 600;
@@ -388,6 +449,19 @@
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.statusGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  text-align: right;
+}
+
+.statusGroup .statusBadge,
+.statusGroup .statusPill {
+  align-self: flex-end;
 }
 
 .statusBadge {
@@ -429,6 +503,76 @@
   color: var(--text-primary);
 }
 
+.mismatchDetails {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(76, 196, 255, 0.08), rgba(12, 28, 52, 0.2));
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.mismatchDetailsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mismatchDetailsHeader strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.mismatchDetailsHeader span {
+  font-size: 0.7rem;
+}
+
+.mismatchGrid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.mismatchItem {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.85rem 1rem;
+  display: grid;
+  gap: 0.55rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.mismatchLabel {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.mismatchValuePair {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.mismatchValueKey {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mismatchValue {
+  color: var(--text-primary);
+}
+
 .verificationDetails {
   background: rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-sm);
@@ -452,6 +596,13 @@
 }
 
 .occurrenceItem {
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 18px rgba(5, 16, 28, 0.3);
+  display: grid;
+  gap: 0.5rem;
   font-size: 0.85rem;
   color: var(--text-secondary);
 }
@@ -460,8 +611,17 @@
   color: var(--text-primary);
 }
 
+.occurrenceHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
 .occurrenceText {
-  margin: 0.35rem 0 0;
+  margin: 0;
   color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.6;
@@ -470,7 +630,8 @@
 .occurrenceSpan {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-top: 0.2rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .documentSection {
@@ -480,6 +641,8 @@
   backdrop-filter: blur(18px);
   padding: clamp(1.75rem, 4vw, 2.5rem);
   box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 1.15rem;
 }
 
 .documentScroll {
@@ -519,7 +682,7 @@
 }
 
 .documentSection h2 {
-  margin: 0 0 1.5rem;
+  margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
