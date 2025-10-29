@@ -1103,7 +1103,6 @@ export default function ResultsPage() {
             {activeTab === 'document' && (
               <section className={styles.documentSection}>
                 {tabRow}
-                <h2>Highlighted document</h2>
                 {extractedText ? (
                   <div className={styles.documentScroll}>
                     {highlightedExtractSegments.map((segment) => {
