@@ -180,10 +180,10 @@ export default function HomePage() {
               VeriCite is specifically configured to work with both inline and footnote citations, including string citations, that follow the Bluebook format. Accordingly, reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>, are likewise verified and grouped with their corresponding parent citations. Other notes regarding this service:
             </p>
             <ul style={{ marginTop: 1 }}>
-              <li>Web sites, reference and text books, and other sources not listed above will not be verified.</li>
-              <li><em>infra</em> signals are not recognized as citations. The service ignores them.</li>
-              <li>Incorrect or unexpected citations introduce offsets in footnote numbering.</li>
-              <li>Block quotes are not verified. Block quotes can also cause corrupted outputs due to the disruption in page formatting.</li>
+              <li>Web sites, reference and text books, and other sources not listed above are ignored.</li>
+              <li><em>infra</em> signals are ignored.</li>
+              <li>Incorrect/inconsistent citation formats cause offsets in footnote numbering.</li>
+              <li>Block quotes are not verified and can cause inaccuracies in citation matching.</li>
             </ul>
           </div>
         </div>

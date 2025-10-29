@@ -517,28 +517,69 @@ export default function ResultsPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a2540 0%, #0d3a5f 100%)' }}>
       {/* Navigation Bar */}
-      <div
+      <nav
         style={{
           backgroundColor: '#3d4043',
-          padding: '2.5rem 3rem',
-          marginBottom: '2rem',
+          padding: '1rem 3rem',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: '1.75rem',
-            fontWeight: 400,
-            color: '#bdc1c6',
-            textAlign: 'center',
-          }}
-        >
-          Navigation Bar
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#e8eaed' }}>
+          VeriCite
         </h1>
-      </div>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button
+            onClick={handleExportPDF}
+            style={{
+              background: '#5f6368',
+              color: '#ffffff',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#4d5256';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#5f6368';
+            }}
+          >
+            Export PDF
+          </button>
+          <button
+            onClick={handleNewVerification}
+            style={{
+              background: '#5f9ea0',
+              color: '#ffffff',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#4d8588';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#5f9ea0';
+            }}
+          >
+            New Verification
+          </button>
+        </div>
+      </nav>
 
       {/* Main Content */}
-      <main style={{ padding: '0 3rem 2rem 3rem' }}>
+      <main style={{ padding: '2rem 3rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           {/* Stats Section */}
           <div style={{ marginBottom: '2rem' }}>
@@ -546,51 +587,185 @@ export default function ResultsPage() {
             <div
               style={{
                 backgroundColor: '#bdc1c6',
-                padding: '1.25rem 2rem',
+                padding: '1.5rem 2rem',
                 borderRadius: '12px',
                 marginBottom: '1.5rem',
-                textAlign: 'center',
               }}
             >
-              <p
+              <h2
                 style={{
-                  margin: 0,
-                  fontSize: '1rem',
-                  fontWeight: 400,
+                  margin: '0 0 1rem 0',
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
                   color: '#3d4043',
+                  textAlign: 'center',
                 }}
               >
-                Table of Citations Stats (
-                {citationSummary.length > 0
-                  ? citationSummary.map(({ label, value }) => `# ${label}, `).join('').slice(0, -2)
-                  : 'No citations'}
-                )
-              </p>
+                Table of Citations Stats
+              </h2>
+              {citationSummary.length > 0 ? (
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <thead>
+                    <tr style={{ backgroundColor: '#5f6368' }}>
+                      <th
+                        style={{
+                          padding: '0.75rem 1rem',
+                          textAlign: 'left',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        Citation Type
+                      </th>
+                      <th
+                        style={{
+                          padding: '0.75rem 1rem',
+                          textAlign: 'right',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        Count
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {citationSummary.map(({ label, value }, index) => (
+                      <tr
+                        key={label}
+                        style={{
+                          backgroundColor: index % 2 === 0 ? '#f5f5f5' : '#ffffff',
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: '0.75rem 1rem',
+                            color: '#202124',
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          {label}
+                        </td>
+                        <td
+                          style={{
+                            padding: '0.75rem 1rem',
+                            textAlign: 'right',
+                            color: '#202124',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {value}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p style={{ margin: 0, textAlign: 'center', color: '#5f6368' }}>No citations found</p>
+              )}
             </div>
 
             {/* Table of Verifications Stats */}
             <div
               style={{
                 backgroundColor: '#bdc1c6',
-                padding: '1.25rem 2rem',
+                padding: '1.5rem 2rem',
                 borderRadius: '12px',
-                textAlign: 'center',
               }}
             >
-              <p
+              <h2
                 style={{
-                  margin: 0,
-                  fontSize: '1rem',
-                  fontWeight: 400,
+                  margin: '0 0 1rem 0',
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
                   color: '#3d4043',
+                  textAlign: 'center',
                 }}
               >
-                Table of Verifications Stats (
-                {verificationSummary.length > 0
-                  ? verificationSummary.map(({ label, value }) => `# ${label}, `).join('').slice(0, -2)
-                  : 'No verifications'}
-                )
-              </p>
+                Table of Verifications Stats
+              </h2>
+              {verificationSummary.length > 0 ? (
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <thead>
+                    <tr style={{ backgroundColor: '#5f6368' }}>
+                      <th
+                        style={{
+                          padding: '0.75rem 1rem',
+                          textAlign: 'left',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        Verification Status
+                      </th>
+                      <th
+                        style={{
+                          padding: '0.75rem 1rem',
+                          textAlign: 'right',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        Count
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {verificationSummary.map(({ label, value }, index) => (
+                      <tr
+                        key={label}
+                        style={{
+                          backgroundColor: index % 2 === 0 ? '#f5f5f5' : '#ffffff',
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: '0.75rem 1rem',
+                            color: '#202124',
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          {label}
+                        </td>
+                        <td
+                          style={{
+                            padding: '0.75rem 1rem',
+                            textAlign: 'right',
+                            color: '#202124',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {value}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p style={{ margin: 0, textAlign: 'center', color: '#5f6368' }}>No verification data found</p>
+              )}
             </div>
           </div>
 
