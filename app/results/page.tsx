@@ -443,6 +443,7 @@ export default function ResultsPage() {
   const router = useRouter();
   const [citations, setCitations] = useState<CitationEntry[]>([]);
   const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
 
   useEffect(() => {
     const resultsData = sessionStorage.getItem('verificationResults');
@@ -478,6 +479,26 @@ export default function ResultsPage() {
     }));
   }, [citations]);
 
+  const verificationSummary = useMemo(() => {
+    if (citations.length === 0) {
+      return [] as Array<{ label: string; value: number }>;
+    }
+
+    const counts = citations.reduce(
+      (acc, entry) => {
+        const key = normalizeKey(entry.status);
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    return Object.entries(counts).map(([kind, total]) => ({
+      label: formatIdentifier(kind) ?? 'Unknown',
+      value: total,
+    }));
+  }, [citations]);
+
   const highlightedExtractSegments = useMemo(
     () => buildHighlightSegments(extractedText, citations),
     [citations, extractedText],
@@ -495,108 +516,131 @@ export default function ResultsPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a2540 0%, #0d3a5f 100%)' }}>
-      {/* Navbar */}
-      <nav
+      {/* Navigation Bar */}
+      <div
         style={{
           backgroundColor: '#3d4043',
-          padding: '1rem 2rem',
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          padding: '2.5rem 3rem',
+          marginBottom: '2rem',
         }}
       >
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: '#e8eaed' }}>
-          VeriCite
+        <h1
+          style={{
+            margin: 0,
+            fontSize: '1.75rem',
+            fontWeight: 400,
+            color: '#bdc1c6',
+            textAlign: 'center',
+          }}
+        >
+          Navigation Bar
         </h1>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button
-            onClick={handleExportPDF}
-            style={{
-              background: '#5f6368',
-              color: '#ffffff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#4d5256';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#5f6368';
-            }}
-          >
-            Export PDF
-          </button>
-          <button
-            onClick={handleNewVerification}
-            style={{
-              background: '#5f9ea0',
-              color: '#ffffff',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#4d8588';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#5f9ea0';
-            }}
-          >
-            New Verification
-          </button>
-        </div>
-      </nav>
+      </div>
 
       {/* Main Content */}
-      <main style={{ padding: '2rem 1rem' }}>
+      <main style={{ padding: '0 3rem 2rem 3rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          {citationCount > 0 && (
-            <section style={{ marginBottom: '2.5rem' }}>
-              <header style={{ marginBottom: '1.25rem' }}>
-                <h2
-                  style={{
-                    fontSize: '1.5rem',
-                    fontWeight: 700,
-                    color: '#e8eaed',
-                    marginBottom: '0.75rem',
-                    marginTop: 0,
-                  }}
-                >
-                  Compiled Citations
-                </h2>
-                {citationSummary.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {citationSummary.map(({ label, value }) => (
-                      <span
-                        key={label}
-                        style={{
-                          backgroundColor: '#4a4a4a',
-                          color: '#bdc1c6',
-                          borderRadius: '6px',
-                          padding: '0.25rem 0.625rem',
-                          fontSize: '0.8125rem',
-                          fontWeight: 500,
-                          border: '1px solid #5f6368',
-                        }}
-                      >
-                        {label}: {value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </header>
+          {/* Stats Section */}
+          <div style={{ marginBottom: '2rem' }}>
+            {/* Table of Citations Stats */}
+            <div
+              style={{
+                backgroundColor: '#bdc1c6',
+                padding: '1.25rem 2rem',
+                borderRadius: '12px',
+                marginBottom: '1.5rem',
+                textAlign: 'center',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '1rem',
+                  fontWeight: 400,
+                  color: '#3d4043',
+                }}
+              >
+                Table of Citations Stats (
+                {citationSummary.length > 0
+                  ? citationSummary.map(({ label, value }) => `# ${label}, `).join('').slice(0, -2)
+                  : 'No citations'}
+                )
+              </p>
+            </div>
 
-              <div style={{ display: 'grid', gap: '1.25rem' }}>
+            {/* Table of Verifications Stats */}
+            <div
+              style={{
+                backgroundColor: '#bdc1c6',
+                padding: '1.25rem 2rem',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '1rem',
+                  fontWeight: 400,
+                  color: '#3d4043',
+                }}
+              >
+                Table of Verifications Stats (
+                {verificationSummary.length > 0
+                  ? verificationSummary.map(({ label, value }) => `# ${label}, `).join('').slice(0, -2)
+                  : 'No verifications'}
+                )
+              </p>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+            <button
+              onClick={() => setActiveTab('list')}
+              style={{
+                backgroundColor: activeTab === 'list' ? '#bdc1c6' : '#5f6368',
+                color: activeTab === 'list' ? '#3d4043' : '#e8eaed',
+                padding: '0.75rem 2rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: 500,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Verified Cites List
+            </button>
+            <button
+              onClick={() => setActiveTab('document')}
+              style={{
+                backgroundColor: activeTab === 'document' ? '#bdc1c6' : '#5f6368',
+                color: activeTab === 'document' ? '#3d4043' : '#e8eaed',
+                padding: '0.75rem 2rem',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: 500,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Highlighted Document
+            </button>
+          </div>
+
+          {/* Verified Cites List Tab */}
+          {activeTab === 'list' && citationCount > 0 && (
+            <section style={{ marginBottom: '2.5rem' }}>
+
+              <div
+                style={{
+                  backgroundColor: '#bdc1c6',
+                  borderRadius: '16px',
+                  padding: '2rem',
+                }}
+              >
                 {citations.map((citation, index) => {
                   const theme = getStatusTheme(citation.status);
                   const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
@@ -623,15 +667,16 @@ export default function ResultsPage() {
                     Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
                   const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
 
+                  const isNoMatch = normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+
                   return (
                     <article
                       key={citation.resource_key}
                       style={{
-                        backgroundColor: '#3d4043',
-                        border: '1px solid #5f6368',
-                        borderRadius: '12px',
-                        padding: '1.25rem',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                        backgroundColor: '#ffffff',
+                        borderRadius: '8px',
+                        padding: '1.5rem',
+                        marginBottom: '1rem',
                       }}
                     >
                       <div
@@ -640,23 +685,15 @@ export default function ResultsPage() {
                           justifyContent: 'space-between',
                           alignItems: 'flex-start',
                           gap: '1rem',
-                          marginBottom: '1rem',
                         }}
                       >
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flex: 1 }}>
+                        {/* Left side - Citation number and content */}
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flex: 1 }}>
                           <span
                             style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: '2rem',
-                              height: '2rem',
-                              borderRadius: '6px',
+                              fontSize: '0.9rem',
                               fontWeight: 600,
-                              color: theme.indicator,
-                              backgroundColor: '#2a2a2a',
-                              border: '1px solid #5f6368',
-                              fontSize: '0.875rem',
+                              color: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
                               flexShrink: 0,
                             }}
                           >
@@ -665,11 +702,10 @@ export default function ResultsPage() {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <h3
                               style={{
-                                fontSize: '1rem',
-                                fontWeight: 600,
-                                color: '#e8eaed',
+                                fontSize: '1.1rem',
+                                fontWeight: 700,
+                                color: '#202124',
                                 marginBottom: '0.5rem',
-                                lineHeight: 1.5,
                                 marginTop: 0,
                               }}
                             >
@@ -679,41 +715,29 @@ export default function ResultsPage() {
                               style={{
                                 display: 'flex',
                                 flexWrap: 'wrap',
-                                gap: '0.375rem',
-                                fontSize: '0.8125rem',
+                                gap: '0.75rem',
+                                fontSize: '0.875rem',
+                                color: '#5f6368',
+                                marginBottom: '0.5rem',
                               }}
                             >
-                              <span
-                                style={{
-                                  backgroundColor: '#4a4a4a',
-                                  color: '#bdc1c6',
-                                  borderRadius: '6px',
-                                  padding: '0.125rem 0.5rem',
-                                }}
-                              >
-                                Type: {formatIdentifier(citation.type) ?? 'Unknown'}
-                              </span>
+                              <span>Type: {formatIdentifier(citation.type) ?? 'Unknown'}</span>
                               {occurrences.length > 0 && (
-                                <span
-                                  style={{
-                                    backgroundColor: '#2b4f7d',
-                                    color: '#8ab4f8',
-                                    borderRadius: '6px',
-                                    padding: '0.125rem 0.5rem',
-                                  }}
-                                >
+                                <span style={{ color: '#1a73e8' }}>
                                   {occurrences.length} occurrence{occurrences.length === 1 ? '' : 's'}
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
+
+                        {/* Right side - Status */}
                         <div
                           style={{
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'flex-end',
-                            gap: '0.375rem',
+                            gap: '0.5rem',
                             flexShrink: 0,
                           }}
                         >
@@ -722,13 +746,9 @@ export default function ResultsPage() {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '0.375rem',
-                              borderRadius: '6px',
-                              padding: '0.375rem 0.75rem',
-                              fontSize: '0.8125rem',
+                              fontSize: '0.875rem',
                               fontWeight: 600,
-                              color: theme.badgeText,
-                              backgroundColor: theme.badgeBackground,
-                              border: `1px solid ${theme.badgeBorder}`,
+                              color: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
                             }}
                           >
                             <span
@@ -738,7 +758,7 @@ export default function ResultsPage() {
                                 width: '0.5rem',
                                 height: '0.5rem',
                                 borderRadius: '50%',
-                                backgroundColor: theme.indicator,
+                                backgroundColor: isNoMatch ? '#f28b82' : normalizeKey(citation.status) === 'warning' ? '#ffa500' : '#4caf50',
                               }}
                             />
                             {formattedStatus}
@@ -746,12 +766,9 @@ export default function ResultsPage() {
                           {formattedSubstatus && (
                             <span
                               style={{
-                                backgroundColor: theme.pillBackground,
-                                color: theme.pillText,
-                                borderRadius: '6px',
-                                padding: '0.25rem 0.5rem',
-                                fontSize: '0.75rem',
+                                fontSize: '0.8125rem',
                                 fontWeight: 500,
+                                color: '#5f6368',
                               }}
                             >
                               {formattedSubstatus}
@@ -763,117 +780,53 @@ export default function ResultsPage() {
                       {showUnverifiedDetailBlock && (
                         <div
                           style={{
-                            border: '1px solid #b8860b',
-                            backgroundColor: '#805b20',
-                            borderRadius: '8px',
-                            padding: '0.875rem',
-                            marginBottom: '1rem',
+                            backgroundColor: '#f5f5f5',
+                            borderRadius: '6px',
+                            padding: '1rem',
+                            marginTop: '1rem',
                           }}
                         >
-                          <p style={{ fontWeight: 600, marginBottom: '0.625rem', color: '#ffd966', fontSize: '0.8125rem', marginTop: 0 }}>
-                            Verification details
+                          <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#202124', fontSize: '0.875rem', marginTop: 0 }}>
+                            Verification discrepancy details
                           </p>
-                          <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.8125rem', color: '#f4e4c1' }}>
-                            {formattedDetailSource && (
-                              <div>
-                                <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Source</strong>
-                                <div>{formattedDetailSource}</div>
-                              </div>
-                            )}
+                          <div style={{ display: 'grid', gap: '0.625rem', fontSize: '0.8125rem', color: '#5f6368' }}>
                             {unverifiedFieldsDisplay && (
                               <div>
-                                <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Unverified fields</strong>
-                                <div>{unverifiedFieldsDisplay}</div>
-                              </div>
-                            )}
-                            {returnedEntries.length > 0 && (
-                              <div>
-                                <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>Returned values</strong>
-                                <div style={{ display: 'grid', gap: '0.25rem' }}>
-                                  {returnedEntries.map(([field, value]) => (
-                                    <div key={`${citation.resource_key}-returned-${field}`}>
-                                      <strong>{formatIdentifier(field) ?? field}</strong>: {formatDetailValue(value)}
-                                    </div>
-                                  ))}
-                                </div>
+                                <strong style={{ display: 'block', marginBottom: '0.25rem', color: '#202124' }}>Case Name</strong>
+                                <div>Document: {citation.verification_details?.extracted?.case_name ?? '—'}</div>
+                                <div>CourtListener: {citation.verification_details?.court_listener?.case_name ?? '—'}</div>
                               </div>
                             )}
                           </div>
                         </div>
                       )}
 
-                      {citation.status === 'warning' &&
-                        citation.verification_details?.mismatched_fields &&
-                        citation.verification_details.mismatched_fields.length > 0 && (
-                          <div
-                            style={{
-                              border: '1px solid #b8860b',
-                              backgroundColor: '#805b20',
-                              borderRadius: '8px',
-                              padding: '0.875rem',
-                              marginBottom: '1rem',
-                            }}
-                          >
-                            <p style={{ fontWeight: 600, marginBottom: '0.625rem', color: '#ffd966', fontSize: '0.8125rem', marginTop: 0 }}>
-                              Verification discrepancy details
-                            </p>
-                            <div style={{ display: 'grid', gap: '0.625rem' }}>
-                              {citation.verification_details.mismatched_fields.map((field) => {
-                                const label = formatIdentifier(field) ?? field;
-                                const key = field as 'case_name' | 'year';
-                                const extractedValue = citation.verification_details?.extracted?.[key];
-                                const courtValue = citation.verification_details?.court_listener?.[key];
-
-                                return (
-                                  <div key={`${citation.resource_key}-${field}`} style={{ fontSize: '0.8125rem', color: '#f4e4c1' }}>
-                                    <strong style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem' }}>{label}</strong>
-                                    <div>Document: {extractedValue ?? '—'}</div>
-                                    <div>CourtListener: {courtValue ?? '—'}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                      {occurrences.length > 0 ? (
-                        <div style={{ display: 'grid', gap: '0.625rem' }}>
+                      {occurrences.length > 0 && (
+                        <div style={{ marginTop: '1rem' }}>
                           {occurrences.map((occurrence, occurrenceIndex) => (
                             <div
                               key={`${citation.resource_key}-${occurrenceIndex}`}
                               style={{
-                                backgroundColor: '#2a2a2a',
-                                borderRadius: '8px',
-                                border: '1px solid #5f6368',
-                                padding: '0.75rem',
-                                display: 'grid',
-                                gap: '0.5rem',
+                                marginBottom: '0.5rem',
                               }}
                             >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                <p style={{ margin: 0, color: '#bdc1c6', fontWeight: 600, fontSize: '0.8125rem' }}>
-                                  Occurrence {occurrenceIndex + 1}{' '}
-                                  {occurrence.citation_category && `· ${formatIdentifier(occurrence.citation_category)}`}
-                                </p>
-                                <div style={{ display: 'flex', gap: '0.625rem', fontSize: '0.75rem', color: '#9aa0a6' }}>
-                                  {occurrence.pin_cite && <span>Pin cite: {occurrence.pin_cite}</span>}
-                                  {occurrence.span && (
-                                    <span>
-                                      Span: {occurrence.span[0]} – {occurrence.span[1]}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                              <p style={{ margin: 0, color: '#5f6368', fontSize: '0.8125rem' }}>
+                                <strong>Occurrence {occurrenceIndex + 1}</strong>{' '}
+                                {occurrence.citation_category && `· ${formatIdentifier(occurrence.citation_category)}`}
+                              </p>
                               {occurrence.matched_text && (
-                                <p style={{ margin: 0, color: '#e8eaed', lineHeight: 1.6, fontSize: '0.875rem' }}>
+                                <p style={{ margin: '0.25rem 0 0 0', color: '#202124', fontSize: '0.875rem' }}>
                                   {occurrence.matched_text}
+                                </p>
+                              )}
+                              {occurrence.span && (
+                                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#9aa0a6' }}>
+                                  Span: {occurrence.span[0]} – {occurrence.span[1]}
                                 </p>
                               )}
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <p style={{ color: '#9aa0a6', fontSize: '0.875rem', margin: 0 }}>No occurrences found for this citation.</p>
                       )}
                     </article>
                   );
@@ -882,36 +835,27 @@ export default function ResultsPage() {
             </section>
           )}
 
-          {extractedText && (
+          {/* Highlighted Document Tab */}
+          {activeTab === 'document' && extractedText && (
             <section style={{ marginBottom: '2rem' }}>
               <div
                 style={{
-                  borderRadius: '12px',
-                  background: '#3d4043',
-                  color: '#e2e8f0',
-                  padding: '1.25rem',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                  backgroundColor: '#bdc1c6',
+                  borderRadius: '16px',
+                  padding: '2rem',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#e8eaed' }}>Extracted document text</h3>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#9aa0a6' }}>
-                    Highlight colors align with citation status and numbering above.
-                  </p>
-                </div>
                 <div
                   style={{
-                    marginTop: '1rem',
-                    backgroundColor: '#1a1a1a',
+                    backgroundColor: '#ffffff',
                     borderRadius: '8px',
-                    padding: '0.875rem',
-                    maxHeight: '420px',
+                    padding: '1.5rem',
+                    maxHeight: '600px',
                     overflowY: 'auto',
-                    border: '1px solid #5f6368',
-                    fontFamily:
-                      "'Inter', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                    fontSize: '0.8125rem',
-                    lineHeight: 1.6,
+                    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                    fontSize: '0.95rem',
+                    lineHeight: 1.8,
+                    color: '#202124',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                   }}
@@ -921,29 +865,32 @@ export default function ResultsPage() {
                       return <span key={segment.key}>{segment.content}</span>;
                     }
 
+                    const isNoMatch = segment.highlight.indicatorColor === '#ef4444';
+                    const isWarning = segment.highlight.indicatorColor === '#f59e0b';
+                    const isVerified = segment.highlight.indicatorColor === '#22c55e';
+
+                    const highlightColor = isNoMatch
+                      ? 'rgba(242, 139, 130, 0.3)'
+                      : isWarning
+                      ? 'rgba(255, 217, 102, 0.4)'
+                      : 'rgba(129, 201, 149, 0.3)';
+
+                    const textColor = isNoMatch
+                      ? '#d32f2f'
+                      : isWarning
+                      ? '#e65100'
+                      : '#2e7d32';
+
                     return (
                       <span
                         key={segment.key}
                         style={{
-                          backgroundColor: segment.highlight.color,
-                          borderRadius: '4px',
-                          padding: '0.125rem 0.25rem',
-                          position: 'relative',
-                          display: 'inline-block',
+                          backgroundColor: highlightColor,
+                          color: textColor,
+                          fontStyle: 'italic',
+                          fontWeight: 500,
                         }}
                       >
-                        <span
-                          style={{
-                            position: 'absolute',
-                            top: '-0.875rem',
-                            right: '0',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            color: segment.highlight.indicatorColor,
-                          }}
-                        >
-                          {segment.highlight.indicator}
-                        </span>
                         {segment.content}
                       </span>
                     );

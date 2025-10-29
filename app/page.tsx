@@ -182,8 +182,8 @@ export default function HomePage() {
             <ul style={{ marginTop: 1 }}>
               <li>Web sites, reference and text books, and other sources not listed above will not be verified.</li>
               <li><em>infra</em> signals are not recognized as citations. The service ignores them.</li>
-              <li>Incorrect or unexpected citations will introduce offsets in the citation numbering when footnotes are used.</li>
-              <li>Block quotes will not be verified. Block quotes can also cause corrupted outputs due to the disruption in page formatting.</li>
+              <li>Incorrect or unexpected citations introduce offsets in footnote numbering.</li>
+              <li>Block quotes are not verified. Block quotes can also cause corrupted outputs due to the disruption in page formatting.</li>
             </ul>
           </div>
         </div>
