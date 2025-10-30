@@ -985,7 +985,7 @@ export default function ResultsPage() {
                       <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
                         <header className={styles.citationHeader}>
                           <div className={styles.citationHeaderInfo}>
-                            <span className={styles.citationIndex}>1. {cardNumber}
+                            <span className={styles.citationIndex}>{cardNumber}. 
                             <h3 className={styles.citationTitle}>{displayCitation}</h3>
                             </span>
                           </div>
@@ -1007,7 +1007,7 @@ export default function ResultsPage() {
                         {showMismatchDetails && (
                           <div className={styles.mismatchDetails}>
                             <div className={styles.mismatchDetailsHeader}>
-                              <strong>Mismatched values</strong>
+                              <strong>Mismatched Fields</strong>
                               <span>compared to lookup result from {lookupResultSourceDisplay}</span>
                             </div>
                             <div className={styles.mismatchGrid}>
@@ -1031,16 +1031,10 @@ export default function ResultsPage() {
                         {showUnverifiedDetailBlock && (
                           <div className={styles.mismatchDetails}>
                             <div className={styles.mismatchDetailsHeader}>
-                              <strong>Unverified details</strong>
+                              <strong>Unverified Fields</strong>: {unverifiedFieldsDisplay}
                               <span>reported from {lookupResultSourceDisplay}</span>
                             </div>
                             <div className={styles.mismatchGrid}>
-                              {unverifiedFieldsDisplay && (
-                                <div className={styles.mismatchItem}>
-                                  <div className={styles.mismatchLabel}>Unverified Fields</div>
-                                  <div className={styles.mismatchValue}>{unverifiedFieldsDisplay}</div>
-                                </div>
-                              )}
                               {returnedEntries.length > 0 && (
                                 <div className={styles.mismatchItem}>
                                   <div className={styles.mismatchLabel}>Lookup Result</div>
