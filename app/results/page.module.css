@@ -440,7 +440,7 @@
 }
 
 .citationIndex {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--status-indicator, var(--accent));
   display: inline-flex;
@@ -577,18 +577,9 @@
   color: var(--text-primary);
 }
 
-.verificationDetails {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--radius-sm);
-  padding: 0.85rem 1rem;
+.unverifiedLookupValues {
   display: grid;
-  gap: 0.6rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.verificationDetails strong {
-  color: var(--text-primary);
+  gap: 0.5rem;
 }
 
 .occurrenceList {

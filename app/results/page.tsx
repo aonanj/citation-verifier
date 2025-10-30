@@ -775,10 +775,10 @@ export default function ResultsPage() {
   const tabRow = (
     <div className={styles.tabRow}>
       <button type="button" className={listTabClassName} onClick={() => setActiveTab('list')}>
-        Verified cites list
+        Citation Status List
       </button>
       <button type="button" className={documentTabClassName} onClick={() => setActiveTab('document')}>
-        Highlighted document
+        Highlighted Document
       </button>
     </div>
   );
@@ -791,8 +791,8 @@ export default function ResultsPage() {
             <img src="/images/scales-of-justice.png" alt="" />
           </span>
           <div className={styles.navText}>
-            <span className={styles.navEyebrow}>Verification results</span>
-            <h1 className={styles.navTitle}>Document insights</h1>
+            <span className={styles.navEyebrow}>Verification Results</span>
+            <h1 className={styles.navTitle}>Document Insights</h1>
           </div>
         </div>
         <div className={styles.navActions}>
@@ -801,7 +801,7 @@ export default function ResultsPage() {
             className={`${styles.button} ${styles.buttonGhost}`}
             onClick={handleNewVerification}
           >
-            New verification
+            New Verification
           </button>
           <button
             type="button"
@@ -818,7 +818,7 @@ export default function ResultsPage() {
         <section className={styles.summaryRow}>
           <div className={styles.summaryLead}>
             <div className={styles.summaryLeadHeader}>
-              <span className={styles.summaryLeadTitle}>Total citations analysed</span>
+              <span className={styles.summaryLeadTitle}>Total Citations Analyzed</span>
               <span className={styles.summaryLeadCount}>{citationCount}</span>
             </div>
             {verificationSummary.length > 0 && (
@@ -840,7 +840,7 @@ export default function ResultsPage() {
               <div className={styles.tableCard}>
                 <div className={styles.splitHeader}>
                   <h2>Citation Breakdown</h2>
-                  <span>Grouped by citation type</span>
+                  <span>Grouped by Citation Type</span>
                 </div>
                 <table className={styles.dataTable}>
                   <thead>
@@ -865,7 +865,7 @@ export default function ResultsPage() {
               <div className={styles.tableCard}>
                 <div className={styles.splitHeader}>
                   <h2>Verification Status</h2>
-                  <span>Outcome distribution</span>
+                  <span>Outcome Distribution</span>
                 </div>
                 <table className={styles.dataTable}>
                   <thead>
@@ -940,11 +940,11 @@ export default function ResultsPage() {
                         ? Object.entries(returnedValues as Record<string, unknown>)
                         : [];
                     const detailSourceRaw = citation.verification_details?.source ?? null;
-                    const formattedDetailSource = detailSourceRaw
+                    const formattedLookupSource = detailSourceRaw
                       ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
                       : null;
                     const hasVerificationDetailContent =
-                      Boolean(formattedDetailSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
+                      Boolean(formattedLookupSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
                     const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
                     const cardStyle = {
                       '--status-badge-bg': theme.badgeBackground,
@@ -978,123 +978,112 @@ export default function ResultsPage() {
                     });
                     const showMismatchDetails =
                       normalizeKey(citation.status) === 'warning' && mismatchDetails.length > 0;
-                    const isNoMatch =
-                      normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
-                    const extractedCaseName = citation.verification_details?.extracted?.case_name ?? '—';
-                    const extractedYear = citation.verification_details?.extracted?.year ?? '—';
-                    const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
-                    const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
+                    const lookupResultSourceDisplay = formattedLookupSource ?? 'Unspecified source';
                     const cardNumber = originalIndex + 1;
 
                     return (
-                    <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
-                      <header className={styles.citationHeader}>
-                        <div className={styles.citationHeaderInfo}>
-                          <span className={styles.citationIndex}>#{cardNumber}</span>
-                          <h3 className={styles.citationTitle}>{displayCitation}</h3>
-                        </div>
-                        <div className={styles.statusGroup}>
-                          <span className={styles.statusBadge}>{formattedStatus}</span>
-                          {hasSubstatus && <span className={styles.statusPill}>{formattedSubstatus}</span>}
-                        </div>
-                      </header>
+                      <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
+                        <header className={styles.citationHeader}>
+                          <div className={styles.citationHeaderInfo}>
+                            <span className={styles.citationIndex}>1. {cardNumber}
+                            <h3 className={styles.citationTitle}>{displayCitation}</h3>
+                            </span>
+                          </div>
+                          <div className={styles.statusGroup}>
+                            <span className={styles.statusBadge}>{formattedStatus}</span>
+                            {hasSubstatus && <span className={styles.statusPill}>{formattedSubstatus}</span>}
+                          </div>
+                        </header>
 
-                      <div className={styles.citationMeta}>
-                        <span>
-                          <strong>Type:</strong> {formatIdentifier(citation.type) ?? 'Unknown'}
-                        </span>
-                        <span>
-                          <strong>Occurrences:</strong> {occurrences.length}
-                        </span>
-                        {isNoMatch && (
+                        <div className={styles.citationMeta}>
                           <span>
-                            <strong>Resource:</strong> {citation.resource_key}
+                            <strong>Type:</strong> {formatIdentifier(citation.type) ?? 'Unknown'}
                           </span>
-                        )}
-                      </div>
-
-                      {showMismatchDetails && (
-                        <div className={styles.mismatchDetails}>
-                          <div className={styles.mismatchDetailsHeader}>
-                            <strong>Mismatched values</strong>
-                            <span>Compared to lookup result</span>
-                          </div>
-                          <div className={styles.mismatchGrid}>
-                            {mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
-                              <div key={field} className={styles.mismatchItem}>
-                                <div className={styles.mismatchLabel}>{label}</div>
-                                <div className={styles.mismatchValuePair}>
-                                  <span className={styles.mismatchValueKey}>Citation value</span>
-                                  <span className={styles.mismatchValue}>{citationValue}</span>
-                                </div>
-                                <div className={styles.mismatchValuePair}>
-                                  <span className={styles.mismatchValueKey}>Lookup value</span>
-                                  <span className={styles.mismatchValue}>{lookupValue}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <span>
+                            <strong>Occurrences:</strong> {occurrences.length}
+                          </span>
                         </div>
-                      )}
 
-                      {showUnverifiedDetailBlock && (
-                        <div className={styles.verificationDetails}>
-                          <div>
-                            <strong>Issue</strong>
-                            <div>{formattedDetailSource ?? 'Unspecified source'}</div>
-                          </div>
-                          {unverifiedFieldsDisplay && (
-                            <div>
-                              <strong>Unverified fields</strong>
-                              <div>{unverifiedFieldsDisplay}</div>
-                              <div>Document: {extractedCaseName}</div>
-                              <div>Reference: {referenceCaseName}</div>
-                              <div>
-                                Year (doc / ref): {extractedYear} / {referenceYear}
-                              </div>
+                        {showMismatchDetails && (
+                          <div className={styles.mismatchDetails}>
+                            <div className={styles.mismatchDetailsHeader}>
+                              <strong>Mismatched values</strong>
+                              <span>compared to lookup result from {lookupResultSourceDisplay}</span>
                             </div>
-                          )}
-                          {returnedEntries.length > 0 && (
-                            <div>
-                              <strong>Lookup values</strong>
-                              <div>
-                                {returnedEntries.map(([key, value]) => (
-                                  <div key={key}>
-                                    {formatIdentifier(key) ?? key}: {formatDetailValue(value)}
+                            <div className={styles.mismatchGrid}>
+                              {mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
+                                <div key={field} className={styles.mismatchItem}>
+                                  <div className={styles.mismatchLabel}>{label}</div>
+                                  <div className={styles.mismatchValuePair}>
+                                    <span className={styles.mismatchValueKey}>Citation Value</span>
+                                    <span className={styles.mismatchValue}>{citationValue}</span>
                                   </div>
-                                ))}
-                              </div>
+                                  <div className={styles.mismatchValuePair}>
+                                    <span className={styles.mismatchValueKey}>Lookup Result</span>
+                                    <span className={styles.mismatchValue}>{lookupValue}</span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      )}
+                          </div>
+                        )}
 
-                      {occurrences.length > 0 && (
-                        <ul className={styles.occurrenceList}>
-                          {occurrences.map((occurrence, occurrenceIndex) => (
-                            <li
-                              key={`${citation.resource_key}-${occurrenceIndex}`}
-                              className={styles.occurrenceItem}
-                            >
-                              <div className={styles.occurrenceHeader}>
-                                <strong>Occurrence {occurrenceIndex + 1}</strong>
-                                {occurrence.citation_category &&
-                                  ` - ${formatIdentifier(occurrence.citation_category)}`}
-                              </div>
-                              {occurrence.matched_text && (
-                                <p className={styles.occurrenceText}>{occurrence.matched_text}</p>
-                              )}
-                              {occurrence.span && (
-                                <div className={styles.occurrenceSpan}>
-                                  Span: {occurrence.span[0]} – {occurrence.span[1]}
+                        {showUnverifiedDetailBlock && (
+                          <div className={styles.mismatchDetails}>
+                            <div className={styles.mismatchDetailsHeader}>
+                              <strong>Unverified details</strong>
+                              <span>reported from {lookupResultSourceDisplay}</span>
+                            </div>
+                            <div className={styles.mismatchGrid}>
+                              {unverifiedFieldsDisplay && (
+                                <div className={styles.mismatchItem}>
+                                  <div className={styles.mismatchLabel}>Unverified Fields</div>
+                                  <div className={styles.mismatchValue}>{unverifiedFieldsDisplay}</div>
                                 </div>
                               )}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
-                  );
+                              {returnedEntries.length > 0 && (
+                                <div className={styles.mismatchItem}>
+                                  <div className={styles.mismatchLabel}>Lookup Result</div>
+                                  <div className={styles.unverifiedLookupValues}>
+                                    {returnedEntries.map(([key, value]) => (
+                                      <div key={key} className={styles.mismatchValuePair}>
+                                        <span className={styles.mismatchValueKey}>{formatIdentifier(key) ?? key}</span>
+                                        <span className={styles.mismatchValue}>{formatDetailValue(value)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {occurrences.length > 0 && (
+                          <ul className={styles.occurrenceList}>
+                            {occurrences.map((occurrence, occurrenceIndex) => (
+                              <li
+                                key={`${citation.resource_key}-${occurrenceIndex}`}
+                                className={styles.occurrenceItem}
+                              >
+                                <div className={styles.occurrenceHeader}>
+                                  <strong>Occurrence {occurrenceIndex + 1}</strong>
+                                  {occurrence.citation_category &&
+                                    ` - ${formatIdentifier(occurrence.citation_category)}`}
+                                </div>
+                                {occurrence.matched_text && (
+                                  <p className={styles.occurrenceText}>{occurrence.matched_text}</p>
+                                )}
+                                {occurrence.span && (
+                                  <div className={styles.occurrenceSpan}>
+                                    Span: {occurrence.span[0]} – {occurrence.span[1]}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </article>
+                    );
                 })
                 )}
               </section>
