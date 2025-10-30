@@ -158,7 +158,9 @@ export default function HomePage() {
                 <p className={styles.dropzoneTitle}>
                   {selectedFile ? selectedFile.name : 'Drag & drop your document'}
                 </p>
-                <p className={styles.dropzoneSubtitle}>or click to browse locally</p>
+                <p className={styles.dropzoneSubtitle}>
+                  {selectedFile ? selectedFile.type + ' / ' + (selectedFile.size * 1024 * 1024).toFixed(0) + ' MB' : 'or click to browse locally'}
+                </p>
               </div>
             </div>
 
@@ -184,7 +186,6 @@ export default function HomePage() {
             <li className={styles.noticeListItem}>Irregular formats can offset automatic footnote numbering.</li>
             <li className={styles.noticeListItem}>Block quotes are not supported.</li>
           </ul>
-          <br />
           <p>
             <strong>Important:</strong> Please avoid uploading confidential or privileged information. A Microsoft Word
             add-in with identical functionality keeps data on-device. Contact{' '}
