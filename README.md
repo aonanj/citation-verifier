@@ -9,13 +9,13 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 ## Screenshots
 
 ### Next.js UI - Citation Verification List
-![Citation Verification List](docs/screenshots/CV-Screenshot-1.png)
+![Citation Verification List](docs/screenshots/CV-Screenshot-2.png)
 
 ### Next.js UI - Uploaded Document with Verification Indicators
-![Uploaded Document with Verification Indicators](docs/screenshots/CV-Screenshot-2.png)
+![Uploaded Document with Verification Indicators](docs/screenshots/CV-Screenshot-3.png)
 
 ### Word Add-In UI
-![Word Add-In UI](docs/screenshots/CV-Screenshot-3.png)
+![Word Add-In UI](docs/screenshots/CV-Screenshot-4.png)
 
 
 ## Overview
