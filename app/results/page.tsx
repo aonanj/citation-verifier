@@ -956,6 +956,9 @@ export default function ResultsPage() {
                     } as CSSProperties;
                     const mismatchedFieldsRaw = citation.verification_details?.mismatched_fields ?? [];
                     const mismatchedFields = Array.isArray(mismatchedFieldsRaw) ? mismatchedFieldsRaw : [];
+                    const mismatchedFieldsDisplay = Array.isArray(mismatchedFields)
+                      ? mismatchedFields.join(', ')
+                      : mismatchedFields ?? null;
                     const extractedDetails = (citation.verification_details?.extracted ?? {}) as Record<string, unknown>;
                     const referenceDetails = (citation.verification_details?.court_listener ?? {}) as Record<
                       string,
@@ -1007,7 +1010,7 @@ export default function ResultsPage() {
                         {showMismatchDetails && (
                           <div className={styles.mismatchDetails}>
                             <div className={styles.mismatchDetailsHeader}>
-                              <strong>Mismatched Fields</strong>
+                              <strong>Mismatched Fields</strong> {mismatchedFieldsDisplay}
                               <span>compared to lookup result from {lookupResultSourceDisplay}</span>
                             </div>
                             <div className={styles.mismatchGrid}>
@@ -1031,7 +1034,7 @@ export default function ResultsPage() {
                         {showUnverifiedDetailBlock && (
                           <div className={styles.mismatchDetails}>
                             <div className={styles.mismatchDetailsHeader}>
-                              <strong>Unverified Fields</strong>: {unverifiedFieldsDisplay}
+                              <strong>Unverified Fields</strong> {unverifiedFieldsDisplay}
                               <span>reported from {lookupResultSourceDisplay}</span>
                             </div>
                             <div className={styles.mismatchGrid}>
