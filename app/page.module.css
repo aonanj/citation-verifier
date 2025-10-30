@@ -147,11 +147,11 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 0.4rem;
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: 0.45rem;
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  top: 0.2rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--text-secondary);
   box-shadow: 0 6px 16px rgba(76, 196, 255, 0.35);
 }
 
@@ -238,6 +238,7 @@
   width: clamp(3.5rem, 7vw, 4.5rem);
   height: clamp(3.5rem, 7vw, 4.5rem);
   object-fit: contain;
+  color: #fff;
   filter: brightness(1.1);
 }
 
