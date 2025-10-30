@@ -121,13 +121,11 @@ export default function HomePage() {
               law review notes, and other documents citing primarily to US state and federal case law and statutes,
               academic and professional journals and periodicals, and secondary legal sources (limited).
             </p>
-            <p>For documents with citations formatted according to the Bluebook style guide, VeriCite supports:</p>
-            <ul className={styles.heroList}>
-              <li className={styles.heroListItem}>Inline and footnote citations</li>
-              <li className={styles.heroListItem}>String citations</li>
-              <li className={styles.heroListItem}>Introductory signals, such as "see," "cf.," and "but see"</li>
-              <li className={styles.heroListItem}>Short case <em>id.</em>, and <em>supra</em> citations</li>
-            </ul>
+            <p>
+              This web service works with both inline and footnote citations that follow
+              the Bluebook format, including string citations and citations preceded by introductory signals. Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>,
+              are matched and grouped with their parent citations.
+            </p>
           </div>
         </section>
 
