@@ -174,13 +174,13 @@ export default function HomePage() {
 
         <section className={styles.noticeCard}>
           <p>Note that not all citation formats are recognized or verified.</p>
-          <ul className={styles.heroList}>
-            <li className={styles.heroListItem}>Web sites, textbooks, and unsupported sources are ignored.</li>
-            <li className={styles.heroListItem}>
+          <ul className={styles.noticeList}>
+            <li className={styles.noticeListItem}>Web sites, textbooks, and unsupported sources are ignored.</li>
+            <li className={styles.noticeListItem}>
               <em>infra</em> signals are omitted from verification.
             </li>
-            <li className={styles.heroListItem}>Irregular formats can offset automatic footnote numbering.</li>
-            <li className={styles.heroListItem}>Block quotes are not supported.</li>
+            <li className={styles.noticeListItem}>Irregular formats can offset automatic footnote numbering.</li>
+            <li className={styles.noticeListItem}>Block quotes are not supported.</li>
           </ul>
           <br />
           <p>
