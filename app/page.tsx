@@ -156,10 +156,10 @@ export default function HomePage() {
               <div className={dropzoneClassName}>
                 <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
                 <p className={styles.dropzoneTitle}>
-                  {selectedFile ? selectedFile.name : 'Drag & drop your document'}
+                  {selectedFile ? selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) : 'Drag & drop your document'}
                 </p>
                 <p className={styles.dropzoneSubtitle}>
-                  {selectedFile ? selectedFile.type + ' / ' + (selectedFile.size * 1024 * 1024).toFixed(0) + ' MB' : 'or click to browse locally'}
+                  {selectedFile ? selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1) + ' / ' + (selectedFile.size / 1024 / 1024).toFixed(0) + ' MB' : 'or click to browse locally'}
                 </p>
               </div>
             </div>
