@@ -159,7 +159,7 @@ export default function HomePage() {
                   {selectedFile ? selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) : 'Drag & drop your document'}
                 </p>
                 <p className={styles.dropzoneSubtitle}>
-                  {selectedFile ? selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1) + ' / ' + (selectedFile.size / 1024 / 1024).toFixed(0) + ' MB' : 'or click to browse locally'}
+                  {selectedFile ? selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1) + ' / ' + (selectedFile.size / 1024).toFixed(0) + ' KB' : 'or click to browse locally'}
                 </p>
               </div>
             </div>
