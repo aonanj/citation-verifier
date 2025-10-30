@@ -120,7 +120,7 @@ export default function HomePage() {
               academic and professional journals and periodicals, and secondary legal sources (limited).
             </p>
             <p>
-              The platform understands inline and footnote citations&mdash;including string citations&mdash;that follow
+              The platform understands inline and footnote citations (including string citations) that follow
               the Bluebook format. Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>,
               are matched and grouped with their parent citations.
             </p>
@@ -181,8 +181,18 @@ export default function HomePage() {
         </section>
 
         <section className={styles.noticeCard}>
+          <p>Note that not all citation formats are recognized or verified.</p>
+          <ul className={styles.heroList}>
+            <li className={styles.heroListItem}>Web sites, textbooks, and unsupported sources are ignored.</li>
+            <li className={styles.heroListItem}>
+              <em>infra</em> signals are omitted from verification.
+            </li>
+            <li className={styles.heroListItem}>Irregular formats can offset automatic footnote numbering.</li>
+            <li className={styles.heroListItem}>Block quotes are not supported.</li>
+          </ul>
+          <br />
           <p>
-            <strong>Note:</strong> Please avoid uploading confidential or privileged information. A Microsoft Word
+            <strong>Important:</strong> Please avoid uploading confidential or privileged information. A Microsoft Word
             add-in with identical functionality keeps data on-device. Contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>

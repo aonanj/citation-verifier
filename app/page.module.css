@@ -315,6 +315,7 @@
   border: 1px solid rgba(249, 115, 22, 0.3);
   background: linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(249, 115, 22, 0.05));
   color: var(--text-secondary);
+  opacity: 0.8;
   box-shadow: var(--shadow-soft);
 }
 
