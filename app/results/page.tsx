@@ -1010,7 +1010,7 @@ export default function ResultsPage() {
                           <div className={styles.mismatchDetails}>
                             <div className={styles.mismatchDetailsHeader}>
                               <strong>Mismatched Fields</strong> {mismatchedFieldsDisplay}
-                              <span>compared to lookup result from {lookupResultSourceDisplay}</span>
+                              <span>compared against {lookupResultSourceDisplay}</span>
                             </div>
                             <div className={styles.mismatchGrid}>
                               {mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
