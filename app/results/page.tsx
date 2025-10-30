@@ -956,9 +956,6 @@ export default function ResultsPage() {
                     } as CSSProperties;
                     const mismatchedFieldsRaw = citation.verification_details?.mismatched_fields ?? [];
                     const mismatchedFields = Array.isArray(mismatchedFieldsRaw) ? mismatchedFieldsRaw : [];
-                    const mismatchedFieldsDisplay = Array.isArray(mismatchedFields)
-                      ? mismatchedFields.join(', ')
-                      : mismatchedFields ?? null;
                     const extractedDetails = (citation.verification_details?.extracted ?? {}) as Record<string, unknown>;
                     const referenceDetails = (citation.verification_details?.court_listener ?? {}) as Record<
                       string,
@@ -979,6 +976,8 @@ export default function ResultsPage() {
                         lookupValue: formatDetailValue(lookupValueRaw ?? null),
                       };
                     });
+                    const mismatchedFieldsDisplay =
+                      mismatchDetails.length > 0 ? mismatchDetails.map(({ label }) => label).join(', ') : null;
                     const showMismatchDetails =
                       normalizeKey(citation.status) === 'warning' && mismatchDetails.length > 0;
                     const lookupResultSourceDisplay = formattedLookupSource ?? 'Unspecified source';
