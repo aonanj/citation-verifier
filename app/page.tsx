@@ -105,10 +105,10 @@ export default function HomePage() {
               <span className={styles.heroEyebrow}>Bluebook-native verification</span>
               <h1 className={styles.heroTitle}>
                 VeriCite
-                <span className={styles.heroAccent}>Citation confidence for every legal document.</span>
+                <span className={styles.heroAccent}>Citation confidence for legal documents.</span>
               </h1>
               <p className={styles.heroSubtitle}>
-                Citation verification web service for briefs, memos, and other court filings and legal documents.
+                Citation verification web service for briefs, memos, and other court filings, legal documents, and journal articles.
               </p>
             </div>
           </div>
@@ -124,14 +124,6 @@ export default function HomePage() {
               the Bluebook format. Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>,
               are matched and grouped with their parent citations.
             </p>
-            <ul className={styles.heroList}>
-              <li className={styles.heroListItem}>Web sites, textbooks, and unsupported sources are ignored.</li>
-              <li className={styles.heroListItem}>
-                <em>infra</em> signals are omitted from verification.
-              </li>
-              <li className={styles.heroListItem}>Irregular formats can offset automatic footnote numbering.</li>
-              <li className={styles.heroListItem}>Block quotes are skipped to avoid citation mismatches.</li>
-            </ul>
           </div>
         </section>
 
