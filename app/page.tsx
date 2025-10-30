@@ -93,6 +93,8 @@ export default function HomePage() {
     [dragActive, isLoading],
   );
 
+  const dropzoneIconSrc = selectedFile ? '/images/doc_upload_fill.png' : '/images/doc_upload_empty.png';
+
   return (
     <main className={styles.page}>
       <div className={styles.content}>
@@ -152,7 +154,7 @@ export default function HomePage() {
                 disabled={isLoading}
               />
               <div className={dropzoneClassName}>
-                <img className={styles.dropzoneIcon} src="/images/folder-upload-icon.svg" alt="" />
+                <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
                 <p className={styles.dropzoneTitle}>
                   {selectedFile ? selectedFile.name : 'Drag & drop your document'}
                 </p>

@@ -317,8 +317,13 @@
   border: 1px solid rgba(249, 115, 22, 0.3);
   background: linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(249, 115, 22, 0.05));
   color: var(--text-secondary);
-  opacity: 0.7;
+  opacity: 0.6;
   box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
 .noticeCard a {
@@ -332,7 +337,6 @@
 
 .noticeCard p {
   margin: 0;
-  margin-bottom: 1rem;
   font-size: 0.9rem;
   line-height: 1.5;
   max-width: 80ch;
