@@ -158,8 +158,9 @@
 
 .balanceCard {
   display: flex;
-  flex-direction: column;
-  gap: 1.4rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: clamp(1.1rem, 2.4vw, 2.1rem);
   padding: clamp(1.4rem, 2.8vw, 2.2rem);
   border-radius: var(--radius-md);
   border: 1px solid rgba(76, 196, 255, 0.22);
@@ -167,11 +168,19 @@
   box-shadow: var(--shadow-soft);
 }
 
-.balanceHeader {
+.balanceCard > * {
+  flex: 1 1 260px;
+}
+
+.balanceSummary {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1.5rem;
+  flex-direction: column;
+  gap: 0.8rem;
+  justify-content: center;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border-radius: var(--radius-md);
+  background: rgba(6, 20, 36, 0.65);
+  border: 1px solid rgba(76, 196, 255, 0.18);
 }
 
 .balanceTitle {
@@ -204,6 +213,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.4rem;
+  flex: 1.35 1 340px;
 }
 
 .packagesHeading {
@@ -283,6 +293,16 @@
 .packageAction:not(:disabled):hover {
   transform: translateY(-2px);
   box-shadow: 0 14px 28px rgba(76, 196, 255, 0.24);
+}
+
+@media (max-width: 768px) {
+  .balanceCard {
+    flex-direction: column;
+  }
+
+  .balanceSummary {
+    background: rgba(6, 20, 36, 0.55);
+  }
 }
 
 .newsTicker {

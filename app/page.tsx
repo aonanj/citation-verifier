@@ -439,9 +439,9 @@ function HomePageContent() {
           )}
 
           <div className={styles.balanceCard}>
-            <div className={styles.balanceHeader}>
+            <div className={styles.balanceSummary}>
+              <span className={styles.balanceTitle}>Account balance</span>
               <div className={styles.balanceCount}>
-                <span className={styles.balanceTitle}>Account balance</span>
                 <span className={styles.balanceCountValue}>{balanceDisplay}</span>
                 <span className={styles.balanceCountLabel}>{balanceSubtitle}</span>
               </div>
