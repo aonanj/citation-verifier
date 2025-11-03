@@ -40,6 +40,10 @@ const NEWS_ITEMS = [
     title: 'Judges cite AI hallucinations in growing sanctions inquiries (NatLawReview)',
     href: 'https://natlawreview.com/article/more-sanctions-inquiries-against-lawyers-judges-cite-hallucinations',
   },
+  {
+    title: 'Maryland Appellate Court Refers Attorney to Attorney Grievance Commission for AI Misuse (MD Courts)',
+    href: 'https://www.mdcourts.gov/data/opinions/cosa/2025/0361s25.pdf',
+  },
 ];
 
 function HomePageContent() {
