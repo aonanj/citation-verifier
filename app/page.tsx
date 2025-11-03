@@ -46,6 +46,29 @@ const NEWS_ITEMS = [
   },
 ];
 
+const FAQ_ITEMS = [
+  {
+    question: 'What types of citations does VeriCite verify?',
+    answer:
+      'VeriCite validates Bluebook-formatted case law, statutes, regulations, and secondary sources drawn from federal and state reporters, journals, and treatises.',
+  },
+  {
+    question: 'Can VeriCite catch AI-generated hallucinated authorities?',
+    answer:
+      'Yes. Every citation is scored against trusted legal research services so that hallucinated or fabricated authorities are flagged with confidence indicators before you file.',
+  },
+  {
+    question: 'How quickly will my verification report be ready?',
+    answer:
+      'Most briefs process in just a few minutes. You receive structured verification results with citations grouped, annotated, and ready for edits the moment the review completes.',
+  },
+  {
+    question: 'Is my document secure during the verification process?',
+    answer:
+      'Documents are encrypted in transit, and you can keep sensitive filings on-premises with the optional Microsoft Word add-in that mirrors the VeriCite workflow.',
+  },
+];
+
 function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -476,6 +499,79 @@ function HomePageContent() {
           </div>
         </section>
 
+        <section className={styles.featureHighlights} aria-labelledby="feature-highlights-heading">
+          <div className={styles.featureHighlightsHeader}>
+            <h2 id="feature-highlights-heading" className={styles.sectionTitle}>
+              Reduce citation risk before you file
+            </h2>
+            <p className={styles.sectionSubtitle}>
+              Legal teams use VeriCite to automate legal citation verification, document Bluebook compliance, and keep
+              clients confident that every authority is accurate.
+            </p>
+          </div>
+          <div className={styles.featureGrid}>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Bluebook-native accuracy</h3>
+              <p className={styles.featureCardCopy}>
+                Detect signal phrases, pinpoint cites, and short-form references with a verification engine built
+                specifically for legal briefing workflows.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Comprehensive authority coverage</h3>
+              <p className={styles.featureCardCopy}>
+                Cross-check citations against U.S. federal and state reporters, regulations, and leading legal journals
+                so inconsistencies never reach chambers.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Audit-ready reporting</h3>
+              <p className={styles.featureCardCopy}>
+                Export structured citation verification reports that document review status for partners, clients, or
+                court inquiries.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.workflowSection} aria-labelledby="workflow-heading">
+          <h2 id="workflow-heading" className={styles.sectionTitle}>
+            How VeriCite fits into your review workflow
+          </h2>
+          <ol className={styles.workflowList}>
+            <li className={styles.workflowItem}>
+              <span className={styles.workflowBadge}>1</span>
+              <div>
+                <h3 className={styles.workflowItemTitle}>Upload your legal brief</h3>
+                <p className={styles.workflowItemCopy}>
+                  Drag-and-drop DOCX, PDF, or TXT files up to 10 MB and VeriCite normalizes the content, keeping footnote
+                  structure intact.
+                </p>
+              </div>
+            </li>
+            <li className={styles.workflowItem}>
+              <span className={styles.workflowBadge}>2</span>
+              <div>
+                <h3 className={styles.workflowItemTitle}>Verify every citation automatically</h3>
+                <p className={styles.workflowItemCopy}>
+                  Bluebook-aware parsing clusters short forms to their parent citations and validates authorities against
+                  trusted research databases and APIs.
+                </p>
+              </div>
+            </li>
+            <li className={styles.workflowItem}>
+              <span className={styles.workflowBadge}>3</span>
+              <div>
+                <h3 className={styles.workflowItemTitle}>Deliver confident filings</h3>
+                <p className={styles.workflowItemCopy}>
+                  Share interactive verification reports, export annotated data for knowledge management systems, and
+                  keep your matter teams aligned.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
         <section className={styles.workspaceColumns}>
           <article className={styles.uploadCard}>
             <h2 className={styles.uploadHeading}>Upload document</h2>
@@ -591,6 +687,20 @@ function HomePageContent() {
             add-in with identical functionality keeps data on-device. Contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>
+        </section>
+
+        <section className={styles.faqSection} id="faq" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className={styles.sectionTitle}>
+            Frequently asked questions
+          </h2>
+          <dl className={styles.faqList}>
+            {FAQ_ITEMS.map((item) => (
+              <div className={styles.faqItem} key={item.question}>
+                <dt className={styles.faqQuestion}>{item.question}</dt>
+                <dd className={styles.faqAnswer}>{item.answer}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
       </div>
     </main>
