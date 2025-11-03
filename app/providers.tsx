@@ -1,8 +1,23 @@
-'use client';
+"use client";
 
-import { ReactNode } from 'react';
-import { UserProvider } from '@auth0/nextjs-auth0/client';
+import { Auth0Provider } from "@auth0/auth0-react";
 
-export default function AppProviders({ children }: { children: ReactNode }) {
-  return <UserProvider>{children}</UserProvider>;
+export function Providers({ children }: { children: React.ReactNode }) {
+  const domain = process.env.NEXT_PUBLIC_AUTH0_DOMAIN!;
+  const clientId = process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID!;
+  const audience = process.env.NEXT_PUBLIC_AUTH0_AUDIENCE!;
+
+  return (
+    <Auth0Provider
+      domain={domain}
+      clientId={clientId}
+      authorizationParams={{
+        redirect_uri: typeof window !== 'undefined' ? window.location.origin : undefined,
+        audience: audience,
+        scope: "openid profile email",
+      }}
+    >
+      {children}
+    </Auth0Provider>
+  );
 }

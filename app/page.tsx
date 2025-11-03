@@ -1,8 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState, StrictMode} from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth0, Auth0Provider } from "@auth0/auth0-react";
 import styles from './page.module.css';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
