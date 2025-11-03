@@ -93,7 +93,7 @@ function SuccessContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isAuthenticated, router, getAccessTokenSilently]);
+  }, [isAuthenticated, router, getAccessTokenSilently, sessionId]);
 
   return (
     <main className={styles.main}>
