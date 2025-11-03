@@ -376,7 +376,7 @@ async def verify_payment_session(
             payment = Payment(
                 user_id=user.id,
                 stripe_checkout_session_id=session_id,
-                stripe_payment_intent_id=session.payment_intent,
+                stripe_payment_intent_id=payment_intent_str, 
                 package_key=package_key,
                 credits_purchased=credits,
                 amount_paid_cents=amount_cents,
