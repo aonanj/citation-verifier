@@ -530,7 +530,24 @@ async def stripe_webhook(
         package_key = metadata.get("package_key")
         credits_raw = metadata.get("credits")
         amount_raw = metadata.get("amount_cents")
-        user_email = metadata.get("email") or session_obj.get("customer_details", {}).get("email")
+        
+        # Try to get email from multiple sources, default to None
+        user_email = None
+        try:
+            user_email = metadata.get("email")
+            if not user_email:
+                customer_details = session_obj.get("customer_details")
+                if customer_details and isinstance(customer_details, dict):
+                    user_email = customer_details.get("email")
+        except Exception as e:
+            logger.warning("Could not extract email from session, continuing without it: %s", e)
+        
+        logger.info(
+            "Processing webhook for session %s, user %s, email: %s",
+            session_obj.get("id"),
+            auth0_sub,
+            user_email or "None"
+        )
 
         if auth0_sub and package_key:
             try:
@@ -548,37 +565,47 @@ async def stripe_webhook(
             )
 
             if credits > 0:
-                user = get_or_create_user(db, auth0_sub, user_email)
-                updated_user = mark_payment_completed(
-                    db,
-                    checkout_session_id=session_obj["id"],
-                    payment_intent_id=session_obj.get("payment_intent"),
-                    package_key=package_key,
-                    credits=credits,
-                    amount_cents=amount_cents,
-                )
-
-                if updated_user is None:
-                    payment = Payment(
-                        user_id=user.id,
-                        stripe_checkout_session_id=session_obj["id"],
-                        stripe_payment_intent_id=session_obj.get("payment_intent"),
+                try:
+                    user = get_or_create_user(db, auth0_sub, user_email)
+                    updated_user = mark_payment_completed(
+                        db,
+                        checkout_session_id=session_obj["id"],
+                        payment_intent_id=session_obj.get("payment_intent"),
                         package_key=package_key,
-                        credits_purchased=credits,
-                        amount_paid_cents=amount_cents,
-                        currency=(session_obj.get("currency") or "usd"),
-                        status="paid",
+                        credits=credits,
+                        amount_cents=amount_cents,
                     )
-                    db.add(payment)
-                    user.credits += credits
-                    db.commit()
-                    db.refresh(user)
 
-                logger.info(
-                    "Applied payment for user %s via Stripe session %s (%s credits)",
-                    auth0_sub,
-                    session_obj["id"],
-                    credits,
-                )
+                    if updated_user is None:
+                        payment = Payment(
+                            user_id=user.id,
+                            stripe_checkout_session_id=session_obj["id"],
+                            stripe_payment_intent_id=session_obj.get("payment_intent"),
+                            package_key=package_key,
+                            credits_purchased=credits,
+                            amount_paid_cents=amount_cents,
+                            currency=(session_obj.get("currency") or "usd"),
+                            status="paid",
+                        )
+                        db.add(payment)
+                        user.credits += credits
+                        db.commit()
+                        db.refresh(user)
+
+                    logger.info(
+                        "Applied payment for user %s via Stripe session %s (%s credits)",
+                        auth0_sub,
+                        session_obj["id"],
+                        credits,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to process webhook for session %s: %s",
+                        session_obj.get("id"),
+                        exc,
+                        exc_info=True
+                    )
+                    # Don't raise - return success to Stripe to avoid retries
+                    # The verify-session endpoint will handle it as fallback
 
     return JSONResponse(status_code=200, content={"received": True})
