@@ -1,15 +1,44 @@
 import os
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Dict, Generator, Tuple
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine, URL, make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./citation_verifier.db")
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+def _resolve_database_url(raw_url: str | None) -> Tuple[URL, Dict[str, Any]]:
+    """Normalize the DATABASE_URL environment variable for SQLAlchemy.
 
-engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True, connect_args=connect_args)
+    Neon requires SSL and the psycopg driver. We upgrade plain postgres URLs
+    to use the psycopg driver and inject sslmode=require when it is absent.
+    """
+    if not raw_url:
+        default_url = "sqlite:///./citation_verifier.db"
+        return make_url(default_url), {"check_same_thread": False}
+
+    url = make_url(raw_url)
+
+    if url.drivername.startswith("sqlite"):
+        return url, {"check_same_thread": False}
+
+    if url.drivername in {"postgres", "postgresql"}:
+        url = url.set(drivername="postgresql+psycopg")
+
+    query = dict(url.query)
+    if "sslmode" not in query and url.drivername.startswith("postgresql"):
+        query["sslmode"] = "require"
+        url = url.set(query=query)
+
+    return url, {}
+
+
+def _create_engine() -> Engine:
+    url, connect_args = _resolve_database_url(os.getenv("DATABASE_URL"))
+    return create_engine(url, future=True, pool_pre_ping=True, connect_args=connect_args)
+
+
+engine = _create_engine()
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, future=True)
 Base = declarative_base()
 

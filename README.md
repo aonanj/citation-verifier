@@ -169,6 +169,18 @@ DATABASE_URL=sqlite:///./citation_verifier.db  # Optional: override default SQLi
 BACKEND_URL=http://localhost:8000  # Or production URL
 ```
 
+### Database Setup (Neon)
+Neon issues a Postgres connection string in the form `postgresql://<user>:<password>@<host>/<database>?sslmode=require`.  
+Expose that string to the backend via `DATABASE_URL`; the service automatically upgrades it to the `psycopg` driver and enforces SSL.
+
+After setting the environment variable, create the schema once:
+
+```bash
+python -m database.initialize
+```
+
+This command creates all tables (`user_accounts`, `payments`, `document_usage`) and indexes required by the service. Re-run it any time you provision a fresh Neon database.
+
 Create `.env.local` in the project root for frontend configuration:
 ```bash
 # Auth0 configuration (required)
