@@ -298,7 +298,7 @@ async def create_checkout_session(
             mode="payment",
             success_url=success_url,
             cancel_url=cancel_url,
-            customer_email=user.email,
+            customer_email=user.email if user.email else "",
             line_items=[
                 {
                     "price_data": {
@@ -311,7 +311,7 @@ async def create_checkout_session(
             ],
             metadata=metadata,
         )
-    except stripe.error.StripeError as exc:  # pragma: no cover - requires Stripe API
+    except stripe.StripeError as exc:  # pragma: no cover - requires Stripe API
         logger.error("Stripe checkout session creation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -337,7 +337,7 @@ async def create_checkout_session(
 
     return CreateCheckoutSessionResponse(
         session_id=session.id,
-        checkout_url=session.url,
+        checkout_url=session.url or "",
         package_key=package.key,
         credits=package.credits,
         amount_cents=package.amount_cents,
@@ -358,7 +358,7 @@ async def stripe_webhook(
 
     try:
         event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
-    except (ValueError, stripe.error.SignatureVerificationError) as exc:  # pragma: no cover - requires Stripe API
+    except (ValueError, stripe.SignatureVerificationError) as exc:  # pragma: no cover - requires Stripe API
         logger.warning("Invalid Stripe webhook signature: %s", exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
 
