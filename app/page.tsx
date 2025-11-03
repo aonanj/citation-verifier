@@ -4,31 +4,31 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
-import express from 'express';
-const app = express();
-import { auth } from 'express-oauth2-jwt-bearer';
-
-const port = process.env.PORT || 8080;
-
-const jwtCheck = auth({
-  audience: 'https://vericite',
-  issuerBaseURL: 'https://dev-u3nmdx5lfnpnvmtm.us.auth0.com/',
-  tokenSigningAlg: 'RS256'
-});
-
-// enforce on all endpoints
-app.use(jwtCheck);
-
-app.get('/authorized', function (req, res) {
-    res.send('Secured Resource');
-});
-
-app.listen(port);
-
-console.log('Running on port ', port);
-
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const API_BASE_URL = process.env.BACKEND_URL ?? DEFAULT_API_BASE_URL;
+
+const NEWS_ITEMS = [
+  {
+    title: 'California judge fines attorney as AI regulation debate escalates (CalMatters)',
+    href: 'https://calmatters.org/economy/technology/2025/09/chatgpt-lawyer-fine-ai-regulation/',
+  },
+  {
+    title: 'Massachusetts lawyer sanctioned for AI-generated fictitious cases (MSBA)',
+    href: 'https://www.msba.org/site/site/content/News-and-Publications/News/General-News/Massachusetts_Lawyer-Sanctioned_for_AI_Generated-Fictitious_Cases.aspx',
+  },
+  {
+    title: 'Federal court steps up scrutiny of ChatGPT research in filings (Esquire Solutions)',
+    href: 'https://www.esquiresolutions.com/federal-court-turns-up-the-heat-on-attorneys-using-chatgpt-for-research/',
+  },
+  {
+    title: 'Judge disqualifies Butler Snow attorneys over AI citations (Reuters)',
+    href: 'https://www.reuters.com/legal/government/judge-disqualifies-three-butler-snow-attorneys-case-over-ai-citations-2025-07-24/',
+  },
+  {
+    title: 'Judges cite AI hallucinations in growing sanctions inquiries (NatLawReview)',
+    href: 'https://natlawreview.com/article/more-sanctions-inquiries-against-lawyers-judges-cite-hallucinations',
+  },
+];
 
 export default function HomePage() {
   const router = useRouter();
@@ -121,6 +121,21 @@ export default function HomePage() {
   return (
     <main className={styles.page}>
       <div className={styles.content}>
+        <section className={styles.newsTicker} aria-label="Attorney AI news">
+          <span className={styles.newsTickerLabel}>AI litigation watch</span>
+          <div className={styles.newsTickerViewport}>
+            <ul className={styles.newsTickerTrack}>
+              {[...NEWS_ITEMS, ...NEWS_ITEMS].map((item, index) => (
+                <li className={styles.newsTickerItem} key={`${item.href}-${index}`}>
+                  <a href={item.href} target="_blank" rel="noopener noreferrer">
+                    {item.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
         <section className={styles.heroCard}>
           <div className={styles.heroHeader}>
             <span className={styles.heroMark}>

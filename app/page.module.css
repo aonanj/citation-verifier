@@ -37,6 +37,103 @@
   z-index: 1;
 }
 
+.newsTicker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.85rem 1.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, rgba(11, 28, 52, 0.75), rgba(9, 24, 46, 0.85));
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  backdrop-filter: blur(18px);
+}
+
+.newsTicker::before,
+.newsTicker::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 90px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.newsTicker::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(10, 22, 40, 0.92), rgba(10, 22, 40, 0));
+}
+
+.newsTicker::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(10, 22, 40, 0.92), rgba(10, 22, 40, 0));
+}
+
+.newsTickerLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.newsTickerViewport {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+}
+
+.newsTickerTrack {
+  display: inline-flex;
+  align-items: center;
+  gap: 2rem;
+  white-space: nowrap;
+  animation: newsTickerMove 42s linear infinite;
+}
+
+.newsTicker:hover .newsTickerTrack {
+  animation-play-state: paused;
+}
+
+.newsTickerItem {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.newsTickerItem::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  display: inline-block;
+  box-shadow: 0 0 8px rgba(76, 196, 255, 0.65);
+}
+
+.newsTickerItem:first-of-type::before {
+  display: none;
+}
+
+.newsTickerItem a {
+  color: inherit;
+  font-weight: 500;
+  transition: color var(--transition-base);
+}
+
+.newsTickerItem a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .heroCard {
   position: relative;
   padding: clamp(2.75rem, 5vw, 3.75rem) clamp(2.25rem, 6vw, 4rem);
@@ -397,6 +494,15 @@
 .noticeCard a {
   color: var(--accent);
   font-weight: 600;
+}
+
+@keyframes newsTickerMove {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }
 
 .noticeCard strong {
