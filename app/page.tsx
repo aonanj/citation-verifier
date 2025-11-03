@@ -4,6 +4,29 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
+import express from 'express';
+const app = express();
+import { auth } from 'express-oauth2-jwt-bearer';
+
+const port = process.env.PORT || 8080;
+
+const jwtCheck = auth({
+  audience: 'https://vericite',
+  issuerBaseURL: 'https://dev-u3nmdx5lfnpnvmtm.us.auth0.com/',
+  tokenSigningAlg: 'RS256'
+});
+
+// enforce on all endpoints
+app.use(jwtCheck);
+
+app.get('/authorized', function (req, res) {
+    res.send('Secured Resource');
+});
+
+app.listen(port);
+
+console.log('Running on port ', port);
+
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const API_BASE_URL = process.env.BACKEND_URL ?? DEFAULT_API_BASE_URL;
 

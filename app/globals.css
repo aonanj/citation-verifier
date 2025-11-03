@@ -56,10 +56,12 @@
 
 :root {
   color-scheme: dark;
-  --gradient-background: radial-gradient(125% 125% at 50% 20%, #1a355c 0%, #0e1c33 45%, #050a14 100%);
-  --surface-glass: rgba(11, 27, 48, 0.78);
-  --surface-glass-strong: rgba(14, 34, 58, 0.88);
-  --surface-muted: rgba(24, 47, 78, 0.65);
+  --gradient-background: linear-gradient(165deg, #04080f 0%, #09172d 45%, #050f21 72%, #02050b 100%);
+  --gradient-accent: radial-gradient(120% 120% at 15% 10%, rgba(64, 169, 255, 0.22) 0%, rgba(4, 12, 24, 0) 65%);
+  --gradient-accent-secondary: radial-gradient(140% 140% at 85% 18%, rgba(90, 212, 255, 0.18) 0%, rgba(4, 12, 24, 0) 68%);
+  --surface-glass: rgba(13, 32, 60, 0.58);
+  --surface-glass-strong: rgba(11, 30, 55, 0.72);
+  --surface-muted: rgba(22, 45, 76, 0.48);
   --border-subtle: rgba(255, 255, 255, 0.08);
   --text-primary: #f5f7fb;
   --text-secondary: #c8d5ee;
@@ -87,7 +89,8 @@ body {
   padding: 0;
   min-height: 100vh;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: var(--gradient-background);
+  background: var(--gradient-accent), var(--gradient-accent-secondary), var(--gradient-background);
+  background-attachment: fixed;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
