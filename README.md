@@ -77,8 +77,7 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 ├── app/                              # Next.js application (App Router)
 │   ├── layout.tsx                    # Global metadata and styling
 │   ├── page.tsx                      # Upload form + results dashboard
-│   ├── providers.tsx                 # Auth0 provider configuration
-│   └── api/auth/[auth0]/route.ts     # Auth0 callback handler
+│   └── providers.tsx                 # Auth0 provider configuration
 ├── svc/
 │   ├── doc_processor.py              # Text extraction and normalization
 │   ├── citations_compiler.py         # Eyecite integration and verifier dispatch

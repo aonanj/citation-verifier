@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth0 } from "@auth0/auth0-react";
 import styles from './page.module.css';
@@ -52,6 +52,7 @@ function HomePageContent() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [accountCredits, setAccountCredits] = useState<number | null>(null);
   const [packages, setPackages] = useState<PaymentPackage[]>([]);
+  const [selectedPackageKey, setSelectedPackageKey] = useState<string | null>(null);
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
   const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
 
@@ -122,6 +123,12 @@ function HomePageContent() {
         const data = (await response.json()) as PaymentPackage[];
         if (isMounted) {
           setPackages(data);
+          setSelectedPackageKey((current) => {
+            if (current && data.some((pkg) => pkg.key === current)) {
+              return current;
+            }
+            return data.length > 0 ? data[0].key : null;
+          });
         }
       } catch (packagesError) {
         console.error('Failed to load payment packages', packagesError);
@@ -155,9 +162,28 @@ function HomePageContent() {
     }
   }, [checkoutStatus, loadBalance]);
 
+  const handlePackageChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+    const { value } = event.target;
+    setSelectedPackageKey(value || null);
+    setInfoMessage(null);
+    setError(null);
+  }, []);
+
   const handlePurchase = useCallback(
-    async (packageKey: string) => {
+    async () => {
       if (isCheckoutOpening) {
+        return;
+      }
+
+      if (!selectedPackageKey) {
+        setError('Please choose a verification package to purchase.');
+        return;
+      }
+
+      const selection = packages.find((pkg) => pkg.key === selectedPackageKey);
+      if (!selection) {
+        setSelectedPackageKey(packages[0]?.key ?? null);
+        setError('Selected package is unavailable. Please choose another option.');
         return;
       }
 
@@ -184,7 +210,7 @@ function HomePageContent() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ package_key: packageKey }),
+          body: JSON.stringify({ package_key: selection.key }),
         });
 
         if (!response.ok) {
@@ -203,10 +229,19 @@ function HomePageContent() {
         const message =
           purchaseError instanceof Error ? purchaseError.message : 'Unable to start checkout. Please try again.';
         setError(message);
+      } finally {
         setIsCheckoutOpening(false);
       }
     },
-    [API_BASE_URL, getAccessTokenSilently, isAuthenticated, isCheckoutOpening, loginWithRedirect],
+    [
+      API_BASE_URL,
+      getAccessTokenSilently,
+      isAuthenticated,
+      isCheckoutOpening,
+      loginWithRedirect,
+      packages,
+      selectedPackageKey,
+    ],
   );
 
   const handleDrag = (e: React.DragEvent) => {
@@ -226,11 +261,6 @@ function HomePageContent() {
 
     if (!isAuthenticated) {
       setError('Please sign in to upload documents.');
-      return;
-    }
-
-    if (!hasCreditsAvailable) {
-      setError('Purchase credits to upload documents.');
       return;
     }
 
@@ -345,10 +375,27 @@ function HomePageContent() {
   const submitDisabled = isLoading || !selectedFile || !isAuthenticated || !hasCreditsAvailable;
   const balanceDisplay = !isAuthenticated ? '—' : accountCredits === null ? '…' : accountCredits;
   const balanceSubtitle = isAuthenticated
-    ? accountCredits === 0
-      ? 'No credits remaining'
-      : 'Documents remaining'
+    ? accountCredits === null
+      ? 'Loading credits…'
+      : accountCredits === 0
+        ? 'No credits remaining'
+        : 'Credits available'
     : 'Sign in to view your credits';
+
+  const selectedPackage = useMemo(() => {
+    if (!selectedPackageKey) {
+      return null;
+    }
+    return packages.find((pkg) => pkg.key === selectedPackageKey) ?? null;
+  }, [packages, selectedPackageKey]);
+
+  const purchasePriceDisplay = selectedPackage ? `$${formatCurrency(selectedPackage.amount_cents)}` : '—';
+  const purchaseButtonLabel = isCheckoutOpening
+    ? 'Redirecting…'
+    : isAuthenticated
+      ? 'Purchase'
+      : 'Log in to purchase';
+  const isPurchaseDisabled = isCheckoutOpening || isLoadingPackages || !selectedPackage;
 
   const dropzoneClassName = useMemo(
     () =>
@@ -425,96 +472,104 @@ function HomePageContent() {
           </div>
         </section>
 
-        <section className={styles.uploadCard}>
-          <h2 className={styles.uploadHeading}>Upload document</h2>
-          <p className={styles.uploadDescription}>
-            Upload a PDF, DOCX, or TXT document up to 10 MB. Processing time varies with document length and citation
-            complexity, and results appear instantly once verification is complete.
-          </p>
+        <section className={styles.workspaceColumns}>
+          <article className={styles.uploadCard}>
+            <h2 className={styles.uploadHeading}>Upload document</h2>
+            <p className={styles.uploadDescription}>
+              Upload a PDF, DOCX, or TXT document up to 10 MB. Processing time varies with document length and citation
+              complexity, and results appear instantly once verification is complete.
+            </p>
 
-          {infoMessage && (
-            <div className={styles.infoAlert} role="status">
-              {infoMessage}
-            </div>
-          )}
-
-          <div className={styles.balanceCard}>
-            <div className={styles.balanceSummary}>
-              <span className={styles.balanceTitle}>Account balance</span>
-              <div className={styles.balanceCount}>
-                <span className={styles.balanceCountValue}>{balanceDisplay}</span>
-                <span className={styles.balanceCountLabel}>{balanceSubtitle}</span>
-              </div>
-            </div>
-
-            <div className={styles.packages}>
-              <h3 className={styles.packagesHeading}>Purchase credits</h3>
-              {isLoadingPackages ? (
-                <span className={styles.authStatus}>Loading packages…</span>
-              ) : packages.length > 0 ? (
-                <div className={styles.packagesGrid}>
-                  {packages.map((pkg) => (
-                    <div key={pkg.key} className={styles.packageCard}>
-                      <p className={styles.packageTitle}>{pkg.name}</p>
-                      <p className={styles.packagePrice}>${formatCurrency(pkg.amount_cents)}</p>
-                      <p className={styles.packageCredits}>
-                        {pkg.credits} {pkg.credits === 1 ? 'credit' : 'credits'}
-                      </p>
-                      <button
-                        type="button"
-                        className={styles.packageAction}
-                        onClick={() => handlePurchase(pkg.key)}
-                        disabled={isCheckoutOpening}
-                      >
-                        {isCheckoutOpening ? 'Redirecting…' : isAuthenticated ? 'Buy credits' : 'Log in to buy'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <span className={styles.authStatus}>No purchase options are currently available.</span>
-              )}
-            </div>
-          </div>
-
-          <form className={styles.form} onSubmit={handleSubmit}>
-            <div
-              className={styles.dropzoneWrapper}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <input
-                id="document"
-                name="document"
-                className={styles.dropzoneInput}
-                type="file"
-                accept=".pdf,.docx,.txt"
-                onChange={handleFileChange}
-                disabled={isLoading || !isAuthenticated || !hasCreditsAvailable}
-              />
-              <div className={dropzoneClassName}>
-                <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
-                <p className={styles.dropzoneTitle}>
-                  {dropzoneTitle}
-                </p>
-                <p className={styles.dropzoneSubtitle}>
-                  {dropzoneSubtitle}
-                </p>
-              </div>
-            </div>
-
-            {error && (
-              <div className={styles.errorAlert} role="alert">
-                {error}
+            {infoMessage && (
+              <div className={styles.infoAlert} role="status">
+                {infoMessage}
               </div>
             )}
 
-            <button className={styles.submitButton} type="submit" disabled={submitDisabled}>
-              {isLoading ? 'Processing...' : 'Verify citations'}
+            <form className={styles.form} onSubmit={handleSubmit}>
+              <div className={styles.inlineBalanceCard}>
+                <span className={styles.inlineBalanceLabel}>Verification Report Credits:</span>
+                <span className={styles.inlineBalanceValue}>{balanceDisplay}</span>
+                <span className={styles.inlineBalanceSubtext}>{balanceSubtitle}</span>
+              </div>
+
+              <div
+                className={styles.dropzoneWrapper}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
+                <input
+                  id="document"
+                  name="document"
+                  className={styles.dropzoneInput}
+                  type="file"
+                  accept=".pdf,.docx,.txt"
+                  onChange={handleFileChange}
+                  disabled={isLoading || !isAuthenticated || !hasCreditsAvailable}
+                />
+                <div className={dropzoneClassName}>
+                  <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
+                  <p className={styles.dropzoneTitle}>
+                    {dropzoneTitle}
+                  </p>
+                  <p className={styles.dropzoneSubtitle}>
+                    {dropzoneSubtitle}
+                  </p>
+                </div>
+              </div>
+
+              {error && (
+                <div className={styles.errorAlert} role="alert">
+                  {error}
+                </div>
+              )}
+
+              <button className={styles.submitButton} type="submit" disabled={submitDisabled}>
+                {isLoading ? 'Processing...' : 'Verify citations'}
+              </button>
+            </form>
+          </article>
+
+          <aside className={styles.balanceCard} aria-label="Purchase verification reports">
+            <h3 className={styles.balanceCardTitle}>Purchase credits</h3>
+            <label className={styles.purchaseLabel} htmlFor="purchase-package">
+              Purchase Verification Reports:
+            </label>
+            <select
+              id="purchase-package"
+              className={styles.purchaseSelect}
+              value={selectedPackageKey ?? ''}
+              onChange={handlePackageChange}
+              disabled={isLoadingPackages || packages.length === 0}
+            >
+              {(!selectedPackageKey || packages.length === 0) && (
+                <option value="" disabled>
+                  {isLoadingPackages ? 'Loading packages…' : 'Select an option'}
+                </option>
+              )}
+              {packages.map((pkg) => (
+                <option key={pkg.key} value={pkg.key}>
+                  {pkg.credits === 1 ? '1 document' : `${pkg.credits} documents`}
+                </option>
+              ))}
+            </select>
+            <div className={styles.purchasePrice}>
+              Price: <span className={styles.purchasePriceValue}>{purchasePriceDisplay}</span>
+            </div>
+            <button
+              type="button"
+              className={styles.purchaseButton}
+              onClick={handlePurchase}
+              disabled={isPurchaseDisabled}
+            >
+              {purchaseButtonLabel}
             </button>
-          </form>
+            {!isLoadingPackages && packages.length === 0 && (
+              <span className={styles.purchaseEmpty}>No purchase options are currently available.</span>
+            )}
+          </aside>
         </section>
 
         <section className={styles.noticeCard}>
