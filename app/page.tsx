@@ -144,8 +144,8 @@ export default function HomePage() {
   const dropzoneTitle = isAuthenticated
     ? selectedFile
       ? selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name
-      : 'Drag & drop your document'
-    : 'Sign in to upload your document';
+      : 'Drag & drop a document'
+    : 'Sign in to upload a document';
   const dropzoneSubtitle = isAuthenticated
     ? selectedFile
       ? `${selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1)} / ${(selectedFile.size / 1024).toFixed(0)} KB`
@@ -222,16 +222,6 @@ export default function HomePage() {
             Upload a PDF, DOCX, or TXT document up to 10 MB. Processing time varies with document length and citation
             complexity, and results appear instantly once verification is complete.
           </p>
-
-          {!isAuthenticated && !auth0Loading && (
-            <div className={styles.authNotice} role="note">
-              <h3 className={styles.authNoticeTitle}>Sign in required</h3>
-              <p className={styles.authNoticeDescription}>
-                You need to log in before we can verify citations. Auth0 keeps your session secure and lets you revisit
-                past results quickly.
-              </p>
-            </div>
-          )}
 
           <form className={styles.form} onSubmit={handleSubmit}>
             <div
