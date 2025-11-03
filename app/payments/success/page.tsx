@@ -21,8 +21,8 @@ function SuccessContent() {
       return;
     }
 
-    // Fetch updated credit balance
-    const fetchCredits = async () => {
+    // Verify payment and fetch updated credit balance
+    const verifyAndFetchCredits = async () => {
       try {
         const token = await getAccessTokenSilently({
           authorizationParams: {
@@ -30,6 +30,39 @@ function SuccessContent() {
           },
         });
 
+        // First, verify the payment session (in case webhook didn't fire)
+        if (sessionId) {
+          try {
+            const verifyResponse = await fetch(`${API_BASE_URL}/api/payments/verify-session`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ session_id: sessionId }),
+            });
+
+            if (verifyResponse.ok) {
+              const verifyData = (await verifyResponse.json()) as { 
+                status: string; 
+                new_balance?: number;
+                credits?: number;
+              };
+              console.log('Payment verification:', verifyData);
+              
+              // If we got the new balance from verification, use it
+              if (verifyData.new_balance !== undefined) {
+                setCredits(verifyData.new_balance);
+                return;
+              }
+            }
+          } catch (verifyError) {
+            console.error('Failed to verify payment session:', verifyError);
+            // Continue to fetch balance normally
+          }
+        }
+
+        // Fetch current balance
         const response = await fetch(`${API_BASE_URL}/api/user/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -45,7 +78,7 @@ function SuccessContent() {
       }
     };
 
-    void fetchCredits();
+    void verifyAndFetchCredits();
 
     // Countdown timer
     const timer = setInterval(() => {

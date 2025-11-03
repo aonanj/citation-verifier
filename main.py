@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.datastructures import FileStorage
 
@@ -286,6 +287,129 @@ async def get_current_user_balance(
     return UserBalanceResponse(email=user.email, credits=user.credits)
 
 
+@app.post("/api/payments/verify-session")
+async def verify_payment_session(
+    payload: Dict[str, str],
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Fallback endpoint to verify and process a completed payment session.
+    Used when webhooks might not have been delivered.
+    """
+    _ensure_stripe_configured()
+    
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="session_id is required")
+    
+    try:
+        # Retrieve the session from Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        # Check if payment was successful
+        if session.payment_status != "paid":
+            return {"status": "pending", "message": "Payment not yet completed"}
+        
+        # Get metadata
+        metadata = session.metadata or {}
+        auth0_sub = metadata.get("auth0_sub")
+        
+        # Verify this session belongs to the current user
+        if auth0_sub != auth.sub:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session does not belong to user")
+        
+        # Check if already processed
+        from database.models import Payment as PaymentModel
+        existing_payment = db.execute(
+            select(PaymentModel).where(PaymentModel.stripe_checkout_session_id == session_id)
+        ).scalar_one_or_none()
+        if existing_payment and existing_payment.status == "paid":
+            return {
+                "status": "already_processed",
+                "message": "Payment already credited",
+                "credits": existing_payment.credits_purchased
+            }
+        
+        # Process the payment
+        package_key = metadata.get("package_key")
+        credits_raw = metadata.get("credits")
+        amount_raw = metadata.get("amount_cents")
+        user_email = metadata.get("email") or session.customer_details.email if session.customer_details else None
+        
+        if not package_key:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session metadata")
+        
+        try:
+            package = get_package(package_key)
+        except ValueError:
+            package = None
+        
+        credits = int(credits_raw or (package.credits if package else 0) or 0)
+        amount_cents = int(amount_raw or session.amount_total or (package.amount_cents if package else 0) or 0)
+        
+        if credits <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credit amount")
+        
+        user = get_or_create_user(db, auth.sub, user_email)
+        
+        # Extract payment_intent as string
+        payment_intent_str: Optional[str] = None
+        if session.payment_intent:
+            if isinstance(session.payment_intent, str):
+                payment_intent_str = session.payment_intent
+            else:
+                payment_intent_str = getattr(session.payment_intent, 'id', str(session.payment_intent))
+        
+        updated_user = mark_payment_completed(
+            db,
+            checkout_session_id=session_id,
+            payment_intent_id=payment_intent_str,
+            package_key=package_key,
+            credits=credits,
+            amount_cents=amount_cents,
+        )
+        
+        if updated_user is None:
+            # Create new payment record
+            from database.models import Payment
+            payment = Payment(
+                user_id=user.id,
+                stripe_checkout_session_id=session_id,
+                stripe_payment_intent_id=session.payment_intent,
+                package_key=package_key,
+                credits_purchased=credits,
+                amount_paid_cents=amount_cents,
+                currency=session.currency or "usd",
+                status="paid",
+            )
+            db.add(payment)
+            user.credits += credits
+            db.commit()
+            db.refresh(user)
+        
+        logger.info(
+            "Manually verified and processed payment for user %s, session %s (%s credits)",
+            auth.sub,
+            session_id,
+            credits
+        )
+        
+        return {
+            "status": "success",
+            "message": "Payment processed successfully",
+            "credits": credits,
+            "new_balance": user.credits
+        }
+        
+    except stripe.StripeError as exc:
+        logger.error("Failed to retrieve Stripe session %s: %s", session_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to verify payment with Stripe"
+        ) from exc
+
+
 @app.post("/api/payments/checkout", response_model=CreateCheckoutSessionResponse)
 async def create_checkout_session(
     payload: CreateCheckoutSessionRequest,
@@ -388,6 +512,7 @@ async def stripe_webhook(
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
     if signature is None:
+        logger.warning("Stripe webhook called without signature header")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe signature header.")
 
     try:
@@ -395,6 +520,8 @@ async def stripe_webhook(
     except (ValueError, stripe.SignatureVerificationError) as exc:  # pragma: no cover - requires Stripe API
         logger.warning("Invalid Stripe webhook signature: %s", exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
+
+    logger.info("Received Stripe webhook event: %s", event["type"])
 
     if event["type"] == "checkout.session.completed":
         session_obj = event["data"]["object"]
