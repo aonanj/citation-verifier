@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { jsPDF } from 'jspdf';
+import { useUser } from '@auth0/nextjs-auth0/client';
 import styles from './page.module.css';
 
 type CitationOccurrence = {
@@ -451,8 +452,15 @@ export default function ResultsPage() {
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
+  const { user, error: authError, isLoading: authLoading } = useUser();
+  const isAuthenticated = Boolean(user);
+  const displayName = user?.name ?? user?.email ?? 'Account';
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     const resultsData = sessionStorage.getItem('verificationResults');
     if (!resultsData) {
       router.push('/');
@@ -462,7 +470,7 @@ export default function ResultsPage() {
     const payload = JSON.parse(resultsData) as VerificationResponse;
     setCitations(payload.citations ?? []);
     setExtractedText(payload.extracted_text ?? null);
-  }, [router]);
+  }, [isAuthenticated, router]);
 
   const citationCount = citations.length;
   const annotatedCitations = useMemo(
@@ -783,6 +791,44 @@ export default function ResultsPage() {
     </div>
   );
 
+  if (authLoading) {
+    return (
+      <div className={styles.authGate}>
+        <div className={styles.authGateCard}>
+          <span className={styles.authGateLabel}>VeriCite</span>
+          <h1 className={styles.authGateTitle}>Checking your session…</h1>
+          <p className={styles.authGateDescription}>
+            Hang tight while we confirm your Auth0 login before showing your verification report.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className={styles.authGate}>
+        <div className={styles.authGateCard}>
+          <span className={styles.authGateLabel}>Sign in required</span>
+          <h1 className={styles.authGateTitle}>Log in to view verification results</h1>
+          <p className={styles.authGateDescription}>
+            Your citation analysis is protected. Please sign in with Auth0 to review document insights or start a new
+            verification.
+          </p>
+          {authError && <p className={styles.authGateError}>{authError.message}</p>}
+          <div className={styles.authGateActions}>
+            <a className={`${styles.button} ${styles.buttonPrimary}`} href="/api/auth/login?returnTo=/results">
+              Log in
+            </a>
+            <a className={`${styles.button} ${styles.buttonGhost}`} href="/">
+              Back to home
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
@@ -796,6 +842,13 @@ export default function ResultsPage() {
           </div>
         </div>
         <div className={styles.navActions}>
+          <div className={styles.navIdentity}>
+            <span className={styles.navIdentityLabel}>Signed in as</span>
+            <span className={styles.navIdentityName}>{displayName}</span>
+          </div>
+          <a className={`${styles.button} ${styles.buttonGhost}`} href="/api/auth/logout">
+            Log out
+          </a>
           <button
             type="button"
             className={`${styles.button} ${styles.buttonGhost}`}

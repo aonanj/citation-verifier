@@ -3,6 +3,7 @@
 import type { Metadata } from 'next';
 import { ReactNode } from 'react';
 import './globals.css';
+import AppProviders from './providers';
 
 export const metadata: Metadata = {
   title: 'VeriCite - Citation Verification',
@@ -13,7 +14,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }

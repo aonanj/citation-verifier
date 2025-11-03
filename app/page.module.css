@@ -37,6 +37,119 @@
   z-index: 1;
 }
 
+.authBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: clamp(0.85rem, 2vw, 1.25rem);
+  padding: clamp(1rem, 2.5vw, 1.3rem) clamp(1.3rem, 4vw, 1.9rem);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, rgba(12, 34, 60, 0.68), rgba(8, 20, 37, 0.82));
+  box-shadow: var(--shadow-soft);
+}
+
+.authBarText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: min(520px, 100%);
+}
+
+.authGreeting {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.authIdentity {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.authPrompt {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.authActions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.authButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1.6rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform var(--transition-base), box-shadow var(--transition-base), background var(--transition-base),
+    border-color var(--transition-base), color var(--transition-base);
+}
+
+.authButtonPrimary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #041222;
+  box-shadow: 0 18px 38px rgba(76, 196, 255, 0.28);
+}
+
+.authButtonPrimary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 52px rgba(76, 196, 255, 0.32);
+}
+
+.authButtonGhost {
+  background: rgba(76, 196, 255, 0.08);
+  border-color: rgba(76, 196, 255, 0.28);
+  color: var(--text-secondary);
+}
+
+.authButtonGhost:hover {
+  transform: translateY(-2px);
+  background: rgba(76, 196, 255, 0.14);
+}
+
+.authStatus {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.authNotice {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(76, 196, 255, 0.25);
+  background: linear-gradient(145deg, rgba(15, 35, 61, 0.82), rgba(11, 26, 48, 0.78));
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+}
+
+.authNoticeTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.authNoticeDescription {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 .newsTicker {
   position: relative;
   display: flex;
@@ -533,5 +646,14 @@
 
   .uploadCard {
     padding: 2.25rem 1.75rem;
+  }
+
+  .authBar {
+    padding: 1rem 1.2rem;
+  }
+
+  .authButton {
+    width: 100%;
+    justify-content: center;
   }
 }

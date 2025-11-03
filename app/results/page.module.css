@@ -26,6 +26,86 @@
   background: radial-gradient(55% 55% at 90% 16%, rgba(58, 166, 255, 0.16) 0%, rgba(4, 12, 24, 0) 70%);
 }
 
+.authGate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(2rem, 6vw, 4rem);
+  position: relative;
+  isolation: isolate;
+}
+
+.authGate::before,
+.authGate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.authGate::before {
+  background: radial-gradient(50% 50% at 12% 15%, rgba(76, 196, 255, 0.2) 0%, rgba(4, 12, 24, 0) 70%);
+}
+
+.authGate::after {
+  background: radial-gradient(55% 55% at 88% 18%, rgba(58, 166, 255, 0.18) 0%, rgba(4, 12, 24, 0) 70%);
+}
+
+.authGateCard {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, rgba(12, 34, 60, 0.75), rgba(8, 20, 37, 0.82));
+  box-shadow: 0 26px 48px rgba(5, 16, 28, 0.45);
+  padding: clamp(2rem, 5vw, 2.75rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  text-align: left;
+}
+
+.authGateLabel {
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.authGateTitle {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.2rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.authGateDescription {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.authGateError {
+  margin: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--error);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+
+.authGateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
 .nav {
   position: sticky;
   top: 0;
@@ -93,6 +173,31 @@
   justify-content: flex-end;
 }
 
+.navIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  text-align: right;
+}
+
+.navIdentityLabel {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.navIdentityName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 18ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .button {
   appearance: none;
   border: none;
@@ -106,6 +211,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
+  text-decoration: none;
 }
 
 .buttonPrimary {
@@ -754,6 +860,12 @@
 
   .navActions {
     justify-content: center;
+    gap: 0.9rem;
+  }
+
+  .navIdentity {
+    align-items: center;
+    text-align: center;
   }
 
   .summaryRow {
@@ -770,6 +882,14 @@
 }
 
 @media (max-width: 600px) {
+  .authGate {
+    padding: 1.5rem;
+  }
+
+  .authGateCard {
+    padding: 1.75rem;
+  }
+
   .nav {
     padding: 1rem 1.25rem;
   }

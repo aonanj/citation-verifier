@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@auth0/nextjs-auth0/client';
 import styles from './page.module.css';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -36,6 +37,15 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { user, error: authError, isLoading: authLoading } = useUser();
+  const isAuthenticated = Boolean(user);
+  const displayName = user?.name ?? user?.email ?? null;
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSelectedFile(null);
+    }
+  }, [isAuthenticated]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -52,6 +62,11 @@ export default function HomePage() {
     e.stopPropagation();
     setDragActive(false);
 
+    if (!isAuthenticated) {
+      setError('Please sign in to upload documents.');
+      return;
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setSelectedFile(e.dataTransfer.files[0]);
       setError(null);
@@ -59,6 +74,11 @@ export default function HomePage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isAuthenticated) {
+      setError('Please sign in to upload documents.');
+      return;
+    }
+
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
       setError(null);
@@ -71,6 +91,11 @@ export default function HomePage() {
 
     if (!selectedFile) {
       setError('Please choose a PDF, DOCX, or TXT document to upload.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setError('Please sign in to verify citations.');
       return;
     }
 
@@ -109,18 +134,55 @@ export default function HomePage() {
       [
         styles.dropzone,
         dragActive ? styles.dropzoneActive : '',
-        isLoading ? styles.dropzoneDisabled : '',
+        isLoading || !isAuthenticated ? styles.dropzoneDisabled : '',
       ]
         .filter(Boolean)
         .join(' '),
-    [dragActive, isLoading],
+    [dragActive, isAuthenticated, isLoading],
   );
 
   const dropzoneIconSrc = selectedFile ? '/images/doc_upload_fill.png' : '/images/doc_upload_empty.png';
+  const dropzoneTitle = isAuthenticated
+    ? selectedFile
+      ? selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name
+      : 'Drag & drop your document'
+    : 'Sign in to upload your document';
+  const dropzoneSubtitle = isAuthenticated
+    ? selectedFile
+      ? `${selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1)} / ${(selectedFile.size / 1024).toFixed(0)} KB`
+      : 'or click to browse locally'
+    : 'Authentication is required before uploading';
+  const submitDisabled = isLoading || !selectedFile || !isAuthenticated;
 
   return (
     <main className={styles.page}>
       <div className={styles.content}>
+        <header className={styles.authBar} aria-label="Account access">
+          <div className={styles.authBarText}>
+            {isAuthenticated ? (
+              <>
+                <span className={styles.authGreeting}>Signed in as</span>
+                <span className={styles.authIdentity}>{displayName ?? 'Authenticated user'}</span>
+              </>
+            ) : (
+              <span className={styles.authPrompt}>Sign in with Auth0 to verify your legal documents securely.</span>
+            )}
+          </div>
+          <div className={styles.authActions}>
+            {authLoading ? (
+              <span className={styles.authStatus}>Checking session…</span>
+            ) : isAuthenticated ? (
+              <a className={`${styles.authButton} ${styles.authButtonGhost}`} href="/api/auth/logout">
+                Log out
+              </a>
+            ) : (
+              <a className={`${styles.authButton} ${styles.authButtonPrimary}`} href="/api/auth/login">
+                Log in
+              </a>
+            )}
+          </div>
+        </header>
+
         <section className={styles.newsTicker} aria-label="Attorney AI news">
           <span className={styles.newsTickerLabel}>AI litigation watch</span>
           <div className={styles.newsTickerViewport}>
@@ -174,6 +236,16 @@ export default function HomePage() {
             complexity, and results appear instantly once verification is complete.
           </p>
 
+          {!isAuthenticated && !authLoading && (
+            <div className={styles.authNotice} role="note">
+              <h3 className={styles.authNoticeTitle}>Sign in required</h3>
+              <p className={styles.authNoticeDescription}>
+                You need to log in before we can verify citations. Auth0 keeps your session secure and lets you revisit
+                past results quickly.
+              </p>
+            </div>
+          )}
+
           <form className={styles.form} onSubmit={handleSubmit}>
             <div
               className={styles.dropzoneWrapper}
@@ -189,26 +261,26 @@ export default function HomePage() {
                 type="file"
                 accept=".pdf,.docx,.txt"
                 onChange={handleFileChange}
-                disabled={isLoading}
+                disabled={isLoading || !isAuthenticated}
               />
               <div className={dropzoneClassName}>
                 <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
                 <p className={styles.dropzoneTitle}>
-                  {selectedFile ? selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) : 'Drag & drop your document'}
+                  {dropzoneTitle}
                 </p>
                 <p className={styles.dropzoneSubtitle}>
-                  {selectedFile ? selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1) + ' / ' + (selectedFile.size / 1024).toFixed(0) + ' KB' : 'or click to browse locally'}
+                  {dropzoneSubtitle}
                 </p>
               </div>
             </div>
 
-            {error && (
+            {(error || authError) && (
               <div className={styles.errorAlert} role="alert">
-                {error}
+                {error ?? authError?.message ?? 'Authentication error. Please try again.'}
               </div>
             )}
 
-            <button className={styles.submitButton} type="submit" disabled={isLoading || !selectedFile}>
+            <button className={styles.submitButton} type="submit" disabled={submitDisabled}>
               {isLoading ? 'Processing...' : 'Verify citations'}
             </button>
           </form>

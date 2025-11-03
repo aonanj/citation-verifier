@@ -136,8 +136,14 @@ SEMANTIC_SCHOLAR_API_KEY=...  # Journal verifications
 LOG_TO_FILE=true              # optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
 BACKEND_URL=http://localhost:8000 or https://citation-verifier.onrender.com  
+AUTH0_SECRET=...              # 32+ char secret; use `openssl rand -hex 32`
+AUTH0_BASE_URL=http://localhost:3000
+AUTH0_ISSUER_BASE_URL=https://<tenant>.auth0.com
+AUTH0_CLIENT_ID=...
+AUTH0_CLIENT_SECRET=...
 ```
 Environment variables fall back to sane defaults when omitted; state-law verification returns errors if no OpenAI key is present.
+Auth0 credentials are required—create a "Regular Web Application" in Auth0, enable the default login flow, and add `http://localhost:3000/api/auth/callback` and `http://localhost:3000` as allowed callback/logout URLs for local development.
 
 ## Running Locally
 ```bash
@@ -183,6 +189,7 @@ npm run dev
 - Errors use standard FastAPI problem responses (`detail` message with 4xx or 5xx).
 
 ## Usage Tips
+- Sign in via Auth0 before uploading; the upload panel stays locked until the session is established.
 - Uploads larger than ~10 MB or outside the accepted extensions are rejected before processing.
 - The frontend highlights every matched occurrence in context; hover or scan the numbered badges to correlate cards with text spans.
 - `substatus` explains why a citation is flagged with a warning or marked as false (e.g., `case name mismatch`, `closest_match: …`).
