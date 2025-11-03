@@ -13,10 +13,10 @@ class PaymentPackage:
 
 
 PAYMENT_PACKAGES: Dict[str, PaymentPackage] = {
-    "single": PaymentPackage(key="single", name="Single document verification", credits=1, amount_cents=450),
-    "bundle_5": PaymentPackage(key="bundle_5", name="5 document verifications", credits=5, amount_cents=1950),
-    "bundle_10": PaymentPackage(key="bundle_10", name="10 document verifications", credits=10, amount_cents=3950),
-    "bundle_20": PaymentPackage(key="bundle_20", name="20 document verifications", credits=20, amount_cents=7950),
+    "single": PaymentPackage(key="single", name="1 verification", credits=1, amount_cents=450),
+    "bundle_5": PaymentPackage(key="bundle_5", name="5 verifications", credits=5, amount_cents=1950),
+    "bundle_10": PaymentPackage(key="bundle_10", name="10 verifications", credits=10, amount_cents=3950),
+    "bundle_20": PaymentPackage(key="bundle_20", name="20 verifications", credits=20, amount_cents=7950),
 }
 
 

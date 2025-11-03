@@ -458,7 +458,7 @@ function HomePageContent() {
                       <p className={styles.packageTitle}>{pkg.name}</p>
                       <p className={styles.packagePrice}>${formatCurrency(pkg.amount_cents)}</p>
                       <p className={styles.packageCredits}>
-                        {pkg.credits} {pkg.credits === 1 ? 'document credit' : 'document credits'}
+                        {pkg.credits} {pkg.credits === 1 ? 'credit' : 'credits'}
                       </p>
                       <button
                         type="button"

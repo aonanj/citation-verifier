@@ -101,8 +101,6 @@ sqlalchemy==2.0.36
     # via -r requirements.in
 greenlet==3.1.1
     # via sqlalchemy
-stripe==11.5.0
-    # via -r requirements.in
 requests==2.32.3
     # via stripe
 charset-normalizer==3.4.0
