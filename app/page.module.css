@@ -77,11 +77,11 @@
 }
 
 .authActions {
-  display: inline-flex;
+  display: flex;
   align-content: baseline;
   justify-items: right;
   align-items: baseline;
-  justify-content: right;
+  justify-content: flex-end;
   flex-wrap: wrap;
   margin-top: 1.75rem;
   gap: 0.8rem;
@@ -91,9 +91,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.75rem 1.6rem;
+  padding: 0.85rem 1.7rem;
   border-radius: 999px;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   font-weight: 600;
   text-decoration: none;
   border: 1px solid transparent;
@@ -102,8 +102,8 @@
 }
 
 .authButtonPrimary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #041222;
+  background: linear-gradient(135deg, #EAF6FF, #9BC7FF);
+  color: #102A43;
   box-shadow: 0 18px 38px rgba(76, 196, 255, 0.28);
 }
 
@@ -154,6 +154,135 @@
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.6;
+}
+
+.balanceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: clamp(1.4rem, 2.8vw, 2.2rem);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(76, 196, 255, 0.22);
+  background: linear-gradient(155deg, rgba(9, 24, 45, 0.9), rgba(12, 31, 56, 0.82));
+  box-shadow: var(--shadow-soft);
+}
+
+.balanceHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.balanceTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.balanceCount {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.balanceCountValue {
+  font-size: clamp(2.5rem, 5vw, 3rem);
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.balanceCountLabel {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.packages {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.packagesHeading {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.packagesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.packageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid rgba(76, 196, 255, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(11, 27, 48, 0.64);
+  transition: transform var(--transition-base), border-color var(--transition-base), background var(--transition-base);
+}
+
+.packageCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(76, 196, 255, 0.28);
+  background: rgba(13, 32, 56, 0.78);
+}
+
+.packageTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.packagePrice {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0;
+}
+
+.packageCredits {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.packageAction {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #041222;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  border: none;
+  cursor: pointer;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.packageAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  box-shadow: none;
+}
+
+.packageAction:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(76, 196, 255, 0.24);
 }
 
 .newsTicker {
@@ -549,6 +678,17 @@
   border: 1px solid rgba(248, 113, 113, 0.4);
   background: rgba(248, 113, 113, 0.12);
   color: var(--error);
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.infoAlert {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(76, 196, 255, 0.28);
+  background: rgba(76, 196, 255, 0.1);
+  color: var(--text-secondary);
   padding: 0.85rem 1rem;
   font-size: 0.9rem;
   text-align: left;

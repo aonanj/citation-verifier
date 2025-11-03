@@ -46,6 +46,7 @@ type CitationEntry = {
 type VerificationResponse = {
   citations: CitationEntry[];
   extracted_text?: string | null;
+  remaining_credits?: number | null;
 };
 
 type StatusTheme = {

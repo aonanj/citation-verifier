@@ -2,17 +2,30 @@
 
 import io
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+import stripe
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from werkzeug.datastructures import FileStorage
 
+from database.crud import (
+    create_payment_record,
+    get_or_create_user,
+    mark_payment_completed,
+    record_document_usage,
+)
+from database.models import Payment
+from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
 from svc.doc_processor import extract_text
+from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
+from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
 
 logger = setup_logger()
 
@@ -41,8 +54,41 @@ class CitationEntry(BaseModel):
 class VerificationResponse(BaseModel):
     citations: List[CitationEntry]
     extracted_text: str | None = None
+    remaining_credits: int
 
+
+class UserBalanceResponse(BaseModel):
+    email: str | None
+    credits: int
+
+
+class PaymentPackageResponse(BaseModel):
+    key: str
+    name: str
+    credits: int
+    amount_cents: int
+
+
+class CreateCheckoutSessionRequest(BaseModel):
+    package_key: str
+    success_url: str | None = None
+    cancel_url: str | None = None
+
+
+class CreateCheckoutSessionResponse(BaseModel):
+    session_id: str
+    checkout_url: str
+    package_key: str
+    credits: int
+    amount_cents: int
 load_dotenv()
+
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
 
 app = FastAPI(title="citation-verifier", version="0.1.0")
 
@@ -62,6 +108,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+def _ensure_stripe_configured() -> None:
+    if not stripe.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe API key is not configured.",
+        )
+
+
+def _ensure_webhook_configured() -> None:
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe webhook secret is not configured.",
+        )
+
+
+def _success_url(url: Optional[str]) -> str:
+    base_url = url or f"{FRONTEND_BASE_URL}/payments/success"
+    if "{CHECKOUT_SESSION_ID}" not in base_url:
+        separator = "&" if "?" in base_url else "?"
+        base_url = f"{base_url}{separator}session_id={{CHECKOUT_SESSION_ID}}"
+    return base_url
+
+
+def _cancel_url(url: Optional[str]) -> str:
+    return url or f"{FRONTEND_BASE_URL}/payments/cancelled"
+
+
+def _serialize_package(package: PaymentPackage) -> PaymentPackageResponse:
+    return PaymentPackageResponse(
+        key=package.key,
+        name=package.name,
+        credits=package.credits,
+        amount_cents=package.amount_cents,
+    )
 
 
 def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
@@ -101,7 +189,11 @@ def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
 
 
 @app.post("/api/verify", response_model=VerificationResponse)
-async def verify_document(document: UploadFile = File(..., alias="document")) -> VerificationResponse:
+async def verify_document(
+    document: UploadFile = File(..., alias="document"),
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> VerificationResponse:
     file = document
 
     if not file.filename:
@@ -117,6 +209,13 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
     if not file_contents:
         logger.error("Uploaded file is empty.")
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    user = get_or_create_user(db, auth.sub, auth.email)
+    if user.credits <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Insufficient credits. Please purchase document verification credits to continue.",
+        )
 
     storage = FileStorage(
         stream=io.BytesIO(file_contents),
@@ -141,4 +240,184 @@ async def verify_document(document: UploadFile = File(..., alias="document")) ->
 
     sanitized = _sanitize_citations(compiled)
 
-    return VerificationResponse(citations=sanitized, extracted_text=extracted_text)
+    record_document_usage(db, user, file.filename, credits_used=1)
+
+    logger.info("Document verified for user %s. Remaining credits: %s", auth.sub, user.credits)
+
+    return VerificationResponse(
+        citations=sanitized,
+        extracted_text=extracted_text,
+        remaining_credits=user.credits,
+    )
+
+
+@app.get("/api/payments/packages", response_model=List[PaymentPackageResponse])
+async def list_payment_packages() -> List[PaymentPackageResponse]:
+    packages = sorted(PAYMENT_PACKAGES.values(), key=lambda pkg: pkg.credits)
+    return [_serialize_package(pkg) for pkg in packages]
+
+
+@app.get("/api/user/me", response_model=UserBalanceResponse)
+async def get_current_user_balance(
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> UserBalanceResponse:
+    user = get_or_create_user(db, auth.sub, auth.email)
+    return UserBalanceResponse(email=user.email, credits=user.credits)
+
+
+@app.post("/api/payments/checkout", response_model=CreateCheckoutSessionResponse)
+async def create_checkout_session(
+    payload: CreateCheckoutSessionRequest,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> CreateCheckoutSessionResponse:
+    _ensure_stripe_configured()
+
+    try:
+        package = get_package(payload.package_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    user = get_or_create_user(db, auth.sub, auth.email)
+
+    success_url = _success_url(payload.success_url)
+    cancel_url = _cancel_url(payload.cancel_url)
+
+    metadata: Dict[str, str] = {
+        "auth0_sub": auth.sub,
+        "package_key": package.key,
+        "credits": str(package.credits),
+        "amount_cents": str(package.amount_cents),
+    }
+    if user.email:
+        metadata["email"] = user.email
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer_email=user.email,
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "unit_amount": package.amount_cents,
+                        "product_data": {"name": package.name},
+                    },
+                    "quantity": 1,
+                }
+            ],
+            metadata=metadata,
+        )
+    except stripe.error.StripeError as exc:  # pragma: no cover - requires Stripe API
+        logger.error("Stripe checkout session creation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to initiate checkout session with Stripe.",
+        ) from exc
+
+    create_payment_record(
+        db,
+        user=user,
+        checkout_session_id=session.id,
+        package_key=package.key,
+        credits=package.credits,
+        amount_cents=package.amount_cents,
+        currency="usd",
+    )
+
+    logger.info(
+        "Created Stripe checkout session %s for user %s (%s credits)",
+        session.id,
+        auth.sub,
+        package.credits,
+    )
+
+    return CreateCheckoutSessionResponse(
+        session_id=session.id,
+        checkout_url=session.url,
+        package_key=package.key,
+        credits=package.credits,
+        amount_cents=package.amount_cents,
+    )
+
+
+@app.post("/api/payments/webhook")
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    _ensure_webhook_configured()
+
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+    if signature is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe signature header.")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.error.SignatureVerificationError) as exc:  # pragma: no cover - requires Stripe API
+        logger.warning("Invalid Stripe webhook signature: %s", exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
+
+    if event["type"] == "checkout.session.completed":
+        session_obj = event["data"]["object"]
+        metadata = session_obj.get("metadata") or {}
+        auth0_sub = metadata.get("auth0_sub")
+        package_key = metadata.get("package_key")
+        credits_raw = metadata.get("credits")
+        amount_raw = metadata.get("amount_cents")
+        user_email = metadata.get("email") or session_obj.get("customer_details", {}).get("email")
+
+        if auth0_sub and package_key:
+            try:
+                package = get_package(package_key)
+            except ValueError:
+                package = None
+
+            credits = int(credits_raw or (package.credits if package else 0) or 0)
+            amount_cents = int(
+                amount_raw
+                or session_obj.get("amount_total")
+                or session_obj.get("amount_subtotal")
+                or (package.amount_cents if package else 0)
+                or 0
+            )
+
+            if credits > 0:
+                user = get_or_create_user(db, auth0_sub, user_email)
+                updated_user = mark_payment_completed(
+                    db,
+                    checkout_session_id=session_obj["id"],
+                    payment_intent_id=session_obj.get("payment_intent"),
+                    package_key=package_key,
+                    credits=credits,
+                    amount_cents=amount_cents,
+                )
+
+                if updated_user is None:
+                    payment = Payment(
+                        user_id=user.id,
+                        stripe_checkout_session_id=session_obj["id"],
+                        stripe_payment_intent_id=session_obj.get("payment_intent"),
+                        package_key=package_key,
+                        credits_purchased=credits,
+                        amount_paid_cents=amount_cents,
+                        currency=(session_obj.get("currency") or "usd"),
+                        status="paid",
+                    )
+                    db.add(payment)
+                    user.credits += credits
+                    db.commit()
+                    db.refresh(user)
+
+                logger.info(
+                    "Applied payment for user %s via Stripe session %s (%s credits)",
+                    auth0_sub,
+                    session_obj["id"],
+                    credits,
+                )
+
+    return JSONResponse(status_code=200, content={"received": True})

@@ -1,12 +1,23 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState, StrictMode} from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth0, Auth0Provider } from "@auth0/auth0-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth0 } from "@auth0/auth0-react";
 import styles from './page.module.css';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 const API_BASE_URL = process.env.BACKEND_URL ?? DEFAULT_API_BASE_URL;
+
+type PaymentPackage = {
+  key: string;
+  name: string;
+  credits: number;
+  amount_cents: number;
+};
+
+const formatCurrency = (amountCents: number): string => {
+  return (amountCents / 100).toFixed(2);
+};
 
 const NEWS_ITEMS = [
   {
@@ -33,18 +44,170 @@ const NEWS_ITEMS = [
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [accountCredits, setAccountCredits] = useState<number | null>(null);
+  const [packages, setPackages] = useState<PaymentPackage[]>([]);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(false);
+  const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
 
   const { isAuthenticated, user: authUser, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0();
   const displayName = authUser?.name ?? authUser?.email ?? null;
   useEffect(() => {
     if (!isAuthenticated) {
       setSelectedFile(null);
+      setAccountCredits(null);
+      setInfoMessage(null);
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (auth0Error) {
+      setError(auth0Error.message ?? 'Authentication error. Please try again.');
+    }
+  }, [auth0Error]);
+
+  const loadBalance = useCallback(async () => {
+    if (!isAuthenticated) {
+      setAccountCredits(null);
+      return;
+    }
+
+    try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: {
+          audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
+        },
+      });
+
+      const response = await fetch(`${API_BASE_URL}/api/user/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch account balance.');
+      }
+
+      const data = (await response.json()) as { credits?: number | null };
+      setAccountCredits(typeof data.credits === 'number' ? data.credits : 0);
+    } catch (loadError) {
+      console.error('Failed to load account balance', loadError);
+      if (isAuthenticated) {
+        setError((previous) => previous ?? 'Unable to load account balance. Please try again.');
+      }
+    }
+  }, [API_BASE_URL, getAccessTokenSilently, isAuthenticated]);
+
+  useEffect(() => {
+    void loadBalance();
+  }, [loadBalance]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPackages = async () => {
+      setIsLoadingPackages(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/payments/packages`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch payment packages.');
+        }
+
+        const data = (await response.json()) as PaymentPackage[];
+        if (isMounted) {
+          setPackages(data);
+        }
+      } catch (packagesError) {
+        console.error('Failed to load payment packages', packagesError);
+        if (isMounted) {
+          setError((previous) => previous ?? 'Unable to load pricing options. Please refresh the page.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingPackages(false);
+        }
+      }
+    };
+
+    void fetchPackages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [API_BASE_URL]);
+
+  const checkoutStatus = searchParams?.get('checkout');
+
+  useEffect(() => {
+    if (checkoutStatus === 'success') {
+      setInfoMessage('Payment successful. Credits will update shortly.');
+      setError(null);
+      void loadBalance();
+    } else if (checkoutStatus === 'cancelled') {
+      setInfoMessage(null);
+      setError('Checkout was canceled. No charges were made.');
+    }
+  }, [checkoutStatus, loadBalance]);
+
+  const handlePurchase = useCallback(
+    async (packageKey: string) => {
+      if (isCheckoutOpening) {
+        return;
+      }
+
+      if (!isAuthenticated) {
+        setError('Please sign in to purchase credits.');
+        await loginWithRedirect();
+        return;
+      }
+
+      setError(null);
+      setInfoMessage(null);
+      setIsCheckoutOpening(true);
+
+      try {
+        const token = await getAccessTokenSilently({
+          authorizationParams: {
+            audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
+          },
+        });
+
+        const response = await fetch(`${API_BASE_URL}/api/payments/checkout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ package_key: packageKey }),
+        });
+
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null);
+          const message = detail?.detail ?? 'Unable to start Stripe checkout. Please try again.';
+          throw new Error(message);
+        }
+
+        const data = (await response.json()) as { checkout_url?: string };
+        if (!data.checkout_url) {
+          throw new Error('Checkout URL was not returned by the server.');
+        }
+
+        window.location.href = data.checkout_url;
+      } catch (purchaseError) {
+        const message =
+          purchaseError instanceof Error ? purchaseError.message : 'Unable to start checkout. Please try again.';
+        setError(message);
+        setIsCheckoutOpening(false);
+      }
+    },
+    [API_BASE_URL, getAccessTokenSilently, isAuthenticated, isCheckoutOpening, loginWithRedirect],
+  );
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -66,9 +229,20 @@ export default function HomePage() {
       return;
     }
 
+    if (!hasCreditsAvailable) {
+      setError('Purchase credits to upload documents.');
+      return;
+    }
+
+    if (!hasCreditsAvailable) {
+      setError('Purchase credits to upload documents.');
+      return;
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setSelectedFile(e.dataTransfer.files[0]);
       setError(null);
+      setInfoMessage(null);
     }
   };
 
@@ -81,12 +255,14 @@ export default function HomePage() {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
       setError(null);
+      setInfoMessage(null);
     }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setInfoMessage(null);
 
     if (!selectedFile) {
       setError('Please choose a PDF, DOCX, or TXT document to upload.');
@@ -104,18 +280,40 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append('document', selectedFile);
 
+      const token = await getAccessTokenSilently({
+        authorizationParams: {
+          audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
+        },
+      });
+
       const response = await fetch(`${API_BASE_URL}/api/verify`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
+        if (response.status === 402) {
+          setAccountCredits(0);
+          const message =
+            detail?.detail ?? 'Insufficient credits. Purchase document verifications to continue.';
+          throw new Error(message);
+        }
+
         const message = detail?.detail ?? 'Unable to process the document. Please try again.';
         throw new Error(message);
       }
 
-      const payload = await response.json();
+      const payload = await response.json() as { remaining_credits?: number };
+
+      if (typeof payload.remaining_credits === 'number') {
+        setAccountCredits(payload.remaining_credits);
+      } else {
+        void loadBalance();
+      }
 
       // Store results in sessionStorage and navigate to results page
       sessionStorage.setItem('verificationResults', JSON.stringify(payload));
@@ -128,18 +326,6 @@ export default function HomePage() {
     }
   };
 
-  const dropzoneClassName = useMemo(
-    () =>
-      [
-        styles.dropzone,
-        dragActive ? styles.dropzoneActive : '',
-        isLoading || !isAuthenticated ? styles.dropzoneDisabled : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-    [dragActive, isAuthenticated, isLoading],
-  );
-
   const dropzoneIconSrc = selectedFile ? '/images/doc_upload_fill.png' : '/images/doc_upload_empty.png';
   const dropzoneTitle = isAuthenticated
     ? selectedFile
@@ -149,9 +335,32 @@ export default function HomePage() {
   const dropzoneSubtitle = isAuthenticated
     ? selectedFile
       ? `${selectedFile.name.substring(selectedFile.name.lastIndexOf('.') + 1)} / ${(selectedFile.size / 1024).toFixed(0)} KB`
-      : 'or click to browse locally'
+      : accountCredits === null
+        ? 'Loading account credits…'
+        : accountCredits === 0
+          ? 'No credits remaining. Purchase additional credits to continue.'
+          : 'or click to browse locally'
     : 'Authentication is required before uploading';
-  const submitDisabled = isLoading || !selectedFile || !isAuthenticated;
+  const hasCreditsAvailable = accountCredits === null || accountCredits > 0;
+  const submitDisabled = isLoading || !selectedFile || !isAuthenticated || !hasCreditsAvailable;
+  const balanceDisplay = !isAuthenticated ? '—' : accountCredits === null ? '…' : accountCredits;
+  const balanceSubtitle = isAuthenticated
+    ? accountCredits === 0
+      ? 'No credits remaining'
+      : 'Documents remaining'
+    : 'Sign in to view your credits';
+
+  const dropzoneClassName = useMemo(
+    () =>
+      [
+        styles.dropzone,
+        dragActive ? styles.dropzoneActive : '',
+        isLoading || !isAuthenticated || !hasCreditsAvailable ? styles.dropzoneDisabled : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    [dragActive, hasCreditsAvailable, isAuthenticated, isLoading],
+  );
 
   return (
     <main className={styles.page}>
@@ -223,6 +432,51 @@ export default function HomePage() {
             complexity, and results appear instantly once verification is complete.
           </p>
 
+          {infoMessage && (
+            <div className={styles.infoAlert} role="status">
+              {infoMessage}
+            </div>
+          )}
+
+          <div className={styles.balanceCard}>
+            <div className={styles.balanceHeader}>
+              <div className={styles.balanceCount}>
+                <span className={styles.balanceTitle}>Account balance</span>
+                <span className={styles.balanceCountValue}>{balanceDisplay}</span>
+                <span className={styles.balanceCountLabel}>{balanceSubtitle}</span>
+              </div>
+            </div>
+
+            <div className={styles.packages}>
+              <h3 className={styles.packagesHeading}>Purchase credits</h3>
+              {isLoadingPackages ? (
+                <span className={styles.authStatus}>Loading packages…</span>
+              ) : packages.length > 0 ? (
+                <div className={styles.packagesGrid}>
+                  {packages.map((pkg) => (
+                    <div key={pkg.key} className={styles.packageCard}>
+                      <p className={styles.packageTitle}>{pkg.name}</p>
+                      <p className={styles.packagePrice}>${formatCurrency(pkg.amount_cents)}</p>
+                      <p className={styles.packageCredits}>
+                        {pkg.credits} {pkg.credits === 1 ? 'document credit' : 'document credits'}
+                      </p>
+                      <button
+                        type="button"
+                        className={styles.packageAction}
+                        onClick={() => handlePurchase(pkg.key)}
+                        disabled={isCheckoutOpening}
+                      >
+                        {isCheckoutOpening ? 'Redirecting…' : isAuthenticated ? 'Buy credits' : 'Log in to buy'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className={styles.authStatus}>No purchase options are currently available.</span>
+              )}
+            </div>
+          </div>
+
           <form className={styles.form} onSubmit={handleSubmit}>
             <div
               className={styles.dropzoneWrapper}
@@ -238,7 +492,7 @@ export default function HomePage() {
                 type="file"
                 accept=".pdf,.docx,.txt"
                 onChange={handleFileChange}
-                disabled={isLoading || !isAuthenticated}
+                disabled={isLoading || !isAuthenticated || !hasCreditsAvailable}
               />
               <div className={dropzoneClassName}>
                 <img className={styles.dropzoneIcon} src={dropzoneIconSrc} alt="Document upload status" />
@@ -251,9 +505,9 @@ export default function HomePage() {
               </div>
             </div>
 
-            {(error || auth0Error) && (
+            {error && (
               <div className={styles.errorAlert} role="alert">
-                {error ?? auth0Error?.message ?? 'Authentication error. Please try again.'}
+                {error}
               </div>
             )}
 

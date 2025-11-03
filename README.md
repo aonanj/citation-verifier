@@ -156,7 +156,17 @@ OPENALEX_MAILTO=...           # OpenAlex polite pool (journal verifications, opt
 LOG_TO_FILE=true              # Optional: write logs to disk
 LOG_FILE_PATH=./citeverify.log
 
-# CORS configuration
+# Authentication & payments
+AUTH0_DOMAIN=<tenant>.auth0.com
+AUTH0_AUDIENCE=...
+# Optional override; defaults to https://<tenant>.auth0.com/
+AUTH0_ISSUER=https://<tenant>.auth0.com/
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+FRONTEND_BASE_URL=http://localhost:3000  # Stripe success/cancel redirect base
+DATABASE_URL=sqlite:///./citation_verifier.db  # Optional: override default SQLite path
+
+# CORS / backend routing
 BACKEND_URL=http://localhost:8000  # Or production URL
 ```
 
@@ -180,6 +190,7 @@ Environment variables fall back to sane defaults when omitted; state-law verific
   - `NEXT_PUBLIC_AUTH0_DOMAIN`
   - `NEXT_PUBLIC_AUTH0_CLIENT_ID`
   - `NEXT_PUBLIC_AUTH0_AUDIENCE`
+- Add the matching values to the backend `.env` (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, optional `AUTH0_ISSUER`)
 
 ## Running Locally
 ```bash
@@ -193,9 +204,11 @@ npm run dev
 ```
 - Visit `http://localhost:3000` to access the UI.
 - Point the frontend at a different backend by setting `BACKEND_URL` before `npm run dev`.
+- For Stripe webhooks in development, run `stripe listen --forward-to 127.0.0.1:8000/api/payments/webhook`.
 
 ## API
 `POST /api/verify`
+- **Auth**: `Authorization: Bearer <access_token>` (Auth0 access token)
 - **Payload**: multipart form with a single `document` field containing a PDF, DOCX, or TXT file.
 - **Response** (`application/json`):
   ```json
@@ -221,10 +234,25 @@ npm run dev
         "verification_details": { /* verifier-specific metadata */ }
       }
     ],
-    "extracted_text": "full normalized document text"
+    "extracted_text": "full normalized document text",
+    "remaining_credits": 4
   }
   ```
 - Errors use standard FastAPI problem responses (`detail` message with 4xx or 5xx).
+
+`GET /api/user/me`
+- **Auth**: `Authorization: Bearer <access_token>`
+- **Response**: `{ "email": "...", "credits": 3 }`
+
+`GET /api/payments/packages`
+- **Auth**: none
+- **Response**: array of available Stripe checkout packages (`key`, `name`, `credits`, `amount_cents`)
+
+`POST /api/payments/checkout`
+- **Auth**: `Authorization: Bearer <access_token>`
+- **Payload**: `{ "package_key": "single|bundle_5|bundle_10|bundle_20" }`
+- **Response**: `{ "session_id": "cs_test_...", "checkout_url": "https://checkout.stripe.com/...", "package_key": "...", "credits": 5, "amount_cents": 1950 }`
+- Redirect the browser to `checkout_url` to complete payment. Register the Stripe webhook at `/api/payments/webhook` to credit purchases.
 
 ## Deployment
 The backend is containerized using Docker for easy deployment:
@@ -236,6 +264,7 @@ The Dockerfile uses Python 3.12-slim, installs Tesseract OCR, and exposes port 8
 
 ## Usage Tips
 - **Authentication**: Sign in via Auth0 before uploading; the upload panel remains disabled until authentication is complete.
+- **Payments**: Each verification consumes one credit ($4.50 per document, with 5/10/20-document bundles available). Purchase credits via the Stripe checkout buttons in the UI.
 - **File limits**: Uploaded files must be PDF, DOCX, or TXT format. Files are validated before processing.
 - **Results visualization**: The frontend highlights every matched occurrence in context; hover or scan the numbered badges to correlate citation cards with text spans.
 - **Citation sequence**: The sequential order of citations in the document is maintained. Note, however, that the numbering displayed for verified citations may not correspond to the footnote numbering in documents using footnote citations. 
