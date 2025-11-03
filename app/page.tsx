@@ -156,31 +156,6 @@ export default function HomePage() {
   return (
     <main className={styles.page}>
       <div className={styles.content}>
-        <header className={styles.authBar} aria-label="Account access">
-          <div className={styles.authBarText}>
-            {isAuthenticated ? (
-              <>
-                <span className={styles.authGreeting}>Signed in as</span>
-                <span className={styles.authIdentity}>{displayName ?? 'Authenticated user'}</span>
-              </>
-            ) : (
-              <span className={styles.authPrompt}>Sign in with Auth0 to verify your legal documents securely.</span>
-            )}
-          </div>
-          <div className={styles.authActions}>
-            {auth0Loading ? (
-              <span className={styles.authStatus}>Checking session…</span>
-            ) : isAuthenticated ? (
-              <a className={`${styles.authButton} ${styles.authButtonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
-                Log out
-              </a>
-            ) : (
-              <a className={`${styles.authButton} ${styles.authButtonPrimary}`} onClick={() => loginWithRedirect()}>
-                Log in
-              </a>
-            )}
-          </div>
-        </header>
 
         <section className={styles.newsTicker} aria-label="Attorney AI news">
           <span className={styles.newsTickerLabel}>AI litigation watch</span>
@@ -225,6 +200,19 @@ export default function HomePage() {
               the Bluebook format, including string citations and citations preceded by introductory signals. Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>,
               are matched and grouped with their parent citations.
             </p>
+          </div>
+          <div className={styles.authActions}>
+            {auth0Loading ? (
+              <span className={styles.authStatus}>Checking session…</span>
+            ) : isAuthenticated ? (
+              <a className={`${styles.authButton} ${styles.authButtonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
+                Log out
+              </a>
+            ) : (
+              <a className={`${styles.authButton} ${styles.authButtonPrimary}`} onClick={() => loginWithRedirect()}>
+                Log in
+              </a>
+            )}
           </div>
         </section>
 

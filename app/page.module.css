@@ -78,7 +78,8 @@
 
 .authActions {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: right;
   flex-wrap: wrap;
   gap: 0.8rem;
 }
@@ -106,6 +107,7 @@
 .authButtonPrimary:hover {
   transform: translateY(-2px);
   box-shadow: 0 24px 52px rgba(76, 196, 255, 0.32);
+  cursor: pointer;
 }
 
 .authButtonGhost {
@@ -117,6 +119,7 @@
 .authButtonGhost:hover {
   transform: translateY(-2px);
   background: rgba(76, 196, 255, 0.14);
+  cursor: pointer;
 }
 
 .authStatus {
