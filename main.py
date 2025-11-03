@@ -313,24 +313,38 @@ async def create_checkout_session(
     if user.email:
         metadata["email"] = user.email
 
-    try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            customer_email=user.email if user.email else "",
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": "usd",
-                        "unit_amount": package.amount_cents,
-                        "product_data": {"name": package.name},
-                    },
-                    "quantity": 1,
-                }
-            ],
-            metadata=metadata,
+    # Log email status for debugging
+    if not user.email:
+        logger.warning(
+            "User %s has no email address. Email not included in Auth0 token. "
+            "Check Auth0 API settings to include 'email' scope.",
+            auth.sub
         )
+
+    # Prepare Stripe session parameters
+    stripe_params = {
+        "mode": "payment",
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "line_items": [
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": package.amount_cents,
+                    "product_data": {"name": package.name},
+                },
+                "quantity": 1,
+            }
+        ],
+        "metadata": metadata,
+    }
+    
+    # Only add customer_email if we have a valid email
+    if user.email:
+        stripe_params["customer_email"] = user.email
+
+    try:
+        session = stripe.checkout.Session.create(**stripe_params)
     except stripe.StripeError as exc:  # pragma: no cover - requires Stripe API
         logger.error("Stripe checkout session creation failed: %s", exc)
         raise HTTPException(
