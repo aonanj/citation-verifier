@@ -156,6 +156,87 @@
   line-height: 1.6;
 }
 
+.verificationOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  background: rgba(5, 14, 29, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.verificationDialog {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: clamp(1.75rem, 4vw, 2.5rem);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(76, 196, 255, 0.25);
+  background: linear-gradient(145deg, rgba(13, 34, 61, 0.94), rgba(10, 24, 46, 0.92));
+  box-shadow: 0 28px 72px rgba(4, 12, 24, 0.58);
+  text-align: center;
+}
+
+.verificationTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progressSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.progressTrack {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(76, 196, 255, 0.25);
+  background: rgba(15, 32, 56, 0.78);
+  overflow: hidden;
+}
+
+.progressIndicator {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #4CC4FF, #75A8FF);
+  box-shadow: 0 10px 22px rgba(76, 196, 255, 0.35);
+  transition: width 0.7s ease, box-shadow 0.4s ease;
+}
+
+.progressMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.progressPercent {
+  font-size: clamp(1.8rem, 3vw, 2.3rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+}
+
+.progressLabel {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.verificationNotice {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
 .workspaceColumns {
   display: flex;
   flex-wrap: wrap;

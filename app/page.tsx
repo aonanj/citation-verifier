@@ -69,6 +69,14 @@ const FAQ_ITEMS = [
   },
 ];
 
+const PROGRESS_STEPS = [
+  { threshold: 0, label: 'Preparing document for verification…' },
+  { threshold: 20, label: 'Uploading document…' },
+  { threshold: 45, label: 'Extracting citations…' },
+  { threshold: 70, label: 'Verifying authorities…' },
+  { threshold: 90, label: 'Preparing verification report…' },
+];
+
 function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -82,6 +90,7 @@ function HomePageContent() {
   const [selectedPackageKey, setSelectedPackageKey] = useState<string | null>(null);
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
   const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
 
   const { isAuthenticated, user: authUser, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0();
   const displayName = authUser?.name ?? authUser?.email ?? null;
@@ -332,10 +341,12 @@ function HomePageContent() {
     }
 
     setIsLoading(true);
+    setProgressPercent(10);
 
     try {
       const formData = new FormData();
       formData.append('document', selectedFile);
+      setProgressPercent((current) => Math.max(current, 20));
 
       const token = await getAccessTokenSilently({
         authorizationParams: {
@@ -350,6 +361,7 @@ function HomePageContent() {
         },
         body: formData,
       });
+      setProgressPercent((current) => Math.max(current, 60));
 
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
@@ -365,6 +377,7 @@ function HomePageContent() {
       }
 
       const payload = await response.json() as { remaining_credits?: number };
+      setProgressPercent((current) => Math.max(current, 90));
 
       if (typeof payload.remaining_credits === 'number') {
         setAccountCredits(payload.remaining_credits);
@@ -374,8 +387,10 @@ function HomePageContent() {
 
       // Store results in sessionStorage and navigate to results page
       sessionStorage.setItem('verificationResults', JSON.stringify(payload));
+      setProgressPercent(100);
       router.push('/results');
     } catch (fetchError) {
+      setProgressPercent(100);
       const message = fetchError instanceof Error ? fetchError.message : 'Something went wrong.';
       setError(message);
     } finally {
@@ -436,8 +451,63 @@ function HomePageContent() {
     [dragActive, hasCreditsAvailable, isAuthenticated, isLoading],
   );
 
+  useEffect(() => {
+    if (!isLoading) {
+      setProgressPercent(0);
+      return;
+    }
+
+    setProgressPercent((current) => (current > 0 ? current : 6));
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setProgressPercent((current) => {
+        if (current >= 96) {
+          return current;
+        }
+        const increment = Math.random() * 5 + 2;
+        return Math.min(current + increment, 96);
+      });
+    }, 1200);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isLoading]);
+
+  const activeProgressStage = useMemo(() => {
+    return PROGRESS_STEPS.reduce((active, step) => {
+      return progressPercent >= step.threshold ? step : active;
+    }, PROGRESS_STEPS[0]);
+  }, [progressPercent]);
+
   return (
     <main className={styles.page}>
+      {isLoading && (
+        <div className={styles.verificationOverlay} role="presentation">
+          <div className={styles.verificationDialog} role="status" aria-live="polite" aria-busy="true">
+            <h2 className={styles.verificationTitle}>Verifying citations…</h2>
+            <div className={styles.progressSection}>
+              <div className={styles.progressTrack} aria-hidden="true">
+                <div
+                  className={styles.progressIndicator}
+                  style={{ width: `${Math.min(100, Math.round(progressPercent))}%` }}
+                />
+              </div>
+              <div className={styles.progressMeta}>
+                <span className={styles.progressPercent}>{Math.min(100, Math.round(progressPercent))}%</span>
+                <span className={styles.progressLabel}>{activeProgressStage.label}</span>
+              </div>
+            </div>
+            <p className={styles.verificationNotice}>
+              Please do allow the verification process to complete. Navigating away from this page or closing your browser will cause your verification results to be lost.
+            </p>
+          </div>
+        </div>
+      )}
       <div className={styles.content}>
 
         <section className={styles.newsTicker} aria-label="Attorney AI news">
