@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { jsPDF } from 'jspdf';
-import { useUser } from '@auth0/nextjs-auth0/client';
+import { useAuth0 } from "@auth0/auth0-react";
 import styles from './page.module.css';
 
 type CitationOccurrence = {
@@ -452,9 +452,9 @@ export default function ResultsPage() {
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
-  const { user, error: authError, isLoading: authLoading } = useUser();
-  const isAuthenticated = Boolean(user);
-  const displayName = user?.name ?? user?.email ?? 'Account';
+
+  const { isAuthenticated, user: authUser, loginWithRedirect, logout, getAccessTokenSilently, isLoading: auth0Loading, error: auth0Error } = useAuth0();
+  const displayName = authUser?.name ?? authUser?.email ?? 'Account';
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -791,14 +791,14 @@ export default function ResultsPage() {
     </div>
   );
 
-  if (authLoading) {
+  if (auth0Loading) {
     return (
       <div className={styles.authGate}>
         <div className={styles.authGateCard}>
           <span className={styles.authGateLabel}>VeriCite</span>
           <h1 className={styles.authGateTitle}>Checking your session…</h1>
           <p className={styles.authGateDescription}>
-            Hang tight while we confirm your Auth0 login before showing your verification report.
+            Verifying authentication status...
           </p>
         </div>
       </div>
@@ -810,15 +810,14 @@ export default function ResultsPage() {
       <div className={styles.authGate}>
         <div className={styles.authGateCard}>
           <span className={styles.authGateLabel}>Sign in required</span>
-          <h1 className={styles.authGateTitle}>Log in to view verification results</h1>
+          <h1 className={styles.authGateTitle}>Log in to continue</h1>
           <p className={styles.authGateDescription}>
-            Your citation analysis is protected. Please sign in with Auth0 to review document insights or start a new
-            verification.
+            Please log in to continue with VeriCite...
           </p>
-          {authError && <p className={styles.authGateError}>{authError.message}</p>}
+          {auth0Error && <p className={styles.authGateError}>{auth0Error.message}</p>}
           <div className={styles.authGateActions}>
-            <a className={`${styles.button} ${styles.buttonPrimary}`} href="/api/auth/login?returnTo=/results">
-              Log in
+            <a className={`${styles.button} ${styles.buttonPrimary}`} onClick={() => loginWithRedirect()}>
+              Log in 
             </a>
             <a className={`${styles.button} ${styles.buttonGhost}`} href="/">
               Back to home

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@auth0/nextjs-auth0/client';
+import { useAuth0 } from "@auth0/auth0-react";
 import styles from './page.module.css';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -37,10 +37,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const { user, error: authError, isLoading: authLoading } = useUser();
-  const isAuthenticated = Boolean(user);
-  const displayName = user?.name ?? user?.email ?? null;
 
+  const { isAuthenticated, user: authUser, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0();
+  const displayName = authUser?.name ?? authUser?.email ?? null;
   useEffect(() => {
     if (!isAuthenticated) {
       setSelectedFile(null);
@@ -169,14 +168,14 @@ export default function HomePage() {
             )}
           </div>
           <div className={styles.authActions}>
-            {authLoading ? (
+            {auth0Loading ? (
               <span className={styles.authStatus}>Checking session…</span>
             ) : isAuthenticated ? (
-              <a className={`${styles.authButton} ${styles.authButtonGhost}`} href="/api/auth/logout">
+              <a className={`${styles.authButton} ${styles.authButtonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
                 Log out
               </a>
             ) : (
-              <a className={`${styles.authButton} ${styles.authButtonPrimary}`} href="/api/auth/login">
+              <a className={`${styles.authButton} ${styles.authButtonPrimary}`} onClick={() => loginWithRedirect()}>
                 Log in
               </a>
             )}
@@ -236,7 +235,7 @@ export default function HomePage() {
             complexity, and results appear instantly once verification is complete.
           </p>
 
-          {!isAuthenticated && !authLoading && (
+          {!isAuthenticated && !auth0Loading && (
             <div className={styles.authNotice} role="note">
               <h3 className={styles.authNoticeTitle}>Sign in required</h3>
               <p className={styles.authNoticeDescription}>
@@ -274,9 +273,9 @@ export default function HomePage() {
               </div>
             </div>
 
-            {(error || authError) && (
+            {(error || auth0Error) && (
               <div className={styles.errorAlert} role="alert">
-                {error ?? authError?.message ?? 'Authentication error. Please try again.'}
+                {error ?? auth0Error?.message ?? 'Authentication error. Please try again.'}
               </div>
             )}
 
