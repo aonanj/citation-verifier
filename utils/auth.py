@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
-from dataclasses import dataclass
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import httpx
@@ -55,6 +56,10 @@ def _require_auth0_configuration() -> None:
         missing.append("AUTH0_ISSUER")
     if missing:
         message = f"Missing Auth0 configuration values: {', '.join(missing)}"
+        # Log configuration issue for debugging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Auth0 configuration error: {message}")
+        logger.error(f"Current values - DOMAIN: {AUTH0_DOMAIN}, AUDIENCE: {AUTH0_AUDIENCE}, ISSUER: {AUTH0_ISSUER}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
 
 
@@ -112,6 +117,18 @@ def _decode_token(token: str) -> Dict[str, Any]:
             issuer=AUTH0_ISSUER,
         )
     except JWTError as exc:
+        logger = logging.getLogger(__name__)
+        # Log detailed error for debugging
+        logger.error(f"JWT validation failed: {exc}")
+        logger.error(f"Expected audience: {AUTH0_AUDIENCE}, issuer: {AUTH0_ISSUER}")
+        
+        # Extract actual values from token for comparison (if possible)
+        try:
+            unverified_payload = jwt.get_unverified_claims(token)
+            logger.error(f"Token audience: {unverified_payload.get('aud')}, issuer: {unverified_payload.get('iss')}")
+        except Exception:
+            pass
+        
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.") from exc
     return payload
 

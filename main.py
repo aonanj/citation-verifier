@@ -115,6 +115,26 @@ def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
 
 
+@app.get("/api/health")
+async def health_check() -> Dict[str, Any]:
+    """Health check endpoint that verifies configuration."""
+    auth0_domain = os.getenv("AUTH0_DOMAIN")
+    auth0_audience = os.getenv("AUTH0_AUDIENCE")
+    auth0_issuer = os.getenv("AUTH0_ISSUER")
+    
+    auth0_configured = bool(auth0_domain and auth0_audience and auth0_issuer)
+    stripe_configured = bool(STRIPE_SECRET_KEY)
+    
+    return {
+        "status": "ok",
+        "auth0_configured": auth0_configured,
+        "auth0_domain_set": bool(auth0_domain),
+        "auth0_audience_set": bool(auth0_audience),
+        "auth0_issuer_set": bool(auth0_issuer),
+        "stripe_configured": stripe_configured,
+    }
+
+
 def _ensure_stripe_configured() -> None:
     if not stripe.api_key:
         raise HTTPException(

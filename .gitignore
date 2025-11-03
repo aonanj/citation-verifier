@@ -18,3 +18,7 @@ tests/
 *.log
 dev-certs/
 *.pem
+FIX_SUMMARY.md
+QUICK_FIX.md
+RENDER_DEPLOYMENT.md
+TROUBLESHOOTING_AUTH.md

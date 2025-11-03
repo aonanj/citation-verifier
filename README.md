@@ -191,6 +191,10 @@ Environment variables fall back to sane defaults when omitted; state-law verific
   - `NEXT_PUBLIC_AUTH0_AUDIENCE`
 - Add the matching values to the backend `.env` (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, optional `AUTH0_ISSUER`)
 
+**Deployment & Troubleshooting**:
+- See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for production deployment configuration
+- See [TROUBLESHOOTING_AUTH.md](TROUBLESHOOTING_AUTH.md) for authentication debugging guide
+
 ## Running Locally
 ```bash
 # Backend (FastAPI)
