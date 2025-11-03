@@ -845,7 +845,7 @@ export default function ResultsPage() {
             <span className={styles.navIdentityLabel}>Signed in as</span>
             <span className={styles.navIdentityName}>{displayName}</span>
           </div>
-          <a className={`${styles.button} ${styles.buttonGhost}`} href="/api/auth/logout">
+          <a className={`${styles.button} ${styles.buttonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
             Log out
           </a>
           <button
