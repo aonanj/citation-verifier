@@ -159,13 +159,13 @@
 .workspaceColumns {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: clamp(1.5rem, 4vw, 2.75rem);
+  align-items: stretch;
+  gap: 20px;
   width: 100%;
 }
 
 .workspaceColumns > * {
-  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .uploadCard {
@@ -182,9 +182,10 @@
   position: relative;
   overflow: hidden;
   text-align: center;
-  max-width: 540px;
-  flex: 2 1 500px;
+  max-width: none;
+  flex: 2 1 0;
   width: 100%;
+  align-self: stretch;
 }
 
 .uploadCard::before {
@@ -240,9 +241,11 @@
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-soft);
-  max-width: 360px;
-  flex: 1 1 320px;
+  max-width: none;
+  flex: 1 1 0;
   width: 100%;
+  align-self: stretch;
+  height: 100%;
 }
 
 .balanceCardTitle {
