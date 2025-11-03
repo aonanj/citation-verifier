@@ -93,7 +93,7 @@
   align-items: center;
   gap: 2rem;
   white-space: nowrap;
-  animation: newsTickerMove 42s linear infinite;
+  animation: newsTickerMove 60s linear infinite;
 }
 
 .newsTicker:hover .newsTickerTrack {
