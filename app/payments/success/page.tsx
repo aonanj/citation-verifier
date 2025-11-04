@@ -21,6 +21,26 @@ function SuccessContent() {
       return;
     }
 
+    let retryCount = 0;
+    const maxRetries = 3;
+    let countdownTimer: NodeJS.Timeout | undefined;
+    let verifyTimer: NodeJS.Timeout | undefined;
+
+    // Countdown timer logic
+    const startCountdown = () => {
+      if (countdownTimer) return; // Only start once
+      countdownTimer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownTimer);
+            router.push('/');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    };
+
     // Verify payment and fetch updated credit balance
     const verifyAndFetchCredits = async () => {
       try {
@@ -30,7 +50,7 @@ function SuccessContent() {
           },
         });
 
-        // First, verify the payment session (in case webhook didn't fire)
+        // First, verify the payment session
         if (sessionId) {
           try {
             const verifyResponse = await fetch(`${API_BASE_URL}/api/payments/verify-session`, {
@@ -46,14 +66,26 @@ function SuccessContent() {
               const verifyData = (await verifyResponse.json()) as { 
                 status: string; 
                 new_balance?: number;
-                credits?: number;
+                message?: string;
               };
               console.log('Payment verification:', verifyData);
-              
-              // If we got the new balance from verification, use it
-              if (verifyData.new_balance !== undefined) {
-                setCredits(verifyData.new_balance);
-                return;
+
+              if (verifyData.status === 'success' || verifyData.status === 'already_processed') {
+                // Success! Use the new balance.
+                if (verifyData.new_balance !== undefined) {
+                  setCredits(verifyData.new_balance);
+                }
+                startCountdown(); // Start redirect countdown *after* success
+                return; // Stop retrying
+              } else if (verifyData.status === 'pending' && retryCount < maxRetries) {
+                // Payment is pending, retry after a delay
+                retryCount++;
+                console.warn(`Payment pending. Retry ${retryCount}/${maxRetries}...`);
+                verifyTimer = setTimeout(verifyAndFetchCredits, 2000 * retryCount); // 2s, 4s, 6s
+                return; // Wait for retry
+              } else if (verifyData.status === 'pending') {
+                console.error('Payment verification timed out (still pending).');
+                // Fall through to fetch balance, which will be the old one
               }
             }
           } catch (verifyError) {
@@ -62,7 +94,7 @@ function SuccessContent() {
           }
         }
 
-        // Fetch current balance
+        // Fetch current balance (as a fallback or after verification)
         const response = await fetch(`${API_BASE_URL}/api/user/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -76,23 +108,17 @@ function SuccessContent() {
       } catch (error) {
         console.error('Failed to fetch credits:', error);
       }
+      
+      // Start countdown regardless of verification, as we are on the success page
+      startCountdown();
     };
 
-    void verifyAndFetchCredits();
+    void verifyAndFetchCredits(); // Start the verification process
 
-    // Countdown timer
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          router.push('/');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
+    return () => {
+      if (countdownTimer) clearInterval(countdownTimer);
+      if (verifyTimer) clearTimeout(verifyTimer);
+    };
   }, [isAuthenticated, router, getAccessTokenSilently, sessionId]);
 
   return (

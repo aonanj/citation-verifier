@@ -801,13 +801,29 @@ async def stripe_webhook(
     logger.info("Received Stripe webhook event: %s", event["type"])
 
     if event["type"] == "checkout.session.completed":
-        session_obj = event["data"]["object"]
-        metadata = _stripe_to_dict(_stripe_get(session_obj, "metadata"))
+        session_obj_from_event = event["data"]["object"]
+        session_id = _coerce_stripe_id(_stripe_get(session_obj_from_event, "id"))
+        
+        if not session_id:
+            logger.error("Webhook received checkout.session.completed with no session ID")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing session ID in webhook event.")
+
+        try:
+            # Retrieve the session from Stripe to ensure we have all data expanded
+            session = stripe.checkout.Session.retrieve(
+                session_id,
+                expand=["payment_intent", "customer", "customer_details"],
+            )
+        except stripe.StripeError as exc:
+            logger.error("Failed to retrieve Stripe session %s from webhook: %s", session_id, exc)
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Unable to retrieve session from Stripe") from exc
+
+        metadata = _stripe_to_dict(getattr(session, "metadata", None))
         auth0_sub = metadata.get("auth0_sub")
 
         logger.info(
             "Processing webhook for session %s, user %s",
-            _stripe_get(session_obj, "id"),
+            session.id,
             auth0_sub or "unknown",
         )
 
@@ -815,7 +831,7 @@ async def stripe_webhook(
             result = _process_checkout_completion(
                 db,
                 auth0_sub=auth0_sub,
-                session_obj=session_obj,
+                session_obj=session,  # <-- Use the fully retrieved session
                 metadata=metadata,
                 fallback_email=metadata.get("email"),
                 require_matching_sub=False,
@@ -823,24 +839,24 @@ async def stripe_webhook(
         except PaymentPendingError:
             logger.info(
                 "Stripe checkout session %s not yet paid; will retry later.",
-                _stripe_get(session_obj, "id"),
+                session.id,
             )
         except PaymentOwnershipError as exc:
             logger.error(
                 "Stripe checkout session %s ownership mismatch: %s",
-                _stripe_get(session_obj, "id"),
+                session.id,
                 exc,
             )
         except ValueError as exc:
             logger.error(
                 "Unable to process Stripe session %s: %s",
-                _stripe_get(session_obj, "id"),
+                session.id,
                 exc,
             )
         except Exception as exc:
             logger.error(
                 "Failed to process webhook for session %s: %s",
-                _stripe_get(session_obj, "id"),
+                session.id,
                 exc,
                 exc_info=True,
             )
