@@ -47,6 +47,11 @@ const NEWS_ITEMS = [
 ];
 
 const FAQ_ITEMS = [
+    {
+    name: 'What is VeriCite?',
+    text:
+      'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+  },
   {
     question: 'What types of citations does VeriCite verify?',
     answer:
@@ -60,7 +65,7 @@ const FAQ_ITEMS = [
   {
     question: 'How quickly will my verification report be ready?',
     answer:
-      'Most briefs process in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
+      'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
   },
   {
     question: 'Is my document secure during the verification process?',
@@ -636,10 +641,6 @@ function HomePageContent() {
             )}
 
             <form className={styles.form} onSubmit={handleSubmit}>
-              <div className={styles.inlineBalanceCard}>
-                <span className={styles.inlineBalanceLabel}>Verification Report Credits:</span>
-                <span className={styles.inlineBalanceValue}>{balanceDisplay}</span>
-              </div>
 
               <div
                 className={styles.dropzoneWrapper}
@@ -738,7 +739,7 @@ function HomePageContent() {
               aria-expanded={isFaqExpanded}
               aria-controls="faq-content"
             >
-              <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '\u2193' : '\u2192'}</span>
+              <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '▾' : '▸'}</span>
               <span className={styles.faqToggleLabel}>Frequently asked questions</span>
             </button>
           </h2>

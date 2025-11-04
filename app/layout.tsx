@@ -14,7 +14,7 @@ const webApplicationLd = {
   name: 'VeriCite Citation Verification',
   url: normalizedSiteUrl,
   description:
-    'VeriCite is a Bluebook-native legal citation verification service that helps attorneys, legal teams, and scholars confirm authorities before filing briefs, memos, and journal articles.',
+    'VeriCite is a Bluebook-native legal citation verification service that catches AI-generated hallucinations and other inaccuracies in legal citations.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   inLanguage: 'en-US',
@@ -40,6 +40,11 @@ const webApplicationLd = {
 };
 
 const faqEntriesLd = [
+    {
+    name: 'What is VeriCite?',
+    text:
+      'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations, VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+  },
   {
     name: 'What types of citations does VeriCite verify?',
     text:
@@ -48,17 +53,22 @@ const faqEntriesLd = [
   {
     name: 'Can VeriCite catch AI-generated hallucinated authorities?',
     text:
-      'Yes. Every citation is scored against trusted legal research services so that hallucinated or fabricated authorities are flagged with confidence indicators before you file.',
+      'Yes. Every citation is scored against areputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive.',
   },
   {
     name: 'How quickly will my verification report be ready?',
     text:
-      'Most briefs process in just a few minutes. You receive structured verification results with citations grouped, annotated, and ready for edits the moment the review completes.',
+      'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time.',
   },
   {
     name: 'Is my document secure during the verification process?',
     text:
-      'Documents are encrypted in transit, and you can keep sensitive filings on-premises with the optional Microsoft Word add-in that mirrors the VeriCite workflow.',
+      'Documents are encrypted for upload to VeriCite, and are deleted after processing. Documents can also be locally processed so only citation data is sent to VeriCite through our Microsoft Word Add-In -- contact support@phaethon.llc for access.',
+  },
+  {
+    question: 'Are verification results retained for later review?',
+    answer:
+      'In the interest of user privacy, VeriCite does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
   },
 ];
 
