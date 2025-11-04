@@ -10,18 +10,25 @@ const API_BASE_URL = process.env.BACKEND_URL ?? 'http://localhost:8000';
 function SuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated, getAccessTokenSilently } = useAuth0();
+  // Get isLoading from useAuth0
+  const { isAuthenticated, getAccessTokenSilently, isLoading: auth0Loading } = useAuth0(); 
   const [countdown, setCountdown] = useState(5);
   const [credits, setCredits] = useState<number | null>(null);
   const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
+    // Add this check! Wait for the Auth0 SDK to be ready.
+    if (auth0Loading) {
+      return; // Do nothing until the session is loaded
+    }
+
     if (!isAuthenticated) {
       router.push('/');
-      return;
+      return; // Now this check is safe
     }
 
     let retryCount = 0;
+    // ... rest of your useEffect logic
     const maxRetries = 3;
     let countdownTimer: NodeJS.Timeout | undefined;
     let verifyTimer: NodeJS.Timeout | undefined;
