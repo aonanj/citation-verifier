@@ -173,6 +173,67 @@ def _serialize_package(package: PaymentPackage) -> PaymentPackageResponse:
     )
 
 
+def _stripe_to_dict(obj: Any) -> Dict[str, Any]:
+    """Convert Stripe objects to plain dicts for safer access."""
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+
+    to_dict_recursive = getattr(obj, "to_dict_recursive", None)
+    if callable(to_dict_recursive):
+        try:
+            result = to_dict_recursive()
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+    to_dict = getattr(obj, "to_dict", None)
+    if callable(to_dict):
+        try:
+            result = to_dict()
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+    try:
+        return dict(obj)
+    except Exception:
+        return {}
+
+
+def _stripe_get(obj: Any, key: str) -> Any:
+    """Safely fetch a key from Stripe objects, dicts, or plain attrs."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(key)
+    getter = getattr(obj, "get", None)
+    if callable(getter):
+        try:
+            return getter(key)
+        except Exception:
+            pass
+    if hasattr(obj, key):
+        return getattr(obj, key)
+    return None
+
+
+def _coerce_stripe_id(value: Any) -> Optional[str]:
+    """Ensure Stripe identifiers are stored as plain strings."""
+    if not value:
+        return None
+    if isinstance(value, str):
+        return value
+    if hasattr(value, "id"):
+        potential_id = getattr(value, "id")
+        if isinstance(potential_id, str):
+            return potential_id
+    return str(value)
+
+
 def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
     sanitized: List[CitationEntry] = []
     for resource_key, payload in raw.items():
@@ -305,14 +366,17 @@ async def verify_payment_session(
     
     try:
         # Retrieve the session from Stripe
-        session = stripe.checkout.Session.retrieve(session_id)
+        session = stripe.checkout.Session.retrieve(
+            session_id,
+            expand=["payment_intent", "customer", "customer_details"],
+        )
         
         # Check if payment was successful
         if session.payment_status != "paid":
             return {"status": "pending", "message": "Payment not yet completed"}
         
         # Get metadata
-        metadata = session.metadata or {}
+        metadata = _stripe_to_dict(getattr(session, "metadata", None))
         auth0_sub = metadata.get("auth0_sub")
         
         # Verify this session belongs to the current user
@@ -335,7 +399,24 @@ async def verify_payment_session(
         package_key = metadata.get("package_key")
         credits_raw = metadata.get("credits")
         amount_raw = metadata.get("amount_cents")
-        user_email = metadata.get("email") or session.customer_details.email if session.customer_details else None
+        user_email = metadata.get("email")
+        if not user_email:
+            customer_details = _stripe_to_dict(_stripe_get(session, "customer_details"))
+            user_email = customer_details.get("email")
+
+        if not user_email:
+            customer_id = _coerce_stripe_id(_stripe_get(session, "customer"))
+            if customer_id:
+                try:
+                    customer = stripe.Customer.retrieve(customer_id)
+                    user_email = _stripe_to_dict(customer).get("email") or user_email
+                except stripe.StripeError as exc:
+                    logger.warning(
+                        "Unable to retrieve Stripe customer %s for session %s: %s",
+                        customer_id,
+                        session_id,
+                        exc,
+                    )
         
         if not package_key:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session metadata")
@@ -354,12 +435,7 @@ async def verify_payment_session(
         user = get_or_create_user(db, auth.sub, user_email)
         
         # Extract payment_intent as string
-        payment_intent_str: Optional[str] = None
-        if session.payment_intent:
-            if isinstance(session.payment_intent, str):
-                payment_intent_str = session.payment_intent
-            else:
-                payment_intent_str = getattr(session.payment_intent, 'id', str(session.payment_intent))
+        payment_intent_str: Optional[str] = _coerce_stripe_id(_stripe_get(session, "payment_intent"))
         
         updated_user = mark_payment_completed(
             db,
@@ -525,22 +601,30 @@ async def stripe_webhook(
 
     if event["type"] == "checkout.session.completed":
         session_obj = event["data"]["object"]
-        metadata = session_obj.get("metadata") or {}
+        metadata = _stripe_to_dict(_stripe_get(session_obj, "metadata"))
         auth0_sub = metadata.get("auth0_sub")
         package_key = metadata.get("package_key")
         credits_raw = metadata.get("credits")
         amount_raw = metadata.get("amount_cents")
         
         # Try to get email from multiple sources, default to None
-        user_email = None
-        try:
-            user_email = metadata.get("email")
-            if not user_email:
-                customer_details = session_obj.get("customer_details")
-                if customer_details and isinstance(customer_details, dict):
-                    user_email = customer_details.get("email")
-        except Exception as e:
-            logger.warning("Could not extract email from session, continuing without it: %s", e)
+        user_email = metadata.get("email")
+        if not user_email:
+            customer_details = _stripe_to_dict(_stripe_get(session_obj, "customer_details"))
+            user_email = customer_details.get("email")
+        if not user_email:
+            customer_id = _coerce_stripe_id(_stripe_get(session_obj, "customer"))
+            if customer_id:
+                try:
+                    customer = stripe.Customer.retrieve(customer_id)
+                    user_email = _stripe_to_dict(customer).get("email") or user_email
+                except stripe.StripeError as exc:
+                    logger.warning(
+                        "Unable to retrieve Stripe customer %s for session %s: %s",
+                        customer_id,
+                        _stripe_get(session_obj, "id"),
+                        exc,
+                    )
         
         logger.info(
             "Processing webhook for session %s, user %s, email: %s",
@@ -570,7 +654,7 @@ async def stripe_webhook(
                     updated_user = mark_payment_completed(
                         db,
                         checkout_session_id=session_obj["id"],
-                        payment_intent_id=session_obj.get("payment_intent"),
+                        payment_intent_id=_coerce_stripe_id(_stripe_get(session_obj, "payment_intent")),
                         package_key=package_key,
                         credits=credits,
                         amount_cents=amount_cents,
@@ -580,7 +664,7 @@ async def stripe_webhook(
                         payment = Payment(
                             user_id=user.id,
                             stripe_checkout_session_id=session_obj["id"],
-                            stripe_payment_intent_id=session_obj.get("payment_intent"),
+                            stripe_payment_intent_id=_coerce_stripe_id(_stripe_get(session_obj, "payment_intent")),
                             package_key=package_key,
                             credits_purchased=credits,
                             amount_paid_cents=amount_cents,
