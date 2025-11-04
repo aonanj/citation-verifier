@@ -1,3 +1,5 @@
+# FILE: database/crud.py
+
 from __future__ import annotations
 
 from typing import Optional
@@ -58,25 +60,24 @@ def create_payment_record(
 def mark_payment_completed(
     db: Session,
     *,
-    checkout_session_id: str,
+    payment: Payment,  # <-- MODIFIED: Pass the object directly
     payment_intent_id: Optional[str],
-    package_key: str,
     credits: int,
     amount_cents: int,
-) -> Optional[UserAccount]:
-    payment = (
-        db.execute(select(Payment).where(Payment.stripe_checkout_session_id == checkout_session_id))
-        .scalar_one_or_none()
-    )
-    if payment is None:
-        return None
-
+) -> UserAccount:  # <-- MODIFIED: Returns UserAccount, not Optional
+    
+    # MODIFIED: No need to query for payment, it's passed in
+    
     payment.status = "paid"
     payment.stripe_payment_intent_id = payment_intent_id
     payment.credits_purchased = credits
     payment.amount_paid_cents = amount_cents
 
     user = db.execute(select(UserAccount).where(UserAccount.id == payment.user_id)).scalar_one()
+    if not user:
+         # This should be impossible if foreign keys are set, but good to check
+         raise Exception(f"No user found with ID {payment.user_id} for payment {payment.id}")
+         
     user.credits += credits
 
     db.commit()

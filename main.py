@@ -314,7 +314,6 @@ def _extract_customer_email(
             return email
     return None
 
-
 class PaymentPendingError(Exception):
     """Raised when a Stripe checkout session is not yet fully paid."""
 
@@ -345,6 +344,43 @@ def _process_checkout_completion(
         select(Payment).where(Payment.stripe_checkout_session_id == session_id)
     ).scalar_one_or_none()
 
+    # If the payment record doesn't exist at all, something is very wrong.
+    # This can happen if the webhook fires before the create_checkout_session request commits.
+    # Let's handle that by creating the user first, then the payment.
+    
+    metadata = metadata or {}
+    
+    # Determine the user ID
+    effective_sub = auth0_sub or metadata.get("auth0_sub")
+    user: UserAccount | None = None
+    
+    if existing_payment:
+        user = db.execute(
+            select(UserAccount).where(UserAccount.id == existing_payment.user_id)
+        ).scalar_one_or_none()
+    
+    if user is None and effective_sub:
+        user = get_or_create_user(db, effective_sub, fallback_email or metadata.get("email"))
+    elif user is None:
+        # We can't find an existing payment or an auth0_sub. We must find the user.
+        # Let's try to find user by email if auth0_sub is missing
+        payment_intent_id_for_email, payment_intent_data_for_email = _load_payment_intent(_stripe_get(session_obj, "payment_intent"))
+        purchaser_email_for_lookup = _extract_customer_email(metadata, session_obj, payment_intent_data_for_email, fallback_email)
+        if purchaser_email_for_lookup:
+            user = db.execute(
+                select(UserAccount).where(UserAccount.email == purchaser_email_for_lookup)
+            ).scalar_one_or_none()
+
+    if user is None and effective_sub is None:
+         raise ValueError("Unable to determine user for checkout session. No auth0_sub or email provided.")
+    elif user is None and effective_sub:
+         # User doesn't exist yet, create them
+         user = get_or_create_user(db, effective_sub, fallback_email or metadata.get("email"))
+    elif user is None:
+         # This should not be reachable
+         raise ValueError("User could not be identified or created.")
+
+
     payment_intent_id, payment_intent_data = _load_payment_intent(_stripe_get(session_obj, "payment_intent"))
 
     payment_status = _stripe_get(session_obj, "payment_status")
@@ -361,7 +397,6 @@ def _process_checkout_completion(
     if not is_paid:
         raise PaymentPendingError("Payment not yet completed.")
 
-    metadata = metadata or {}
 
     package_key = metadata.get("package_key")
     if not package_key and existing_payment:
@@ -401,37 +436,18 @@ def _process_checkout_completion(
         or "usd"
     )
 
-    existing_user: Optional[UserAccount] = None
-    if existing_payment:
-        existing_user = db.execute(
-            select(UserAccount).where(UserAccount.id == existing_payment.user_id)
-        ).scalar_one_or_none()
-    if existing_user is None and auth0_sub:
-        existing_user = db.execute(
-            select(UserAccount).where(UserAccount.auth0_sub == auth0_sub)
-        ).scalar_one_or_none()
-
-    payment_owner_sub = existing_user.auth0_sub if existing_user else None
-    effective_sub = auth0_sub or metadata.get("auth0_sub") or payment_owner_sub
-
+    # Check for ownership mismatch if required
+    payment_owner_sub = user.auth0_sub if user else None
     if require_matching_sub and payment_owner_sub and auth0_sub and payment_owner_sub != auth0_sub:
         raise PaymentOwnershipError("Checkout session belongs to a different user.")
-
-    if effective_sub is None:
-        raise ValueError("Unable to determine user for checkout session.")
-
-    fallback_email = fallback_email or (existing_user.email if existing_user else None)
+        
+    # Update user's email if it's missing or different
     purchaser_email = _extract_customer_email(metadata, session_obj, payment_intent_data, fallback_email)
+    if user and purchaser_email and user.email != purchaser_email:
+        user.email = purchaser_email
+        db.commit()
+        db.refresh(user)
 
-    user: UserAccount
-    if existing_user:
-        user = existing_user
-        if purchaser_email and user.email != purchaser_email:
-            user.email = purchaser_email
-            db.commit()
-            db.refresh(user)
-    else:
-        user = get_or_create_user(db, effective_sub, purchaser_email)
 
     if existing_payment and existing_payment.status == "paid":
         if payment_intent_id and not existing_payment.stripe_payment_intent_id:
@@ -451,16 +467,30 @@ def _process_checkout_completion(
     if not package_key:
         raise ValueError("Unable to determine package for checkout session.")
 
-    processed_user = mark_payment_completed(
-        db,
-        checkout_session_id=session_id,
-        payment_intent_id=payment_intent_id,
-        package_key=package_key,
-        credits=credits,
-        amount_cents=amount_cents,
-    )
-
-    if processed_user is None:
+    # If we got here, the payment is "paid" but the DB record is "pending" or missing.
+    
+    processed_user: UserAccount
+    
+    if existing_payment:
+        # This is the correct path: update the existing "pending" record
+        processed_user = mark_payment_completed(
+            db,
+            payment=existing_payment,  # <-- Pass the object
+            payment_intent_id=payment_intent_id,
+            credits=credits,
+            amount_cents=amount_cents,
+        )
+    else:
+        # This is the fallback: the webhook beat the checkout endpoint.
+        # Create the "paid" record from scratch.
+        logger.warning(
+            "Webhook processing: No pending payment found for session %s. Creating new 'paid' record.",
+            session_id
+        )
+        if not user:
+             # This should not be reachable due to earlier checks
+             raise ValueError("Cannot create payment record: user object is missing.")
+             
         payment = Payment(
             user_id=user.id,
             stripe_checkout_session_id=session_id,
@@ -487,7 +517,6 @@ def _process_checkout_completion(
         "currency": currency,
         "already_processed": False,
     }
-
 
 def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
     sanitized: List[CitationEntry] = []
