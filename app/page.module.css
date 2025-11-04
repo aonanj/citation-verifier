@@ -678,16 +678,16 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
-  font-weight: 700;
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .sectionSubtitle {
   margin: 0;
-  font-size: 0.96rem;
-  line-height: 1.6;
+  font-size: 0.9rem;
+  line-height: 1.2;
   color: var(--text-secondary);
 }
 
@@ -710,15 +710,15 @@
 
 .featureCardTitle {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: .8rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .featureCardCopy {
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.6;
+  font-size: 0.7rem;
+  line-height: 1.4;
   color: var(--text-secondary);
 }
 

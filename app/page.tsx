@@ -546,12 +546,7 @@ function HomePageContent() {
             <p>
               VeriCite is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles,
               law review notes, and other documents citing primarily to US state and federal case law and statutes,
-              academic and professional journals and periodicals, and secondary legal sources (limited).
-            </p>
-            <p>
-              This web service works with both inline and footnote citations that follow
-              the Bluebook format, including string citations and citations preceded by introductory signals. Reference citations, such as short case citations, <em>id.</em>, and <em>supra</em>,
-              are matched and grouped with their parent citations.
+              academic and professional journals and periodicals, and secondary legal sources.
             </p>
           </div>
           <div className={styles.authActions}>
@@ -572,74 +567,38 @@ function HomePageContent() {
         <section className={styles.featureHighlights} aria-labelledby="feature-highlights-heading">
           <div className={styles.featureHighlightsHeader}>
             <h2 id="feature-highlights-heading" className={styles.sectionTitle}>
-              Reduce citation risk before you file
+              Fact Check Citations Before Filing
             </h2>
             <p className={styles.sectionSubtitle}>
-              Legal teams use VeriCite to automate legal citation verification, document Bluebook compliance, and keep
-              clients confident that every authority is accurate.
+              Automate verification of citations in legal briefs and documents. Submit documents with confidence in their accuracy.
             </p>
           </div>
           <div className={styles.featureGrid}>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Bluebook-native accuracy</h3>
+              <h3 className={styles.featureCardTitle}>Bluebook-native citation checks</h3>
               <p className={styles.featureCardCopy}>
-                Detect signal phrases, pinpoint cites, and short-form references with a verification engine built
-                specifically for legal briefing workflows.
+                Accurately identifies most citations in Bluebook format, including string citations and citations with introductory signals. Short-form citations are matched to their parent citations.
               </p>
             </article>
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Comprehensive authority coverage</h3>
               <p className={styles.featureCardCopy}>
-                Cross-check citations against U.S. federal and state reporters, regulations, and leading legal journals
-                so inconsistencies never reach chambers.
+                Validates citations against authoritative databases and APIs, including Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, and Justia.
               </p>
             </article>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Audit-ready reporting</h3>
+              <h3 className={styles.featureCardTitle}>Verification confirmations across multiple fields</h3>
               <p className={styles.featureCardCopy}>
-                Export structured citation verification reports that document review status for partners, clients, or
-                court inquiries.
+                Citations are verified against multiple fields including case names, reporter, year, publication, etc. Get warnings for missing or inaccurate information.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Compatible with multiple formats</h3>
+              <p className={styles.featureCardCopy}>
+                Works with DOCX, TXT, and PDF files, including PDF image files. Support for both inline and footnote citations.
               </p>
             </article>
           </div>
-        </section>
-
-        <section className={styles.workflowSection} aria-labelledby="workflow-heading">
-          <h2 id="workflow-heading" className={styles.sectionTitle}>
-            How VeriCite fits into your review workflow
-          </h2>
-          <ol className={styles.workflowList}>
-            <li className={styles.workflowItem}>
-              <span className={styles.workflowBadge}>1</span>
-              <div>
-                <h3 className={styles.workflowItemTitle}>Upload your legal brief</h3>
-                <p className={styles.workflowItemCopy}>
-                  Drag-and-drop DOCX, PDF, or TXT files up to 10 MB and VeriCite normalizes the content, keeping footnote
-                  structure intact.
-                </p>
-              </div>
-            </li>
-            <li className={styles.workflowItem}>
-              <span className={styles.workflowBadge}>2</span>
-              <div>
-                <h3 className={styles.workflowItemTitle}>Verify every citation automatically</h3>
-                <p className={styles.workflowItemCopy}>
-                  Bluebook-aware parsing clusters short forms to their parent citations and validates authorities against
-                  trusted research databases and APIs.
-                </p>
-              </div>
-            </li>
-            <li className={styles.workflowItem}>
-              <span className={styles.workflowBadge}>3</span>
-              <div>
-                <h3 className={styles.workflowItemTitle}>Deliver confident filings</h3>
-                <p className={styles.workflowItemCopy}>
-                  Share interactive verification reports, export annotated data for knowledge management systems, and
-                  keep your matter teams aligned.
-                </p>
-              </div>
-            </li>
-          </ol>
         </section>
 
         <section className={styles.workspaceColumns}>

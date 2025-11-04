@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+// Import useCallback
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth0 } from '@auth0/auth0-react';
 import styles from '../../page.module.css';
@@ -10,47 +11,26 @@ const API_BASE_URL = process.env.BACKEND_URL ?? 'http://localhost:8000';
 function SuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Get isLoading from useAuth0
-  const { isAuthenticated, getAccessTokenSilently, isLoading: auth0Loading } = useAuth0(); 
-  const [countdown, setCountdown] = useState(5);
+  // Get isLoading: auth0Loading
+  const { isAuthenticated, getAccessTokenSilently, isLoading: auth0Loading } = useAuth0();
+  const [countdown, setCountdown] = useState(3);
   const [credits, setCredits] = useState<number | null>(null);
   const sessionId = searchParams.get('session_id');
 
-  useEffect(() => {
-    // Add this check! Wait for the Auth0 SDK to be ready.
-    if (auth0Loading) {
-      return; // Do nothing until the session is loaded
-    }
-
-    if (!isAuthenticated) {
-      router.push('/');
-      return; // Now this check is safe
-    }
-
+  // --- Wrap data fetching in useCallback ---
+  // This makes the function stable and safe to use in useEffect
+  const verifyAndFetchCredits = useCallback(async () => {
     let retryCount = 0;
-    // ... rest of your useEffect logic
     const maxRetries = 3;
-    let countdownTimer: NodeJS.Timeout | undefined;
     let verifyTimer: NodeJS.Timeout | undefined;
 
-    // Countdown timer logic
-    const startCountdown = () => {
-      if (countdownTimer) return; // Only start once
-      countdownTimer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(countdownTimer);
-            router.push('/');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    };
+    // Define the async function that can be retried
+    const attemptVerification = async () => {
+      // Clear any previous retry timer
+      if (verifyTimer) clearTimeout(verifyTimer);
 
-    // Verify payment and fetch updated credit balance
-    const verifyAndFetchCredits = async () => {
       try {
+        // This is the part that was hanging
         const token = await getAccessTokenSilently({
           authorizationParams: {
             audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
@@ -82,22 +62,19 @@ function SuccessContent() {
                 if (verifyData.new_balance !== undefined) {
                   setCredits(verifyData.new_balance);
                 }
-                startCountdown(); // Start redirect countdown *after* success
                 return; // Stop retrying
               } else if (verifyData.status === 'pending' && retryCount < maxRetries) {
                 // Payment is pending, retry after a delay
                 retryCount++;
                 console.warn(`Payment pending. Retry ${retryCount}/${maxRetries}...`);
-                verifyTimer = setTimeout(verifyAndFetchCredits, 2000 * retryCount); // 2s, 4s, 6s
+                verifyTimer = setTimeout(attemptVerification, 2000 * retryCount); // 2s, 4s, 6s
                 return; // Wait for retry
               } else if (verifyData.status === 'pending') {
                 console.error('Payment verification timed out (still pending).');
-                // Fall through to fetch balance, which will be the old one
               }
             }
           } catch (verifyError) {
             console.error('Failed to verify payment session:', verifyError);
-            // Continue to fetch balance normally
           }
         }
 
@@ -113,27 +90,72 @@ function SuccessContent() {
           setCredits(data.credits ?? 0);
         }
       } catch (error) {
-        console.error('Failed to fetch credits:', error);
+        console.error('Failed to fetch credits (likely auth issue):', error);
+        // Do not setCredits(null) here, let it just fail silently
+        // The redirect timer will handle leaving the page.
       }
-      
-      // Start countdown regardless of verification, as we are on the success page
-      startCountdown();
     };
 
-    void verifyAndFetchCredits(); // Start the verification process
+    // Start the first attempt
+    await attemptVerification();
 
+    // Return a cleanup function for the retry timer
     return () => {
-      if (countdownTimer) clearInterval(countdownTimer);
       if (verifyTimer) clearTimeout(verifyTimer);
     };
-  }, [isAuthenticated, router, getAccessTokenSilently, sessionId]);
+  }, [getAccessTokenSilently, sessionId]); // Dependencies for the callback
+
+
+  // --- MODIFIED useEffect ---
+  useEffect(() => {
+    // 1. Wait for Auth0 to finish loading
+    if (auth0Loading) {
+      console.log("Auth0 is loading, waiting...");
+      return;
+    }
+
+    // 2. If not logged in after load, go home
+    if (!isAuthenticated) {
+      console.log("Not authenticated, redirecting home.");
+      router.push('/');
+      return;
+    }
+
+    // 3. START THE COUNTDOWN TIMER IMMEDIATELY
+    // This is no longer blocked by the async data fetching
+    const countdownTimer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownTimer);
+          router.push('/');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // 4. START THE DATA FETCHING IN PARALLEL
+    // We call the stable function returned by useCallback
+    const cleanupVerifyPromise = verifyAndFetchCredits();
+
+    // 5. Return cleanup for BOTH processes
+    return () => {
+      clearInterval(countdownTimer);
+      // When component unmounts, call the cleanup function
+      // that was returned by verifyAndFetchCredits
+      cleanupVerifyPromise.then(cleanup => cleanup && cleanup());
+    };
+    
+  // Add auth0Loading and the stable verifyAndFetchCredits
+  }, [auth0Loading, isAuthenticated, router, verifyAndFetchCredits]);
+
 
   return (
     <main className={styles.main}>
       <div className={styles.container}>
         <div style={{ textAlign: 'center', padding: '2rem' }}>
           <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>✅</div>
-          <h1 style={{ color: '#10b981', marginBottom: '1rem' }}>Payment Successful!</h1>
+          <h1 style={{ color: '#10b981', marginBottom: '1rem' }}>Payment Successful</h1>
           <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
             Your credits have been added to your account.
           </p>
@@ -151,12 +173,13 @@ function SuccessContent() {
               marginBottom: '2rem',
             }}
           >
-            <p style={{ margin: 0, color: '#166534' }}>
-              🎉 You can now verify citations with your new credits!
-            </p>
-            {credits !== null && (
+            {credits !== null ? (
               <p style={{ margin: '0.5rem 0 0 0', color: '#166534', fontWeight: 600 }}>
-                Your balance: {credits} credits
+                Current balance: {credits} credits
+              </p>
+            ) : (
+              <p style={{ margin: '0.5rem 0 0 0', color: '#166534', fontWeight: 600 }}>
+                Updating credit balance...
               </p>
             )}
           </div>
