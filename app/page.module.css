@@ -255,7 +255,8 @@
   align-items: center;
   gap: clamp(1.5rem, 4vw, 2.25rem);
   padding: clamp(2.2rem, 4.5vw, 3rem);
-  background: linear-gradient(135deg, rgba(12, 32, 58, 0.6), rgba(8, 22, 40, 0.76));
+  background: linear-gradient(145deg, rgba(95, 168, 210, 0.75), rgba(8, 20, 36, 0.86));
+  backdrop-filter: blur(22px);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-soft);
@@ -295,21 +296,21 @@
 }
 
 .inlineBalanceLabel {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .inlineBalanceValue {
-  font-size: clamp(1.8rem, 4vw, 2.3rem);
-  font-weight: 700;
+  font-size: clamp(1.5rem, 4vw, 2.3rem);
+  font-weight: 600;
   color: var(--accent);
   line-height: 1;
 }
 
 .inlineBalanceSubtext {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
 }
 
@@ -318,7 +319,8 @@
   flex-direction: column;
   gap: 1.25rem;
   padding: clamp(2rem, 4vw, 2.6rem);
-  background: linear-gradient(145deg, rgba(11, 27, 48, 0.92), rgba(8, 20, 36, 0.86));
+  background: linear-gradient(145deg, rgba(95, 168, 210, 0.75), rgba(8, 20, 36, 0.86));
+  backdrop-filter: blur(22px);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-soft);

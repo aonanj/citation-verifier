@@ -17,7 +17,6 @@ function SuccessContent() {
   const [credits, setCredits] = useState<number | null>(null);
   const sessionId = searchParams.get('session_id');
 
-  // --- Wrap data fetching in useCallback ---
   // This makes the function stable and safe to use in useEffect
   const verifyAndFetchCredits = useCallback(async () => {
     let retryCount = 0;

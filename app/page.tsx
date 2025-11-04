@@ -415,14 +415,14 @@ function HomePageContent() {
     : 'Authentication is required before uploading';
   const hasCreditsAvailable = accountCredits === null || accountCredits > 0;
   const submitDisabled = isLoading || !selectedFile || !isAuthenticated || !hasCreditsAvailable;
-  const balanceDisplay = !isAuthenticated ? '—' : accountCredits === null ? '…' : accountCredits;
+  const balanceDisplay = !isAuthenticated ? 'Sign in to view' : accountCredits === null ? '0' : accountCredits;
   const balanceSubtitle = isAuthenticated
     ? accountCredits === null
       ? 'Loading credits…'
       : accountCredits === 0
         ? 'No credits remaining'
         : 'Credits available'
-    : 'Sign in to view your credits';
+    : 'Sign in to view';
 
   const selectedPackage = useMemo(() => {
     if (!selectedPackageKey) {
@@ -619,7 +619,7 @@ function HomePageContent() {
               <div className={styles.inlineBalanceCard}>
                 <span className={styles.inlineBalanceLabel}>Verification Report Credits:</span>
                 <span className={styles.inlineBalanceValue}>{balanceDisplay}</span>
-                <span className={styles.inlineBalanceSubtext}>{balanceSubtitle}</span>
+                <span className={styles.inlineBalanceSubtitle}>{balanceSubtitle}</span>
               </div>
 
               <div
