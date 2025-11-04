@@ -20,7 +20,7 @@ from database.crud import (
     mark_payment_completed,
     record_document_usage,
 )
-from database.models import Payment
+from database.models import Payment, UserAccount
 from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
 from svc.doc_processor import extract_text
@@ -234,6 +234,261 @@ def _coerce_stripe_id(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _to_int(value: Any) -> Optional[int]:
+    """Best-effort conversion to int with graceful failure."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_charge_list(charges: Any) -> Dict[str, Any]:
+    """Normalize Stripe charges collection into plain dict with dict entries."""
+    charges_dict = _stripe_to_dict(charges)
+    if not charges_dict:
+        return {}
+    data = charges_dict.get("data") or []
+    normalized: List[Dict[str, Any]] = []
+    for item in data:
+        charge_dict = _stripe_to_dict(item)
+        if charge_dict:
+            normalized.append(charge_dict)
+    charges_dict["data"] = normalized
+    return charges_dict
+
+
+def _load_payment_intent(payment_intent: Any) -> tuple[Optional[str], Dict[str, Any]]:
+    """Load payment intent details, fetching from Stripe if necessary."""
+    payment_intent_id = _coerce_stripe_id(payment_intent)
+    intent_data = _stripe_to_dict(payment_intent)
+
+    if payment_intent_id and not intent_data:
+        try:
+            intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+            intent_data = _stripe_to_dict(intent)
+        except stripe.StripeError as exc:
+            logger.warning("Unable to retrieve Stripe payment intent %s: %s", payment_intent_id, exc)
+            intent_data = {}
+
+    if intent_data:
+        charges = _normalize_charge_list(intent_data.get("charges"))
+        if charges:
+            intent_data["charges"] = charges
+
+    return payment_intent_id, intent_data
+
+
+def _extract_customer_email(
+    metadata: Dict[str, Any],
+    session_obj: Any,
+    payment_intent_data: Dict[str, Any],
+    fallback_email: Optional[str] = None,
+) -> Optional[str]:
+    """Determine the best available email for the purchaser."""
+    candidates: List[Optional[str]] = []
+    if metadata:
+        candidates.append(metadata.get("email"))
+
+    customer_details = _stripe_to_dict(_stripe_get(session_obj, "customer_details"))
+    if customer_details:
+        candidates.append(customer_details.get("email"))
+
+    if payment_intent_data:
+        candidates.append(payment_intent_data.get("receipt_email"))
+        charges = payment_intent_data.get("charges") or {}
+        charges_dict = _normalize_charge_list(charges)
+        for charge in charges_dict.get("data", []):
+            billing_details = _stripe_to_dict(charge.get("billing_details"))
+            if billing_details and billing_details.get("email"):
+                candidates.append(billing_details.get("email"))
+            if charge.get("receipt_email"):
+                candidates.append(charge.get("receipt_email"))
+
+    if fallback_email:
+        candidates.append(fallback_email)
+
+    for email in candidates:
+        if email:
+            return email
+    return None
+
+
+class PaymentPendingError(Exception):
+    """Raised when a Stripe checkout session is not yet fully paid."""
+
+
+class PaymentOwnershipError(Exception):
+    """Raised when a checkout session does not belong to the expected user."""
+
+
+def _process_checkout_completion(
+    db: Session,
+    *,
+    auth0_sub: Optional[str],
+    session_obj: Any,
+    metadata: Dict[str, Any],
+    fallback_email: Optional[str],
+    require_matching_sub: bool = False,
+) -> Dict[str, Any]:
+    """
+    Validate a completed Stripe checkout session and apply credits for the user.
+
+    Returns context with processed user, credits, amount, and identifiers.
+    """
+    session_id = _coerce_stripe_id(_stripe_get(session_obj, "id"))
+    if not session_id:
+        raise ValueError("Stripe session is missing an identifier.")
+
+    existing_payment = db.execute(
+        select(Payment).where(Payment.stripe_checkout_session_id == session_id)
+    ).scalar_one_or_none()
+
+    payment_intent_id, payment_intent_data = _load_payment_intent(_stripe_get(session_obj, "payment_intent"))
+
+    payment_status = _stripe_get(session_obj, "payment_status")
+    session_status = _stripe_get(session_obj, "status")
+    intent_status = payment_intent_data.get("status") if payment_intent_data else None
+
+    is_paid = payment_status in {"paid", "no_payment_required"}
+    if not is_paid and intent_status:
+        if intent_status in {"succeeded", "requires_capture"}:
+            is_paid = True
+    if not is_paid and session_status == "complete" and intent_status == "succeeded":
+        is_paid = True
+
+    if not is_paid:
+        raise PaymentPendingError("Payment not yet completed.")
+
+    metadata = metadata or {}
+
+    package_key = metadata.get("package_key")
+    if not package_key and existing_payment:
+        package_key = existing_payment.package_key
+
+    package: Optional[PaymentPackage] = None
+    if package_key:
+        try:
+            package = get_package(package_key)
+        except ValueError:
+            package = None
+
+    credits = _to_int(metadata.get("credits"))
+    if credits is None and existing_payment:
+        credits = existing_payment.credits_purchased
+    if credits is None and package:
+        credits = package.credits
+    if credits is None or credits <= 0:
+        raise ValueError("Unable to determine credit amount for checkout session.")
+
+    amount_cents = _to_int(metadata.get("amount_cents"))
+    if amount_cents is None:
+        amount_cents = _to_int(_stripe_get(session_obj, "amount_total"))
+    if amount_cents is None:
+        amount_cents = _to_int(_stripe_get(session_obj, "amount_subtotal"))
+    if amount_cents is None and existing_payment:
+        amount_cents = existing_payment.amount_paid_cents
+    if amount_cents is None and package:
+        amount_cents = package.amount_cents
+    if amount_cents is None or amount_cents < 0:
+        raise ValueError("Unable to determine payment amount for checkout session.")
+
+    currency = (
+        _stripe_get(session_obj, "currency")
+        or (payment_intent_data.get("currency") if payment_intent_data else None)
+        or (existing_payment.currency if existing_payment else None)
+        or "usd"
+    )
+
+    existing_user: Optional[UserAccount] = None
+    if existing_payment:
+        existing_user = db.execute(
+            select(UserAccount).where(UserAccount.id == existing_payment.user_id)
+        ).scalar_one_or_none()
+    if existing_user is None and auth0_sub:
+        existing_user = db.execute(
+            select(UserAccount).where(UserAccount.auth0_sub == auth0_sub)
+        ).scalar_one_or_none()
+
+    payment_owner_sub = existing_user.auth0_sub if existing_user else None
+    effective_sub = auth0_sub or metadata.get("auth0_sub") or payment_owner_sub
+
+    if require_matching_sub and payment_owner_sub and auth0_sub and payment_owner_sub != auth0_sub:
+        raise PaymentOwnershipError("Checkout session belongs to a different user.")
+
+    if effective_sub is None:
+        raise ValueError("Unable to determine user for checkout session.")
+
+    fallback_email = fallback_email or (existing_user.email if existing_user else None)
+    purchaser_email = _extract_customer_email(metadata, session_obj, payment_intent_data, fallback_email)
+
+    user: UserAccount
+    if existing_user:
+        user = existing_user
+        if purchaser_email and user.email != purchaser_email:
+            user.email = purchaser_email
+            db.commit()
+            db.refresh(user)
+    else:
+        user = get_or_create_user(db, effective_sub, purchaser_email)
+
+    if existing_payment and existing_payment.status == "paid":
+        if payment_intent_id and not existing_payment.stripe_payment_intent_id:
+            existing_payment.stripe_payment_intent_id = payment_intent_id
+            db.commit()
+        return {
+            "user": user,
+            "credits": existing_payment.credits_purchased,
+            "amount_cents": existing_payment.amount_paid_cents,
+            "session_id": session_id,
+            "payment_intent_id": existing_payment.stripe_payment_intent_id or payment_intent_id,
+            "package_key": existing_payment.package_key,
+            "currency": existing_payment.currency,
+            "already_processed": True,
+        }
+
+    if not package_key:
+        raise ValueError("Unable to determine package for checkout session.")
+
+    processed_user = mark_payment_completed(
+        db,
+        checkout_session_id=session_id,
+        payment_intent_id=payment_intent_id,
+        package_key=package_key,
+        credits=credits,
+        amount_cents=amount_cents,
+    )
+
+    if processed_user is None:
+        payment = Payment(
+            user_id=user.id,
+            stripe_checkout_session_id=session_id,
+            stripe_payment_intent_id=payment_intent_id,
+            package_key=package_key,
+            credits_purchased=credits,
+            amount_paid_cents=amount_cents,
+            currency=currency,
+            status="paid",
+        )
+        db.add(payment)
+        user.credits += credits
+        db.commit()
+        db.refresh(user)
+        processed_user = user
+
+    return {
+        "user": processed_user,
+        "credits": credits,
+        "amount_cents": amount_cents,
+        "session_id": session_id,
+        "payment_intent_id": payment_intent_id,
+        "package_key": package_key,
+        "currency": currency,
+        "already_processed": False,
+    }
+
+
 def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
     sanitized: List[CitationEntry] = []
     for resource_key, payload in raw.items():
@@ -371,10 +626,6 @@ async def verify_payment_session(
             expand=["payment_intent", "customer", "customer_details"],
         )
         
-        # Check if payment was successful
-        if session.payment_status != "paid":
-            return {"status": "pending", "message": "Payment not yet completed"}
-        
         # Get metadata
         metadata = _stripe_to_dict(getattr(session, "metadata", None))
         auth0_sub = metadata.get("auth0_sub")
@@ -382,99 +633,49 @@ async def verify_payment_session(
         # Verify this session belongs to the current user
         if auth0_sub != auth.sub:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session does not belong to user")
-        
-        # Check if already processed
-        from database.models import Payment as PaymentModel
-        existing_payment = db.execute(
-            select(PaymentModel).where(PaymentModel.stripe_checkout_session_id == session_id)
-        ).scalar_one_or_none()
-        if existing_payment and existing_payment.status == "paid":
+        try:
+            result = _process_checkout_completion(
+                db,
+                auth0_sub=auth.sub,
+                session_obj=session,
+                metadata=metadata,
+                fallback_email=auth.email,
+                require_matching_sub=True,
+            )
+        except PaymentPendingError:
+            return {"status": "pending", "message": "Payment not yet completed"}
+        except PaymentOwnershipError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        user: UserAccount = result["user"]
+
+        if result.get("already_processed"):
+            logger.info(
+                "Payment session %s already processed for user %s (%s credits)",
+                result["session_id"],
+                auth.sub,
+                result["credits"],
+            )
             return {
                 "status": "already_processed",
                 "message": "Payment already credited",
-                "credits": existing_payment.credits_purchased
+                "credits": result["credits"],
+                "new_balance": user.credits,
             }
-        
-        # Process the payment
-        package_key = metadata.get("package_key")
-        credits_raw = metadata.get("credits")
-        amount_raw = metadata.get("amount_cents")
-        user_email = metadata.get("email")
-        if not user_email:
-            customer_details = _stripe_to_dict(_stripe_get(session, "customer_details"))
-            user_email = customer_details.get("email")
 
-        if not user_email:
-            customer_id = _coerce_stripe_id(_stripe_get(session, "customer"))
-            if customer_id:
-                try:
-                    customer = stripe.Customer.retrieve(customer_id)
-                    user_email = _stripe_to_dict(customer).get("email") or user_email
-                except stripe.StripeError as exc:
-                    logger.warning(
-                        "Unable to retrieve Stripe customer %s for session %s: %s",
-                        customer_id,
-                        session_id,
-                        exc,
-                    )
-        
-        if not package_key:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session metadata")
-        
-        try:
-            package = get_package(package_key)
-        except ValueError:
-            package = None
-        
-        credits = int(credits_raw or (package.credits if package else 0) or 0)
-        amount_cents = int(amount_raw or session.amount_total or (package.amount_cents if package else 0) or 0)
-        
-        if credits <= 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credit amount")
-        
-        user = get_or_create_user(db, auth.sub, user_email)
-        
-        # Extract payment_intent as string
-        payment_intent_str: Optional[str] = _coerce_stripe_id(_stripe_get(session, "payment_intent"))
-        
-        updated_user = mark_payment_completed(
-            db,
-            checkout_session_id=session_id,
-            payment_intent_id=payment_intent_str,
-            package_key=package_key,
-            credits=credits,
-            amount_cents=amount_cents,
-        )
-        
-        if updated_user is None:
-            # Create new payment record
-            from database.models import Payment
-            payment = Payment(
-                user_id=user.id,
-                stripe_checkout_session_id=session_id,
-                stripe_payment_intent_id=payment_intent_str, 
-                package_key=package_key,
-                credits_purchased=credits,
-                amount_paid_cents=amount_cents,
-                currency=session.currency or "usd",
-                status="paid",
-            )
-            db.add(payment)
-            user.credits += credits
-            db.commit()
-            db.refresh(user)
-        
         logger.info(
             "Manually verified and processed payment for user %s, session %s (%s credits)",
             auth.sub,
-            session_id,
-            credits
+            result["session_id"],
+            result["credits"],
         )
         
         return {
             "status": "success",
             "message": "Payment processed successfully",
-            "credits": credits,
+            "credits": result["credits"],
             "new_balance": user.credits
         }
         
@@ -603,93 +804,60 @@ async def stripe_webhook(
         session_obj = event["data"]["object"]
         metadata = _stripe_to_dict(_stripe_get(session_obj, "metadata"))
         auth0_sub = metadata.get("auth0_sub")
-        package_key = metadata.get("package_key")
-        credits_raw = metadata.get("credits")
-        amount_raw = metadata.get("amount_cents")
-        
-        # Try to get email from multiple sources, default to None
-        user_email = metadata.get("email")
-        if not user_email:
-            customer_details = _stripe_to_dict(_stripe_get(session_obj, "customer_details"))
-            user_email = customer_details.get("email")
-        if not user_email:
-            customer_id = _coerce_stripe_id(_stripe_get(session_obj, "customer"))
-            if customer_id:
-                try:
-                    customer = stripe.Customer.retrieve(customer_id)
-                    user_email = _stripe_to_dict(customer).get("email") or user_email
-                except stripe.StripeError as exc:
-                    logger.warning(
-                        "Unable to retrieve Stripe customer %s for session %s: %s",
-                        customer_id,
-                        _stripe_get(session_obj, "id"),
-                        exc,
-                    )
-        
+
         logger.info(
-            "Processing webhook for session %s, user %s, email: %s",
-            session_obj.get("id"),
-            auth0_sub,
-            user_email or "None"
+            "Processing webhook for session %s, user %s",
+            _stripe_get(session_obj, "id"),
+            auth0_sub or "unknown",
         )
 
-        if auth0_sub and package_key:
-            try:
-                package = get_package(package_key)
-            except ValueError:
-                package = None
-
-            credits = int(credits_raw or (package.credits if package else 0) or 0)
-            amount_cents = int(
-                amount_raw
-                or session_obj.get("amount_total")
-                or session_obj.get("amount_subtotal")
-                or (package.amount_cents if package else 0)
-                or 0
+        try:
+            result = _process_checkout_completion(
+                db,
+                auth0_sub=auth0_sub,
+                session_obj=session_obj,
+                metadata=metadata,
+                fallback_email=metadata.get("email"),
+                require_matching_sub=False,
             )
-
-            if credits > 0:
-                try:
-                    user = get_or_create_user(db, auth0_sub, user_email)
-                    updated_user = mark_payment_completed(
-                        db,
-                        checkout_session_id=session_obj["id"],
-                        payment_intent_id=_coerce_stripe_id(_stripe_get(session_obj, "payment_intent")),
-                        package_key=package_key,
-                        credits=credits,
-                        amount_cents=amount_cents,
-                    )
-
-                    if updated_user is None:
-                        payment = Payment(
-                            user_id=user.id,
-                            stripe_checkout_session_id=session_obj["id"],
-                            stripe_payment_intent_id=_coerce_stripe_id(_stripe_get(session_obj, "payment_intent")),
-                            package_key=package_key,
-                            credits_purchased=credits,
-                            amount_paid_cents=amount_cents,
-                            currency=(session_obj.get("currency") or "usd"),
-                            status="paid",
-                        )
-                        db.add(payment)
-                        user.credits += credits
-                        db.commit()
-                        db.refresh(user)
-
-                    logger.info(
-                        "Applied payment for user %s via Stripe session %s (%s credits)",
-                        auth0_sub,
-                        session_obj["id"],
-                        credits,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Failed to process webhook for session %s: %s",
-                        session_obj.get("id"),
-                        exc,
-                        exc_info=True
-                    )
-                    # Don't raise - return success to Stripe to avoid retries
-                    # The verify-session endpoint will handle it as fallback
+        except PaymentPendingError:
+            logger.info(
+                "Stripe checkout session %s not yet paid; will retry later.",
+                _stripe_get(session_obj, "id"),
+            )
+        except PaymentOwnershipError as exc:
+            logger.error(
+                "Stripe checkout session %s ownership mismatch: %s",
+                _stripe_get(session_obj, "id"),
+                exc,
+            )
+        except ValueError as exc:
+            logger.error(
+                "Unable to process Stripe session %s: %s",
+                _stripe_get(session_obj, "id"),
+                exc,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to process webhook for session %s: %s",
+                _stripe_get(session_obj, "id"),
+                exc,
+                exc_info=True,
+            )
+        else:
+            user: UserAccount = result["user"]
+            if result.get("already_processed"):
+                logger.info(
+                    "Stripe session %s already processed for user %s",
+                    result["session_id"],
+                    user.auth0_sub,
+                )
+            else:
+                logger.info(
+                    "Applied payment for user %s via Stripe session %s (%s credits)",
+                    user.auth0_sub,
+                    result["session_id"],
+                    result["credits"],
+                )
 
     return JSONResponse(status_code=200, content={"received": True})
