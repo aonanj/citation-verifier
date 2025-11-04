@@ -81,5 +81,6 @@ def mark_payment_completed(
     user.credits += credits
 
     db.commit()
+    db.refresh(payment)  # Refresh payment to ensure changes are persisted
     db.refresh(user)
     return user

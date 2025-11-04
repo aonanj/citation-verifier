@@ -453,6 +453,7 @@ def _process_checkout_completion(
         if payment_intent_id and not existing_payment.stripe_payment_intent_id:
             existing_payment.stripe_payment_intent_id = payment_intent_id
             db.commit()
+            db.refresh(existing_payment)
         return {
             "user": user,
             "credits": existing_payment.credits_purchased,
