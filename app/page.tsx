@@ -50,22 +50,32 @@ const FAQ_ITEMS = [
   {
     question: 'What types of citations does VeriCite verify?',
     answer:
-      'VeriCite validates Bluebook-formatted case law, statutes, regulations, and secondary sources drawn from federal and state reporters, journals, and treatises.',
+      'VeriCite validates citations to state and federal cases, state and federal laws, law reviews, academic journals, and secondary sources.',
   },
   {
     question: 'Can VeriCite catch AI-generated hallucinated authorities?',
     answer:
-      'Yes. Every citation is scored against trusted legal research services so that hallucinated or fabricated authorities are flagged with confidence indicators before you file.',
+      'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
   },
   {
     question: 'How quickly will my verification report be ready?',
     answer:
-      'Most briefs process in just a few minutes. You receive structured verification results with citations grouped, annotated, and ready for edits the moment the review completes.',
+      'Most briefs process in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
   },
   {
     question: 'Is my document secure during the verification process?',
     answer:
-      'Documents are encrypted in transit, and you can keep sensitive filings on-premises with the optional Microsoft Word add-in that mirrors the VeriCite workflow.',
+      'Documents are encrypted for upload to VeriCite, and are deleted after processing. Documents can also be locally processed so only citation data is sent to VeriCite through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
+  },
+  {
+    question: 'Are verification results retained for later review?',
+    answer:
+      'In the interest of user privacy, VeriCite does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+  },
+  {
+    question: 'What can I do if I am not satisfied with the verification results?',
+    answer:
+      'Export the verification results as a pdf. Send an email to support@phaethon.llc with the exported pdf and a description of the issue, including approximate date and time. Your issue will be reviewed and we will follow up with you to discuss next steps within three business days.',
   },
 ];
 
@@ -91,6 +101,7 @@ function HomePageContent() {
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
   const [isCheckoutOpening, setIsCheckoutOpening] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [isFaqExpanded, setIsFaqExpanded] = useState(false);
 
   const { isAuthenticated, user: authUser, error: auth0Error, isLoading: auth0Loading, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0();
   const displayName = authUser?.name ?? authUser?.email ?? null;
@@ -197,6 +208,10 @@ function HomePageContent() {
       setError('Checkout was canceled. No charges were made.');
     }
   }, [checkoutStatus, loadBalance]);
+
+  const toggleFaq = useCallback(() => {
+    setIsFaqExpanded((previous) => !previous);
+  }, []);
 
   const handlePackageChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const { value } = event.target;
@@ -451,6 +466,12 @@ function HomePageContent() {
     [dragActive, hasCreditsAvailable, isAuthenticated, isLoading],
   );
 
+  const faqContentClassName = useMemo(
+    () =>
+      [styles.faqContent, !isFaqExpanded ? styles.faqContentCollapsed : ''].filter(Boolean).join(' '),
+    [isFaqExpanded],
+  );
+
   useEffect(() => {
     if (!isLoading) {
       setProgressPercent(0);
@@ -503,7 +524,7 @@ function HomePageContent() {
               </div>
             </div>
             <p className={styles.verificationNotice}>
-              Please do allow the verification process to complete. Navigating away from this page or closing your browser will cause your verification results to be lost.
+              Please allow the verification process to complete. Navigating away from this page or closing your browser will cause your verification results to be lost.
             </p>
           </div>
         </div>
@@ -589,13 +610,13 @@ function HomePageContent() {
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Verification confirmations across multiple fields</h3>
               <p className={styles.featureCardCopy}>
-                Citations are verified against multiple fields including case names, reporter, year, publication, etc. Get warnings for missing or inaccurate information.
+                Citations are verified against multiple fields, such as case name, source (e.g., reporter, journal, etc.), volume, page, year, etc. Get warnings for missing or inaccurate fields.
               </p>
             </article>
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Compatible with multiple formats</h3>
               <p className={styles.featureCardCopy}>
-                Works with DOCX, TXT, and PDF files, including PDF image files. Support for both inline and footnote citations.
+                Works with docx, pdf, and txt files, including pdf image files. Support for both inline and footnote citations.
               </p>
             </article>
           </div>
@@ -605,8 +626,7 @@ function HomePageContent() {
           <article className={styles.uploadCard}>
             <h2 className={styles.uploadHeading}>Upload document</h2>
             <p className={styles.uploadDescription}>
-              Upload a PDF, DOCX, or TXT document up to 10 MB. Processing time varies with document length and citation
-              complexity, and results appear instantly once verification is complete.
+              Upload a pdf, docx, or txt file (10 MB max). Verification results are displayed after processing completes. Processing time varies with document length and complexity.
             </p>
 
             {infoMessage && (
@@ -619,7 +639,6 @@ function HomePageContent() {
               <div className={styles.inlineBalanceCard}>
                 <span className={styles.inlineBalanceLabel}>Verification Report Credits:</span>
                 <span className={styles.inlineBalanceValue}>{balanceDisplay}</span>
-                <span className={styles.inlineBalanceSubtitle}>{balanceSubtitle}</span>
               </div>
 
               <div
@@ -698,7 +717,45 @@ function HomePageContent() {
             {!isLoadingPackages && packages.length === 0 && (
               <span className={styles.purchaseEmpty}>No purchase options are currently available.</span>
             )}
+            <br />
+            <div className={styles.inlineBalanceCard}>
+              <span className={styles.inlineBalanceLabel}>Verification Report Credits:</span>
+              <span className={styles.inlineBalanceValue}>{balanceDisplay}</span>
+
+              <p className={styles.creditDescription}>
+                One credit = One verification report (citation verification for one document). Credits do not expire. 
+              </p>
+            </div>
           </aside>
+        </section>
+
+        <section className={styles.faqSection} id="faq" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className={styles.sectionTitle}>
+            <button
+              type="button"
+              className={styles.faqToggle}
+              onClick={toggleFaq}
+              aria-expanded={isFaqExpanded}
+              aria-controls="faq-content"
+            >
+              <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '\u2193' : '\u2192'}</span>
+              <span className={styles.faqToggleLabel}>Frequently asked questions</span>
+            </button>
+          </h2>
+          <div
+            id="faq-content"
+            className={faqContentClassName}
+            aria-hidden={!isFaqExpanded}
+          >
+            <dl className={styles.faqList}>
+              {FAQ_ITEMS.map((item) => (
+                <div className={styles.faqItem} key={item.question}>
+                  <dt className={styles.faqQuestion}>{item.question}</dt>
+                  <dd className={styles.faqAnswer}>{item.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </section>
 
         <section className={styles.noticeCard}>
@@ -716,20 +773,6 @@ function HomePageContent() {
             add-in with identical functionality keeps data on-device. Contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>
-        </section>
-
-        <section className={styles.faqSection} id="faq" aria-labelledby="faq-heading">
-          <h2 id="faq-heading" className={styles.sectionTitle}>
-            Frequently asked questions
-          </h2>
-          <dl className={styles.faqList}>
-            {FAQ_ITEMS.map((item) => (
-              <div className={styles.faqItem} key={item.question}>
-                <dt className={styles.faqQuestion}>{item.question}</dt>
-                <dd className={styles.faqAnswer}>{item.answer}</dd>
-              </div>
-            ))}
-          </dl>
         </section>
       </div>
     </main>
