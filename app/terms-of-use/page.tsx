@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import styles from './page.module.css';
 
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
     'Terms of Use for VeriCite covering eligibility, payments, acceptable use requirements, confidentiality, and support.',
 };
 
-const updatedDate = 'February 2, 2025';
+const updatedDate = 'November 2, 2025';
 
 const termsSections = [
   {
@@ -84,6 +85,9 @@ export default function TermsOfUsePage() {
   return (
     <main className={styles.page}>
       <div className={styles.container}>
+        <Link href="/" className={styles.backLink}>
+          Back to home
+        </Link>
         <header className={styles.header}>
           <span className={styles.eyebrow}>VeriCite Legal</span>
           <h1 className={styles.title}>Terms of Use</h1>
@@ -121,4 +125,3 @@ export default function TermsOfUsePage() {
     </main>
   );
 }
-

@@ -18,6 +18,17 @@
   gap: 48px;
 }
 
+.backLink {
+  align-self: flex-start;
+  font-size: 14px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
 .header {
   display: flex;
   flex-direction: column;
@@ -98,4 +109,3 @@
     gap: 32px;
   }
 }
-
