@@ -811,14 +811,14 @@ export default function ResultsPage() {
       <div className={styles.authGate}>
         <div className={styles.authGateCard}>
           <span className={styles.authGateLabel}>Sign in required</span>
-          <h1 className={styles.authGateTitle}>Log in to continue</h1>
+          <h1 className={styles.authGateTitle}>Sign in to continue</h1>
           <p className={styles.authGateDescription}>
-            Please log in to continue with VeriCite...
+            Please sign in to continue with VeriCite...
           </p>
           {auth0Error && <p className={styles.authGateError}>{auth0Error.message}</p>}
           <div className={styles.authGateActions}>
             <a className={`${styles.button} ${styles.buttonPrimary}`} onClick={() => loginWithRedirect()}>
-              Log in 
+              Sign in 
             </a>
             <a className={`${styles.button} ${styles.buttonGhost}`} href="/">
               Back to home
@@ -847,7 +847,7 @@ export default function ResultsPage() {
             <span className={styles.navIdentityName}>{displayName}</span>
           </div>
           <a className={`${styles.button} ${styles.buttonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
-            Log out
+            Sign out
           </a>
           <button
             type="button"

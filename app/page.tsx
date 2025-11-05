@@ -456,7 +456,7 @@ function HomePageContent() {
     ? 'Redirecting…'
     : isAuthenticated
       ? 'Purchase'
-      : 'Log in to purchase';
+      : 'Sign in to purchase';
   const isPurchaseDisabled = isCheckoutOpening || isLoadingPackages || !selectedPackage;
 
   const dropzoneClassName = useMemo(
@@ -580,11 +580,11 @@ function HomePageContent() {
               <span className={styles.authStatus}>Checking session…</span>
             ) : isAuthenticated ? (
               <a className={`${styles.authButton} ${styles.authButtonGhost}`} onClick={() => logout({ logoutParams: { returnTo: typeof window !== "undefined" ? window.location.origin : undefined } })}>
-                Log out
+                Sign out
               </a>
             ) : (
               <a className={`${styles.authButton} ${styles.authButtonPrimary}`} onClick={() => loginWithRedirect()}>
-                Log in
+                Sign in
               </a>
             )}
           </div>
