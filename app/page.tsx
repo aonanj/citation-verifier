@@ -739,7 +739,7 @@ function HomePageContent() {
               aria-expanded={isFaqExpanded}
               aria-controls="faq-content"
             >
-              <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '▾' : '▸'}</span>
+              <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '▼' : '▶︎'}</span>
               <span className={styles.faqToggleLabel}>Frequently asked questions</span>
             </button>
           </h2>
