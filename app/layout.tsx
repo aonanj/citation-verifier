@@ -9,6 +9,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://citation-verifier.v
 const normalizedSiteUrl = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
 const metadataBase = new URL(normalizedSiteUrl);
 const ogImageUrl = new URL('/images/CitationVerifierLogo.png', metadataBase).href;
+const currentYear = new Date().getFullYear();
 const webApplicationLd = {
   '@type': 'WebApplication',
   name: 'VeriCite Citation Verification',
@@ -40,7 +41,7 @@ const webApplicationLd = {
 };
 
 const faqEntriesLd = [
-    {
+  {
     name: 'What is VeriCite?',
     text:
       'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations, VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
@@ -66,8 +67,8 @@ const faqEntriesLd = [
       'Documents are encrypted for upload to VeriCite, and are deleted after processing. Documents can also be locally processed so only citation data is sent to VeriCite through our Microsoft Word Add-In -- contact support@phaethon.llc for access.',
   },
   {
-    question: 'Are verification results retained for later review?',
-    answer:
+    name: 'Are verification results retained for later review?',
+    text:
       'In the interest of user privacy, VeriCite does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
   },
 ];
@@ -165,7 +166,29 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <div className="app-shell">
+            <div className="app-shell__content">{children}</div>
+            <footer className="site-footer" role="contentinfo">
+              <div className="site-footer__content">
+                <div className="site-footer__brand">
+                  <span className="site-footer__logo">
+                    <img src="/images/scales-of-justice.png" alt="" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <span className="site-footer__label">VeriCite</span>
+                    <span className="site-footer__tagline">Citation confidence for legal professionals.</span>
+                  </div>
+                </div>
+                <div className="site-footer__links">
+                  <a href="/terms-of-use">Terms of Use</a>
+                  <a href="mailto:support@phaethon.llc">Contact Support</a>
+                </div>
+                <p className="site-footer__copyright">© {currentYear} Phaethon Order LLC. All rights reserved.</p>
+              </div>
+            </footer>
+          </div>
+        </Providers>
         <script
           type="application/ld+json"
           suppressHydrationWarning

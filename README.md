@@ -2,6 +2,8 @@
 
 Full-stack toolchain that verifies legal citations in legal briefs, memos, journal articles, and other legal and academic documents against primary sources. Available as a web service with a Next.js frontend that accepts DOCX, PDF, and plain text documents. The backend is a containerized Python service that extracts citations from a document (both inline citations and footnotes are compatible), normalizes them, and then verifies each citation. The annotated results are displayed with contextual highlights. The service is also available as a Microsoft Word Add-In. 
 
+The deployed site now includes a public Terms of Use page (`/terms-of-use`) so firms can reference core usage, payment, and data-handling policies directly from the UI.
+
 See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
 
 (Note: Citations are assumed to be in Bluebook standard format.)
@@ -206,6 +208,11 @@ Environment variables fall back to sane defaults when omitted; state-law verific
 **Deployment & Troubleshooting**:
 - See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for production deployment configuration
 - See [TROUBLESHOOTING_AUTH.md](TROUBLESHOOTING_AUTH.md) for authentication debugging guide
+
+## Terms of Use & Policies
+- The web client renders a dedicated [Terms of Use page](https://citation-verifier.vercel.app/terms-of-use) that documents account eligibility, payment obligations, acceptable use, and support channels.
+- Local environments can review the same content at `http://localhost:3000/terms-of-use` once the Next.js dev server is running.
+- The footer in the authenticated and unauthenticated layout links to the Terms of Use so customers always have a discoverable policy reference.
 
 ## Running Locally
 ```bash

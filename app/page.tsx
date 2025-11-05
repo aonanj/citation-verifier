@@ -47,15 +47,15 @@ const NEWS_ITEMS = [
 ];
 
 const FAQ_ITEMS = [
-    {
-    name: 'What is VeriCite?',
-    text:
+  {
+    question: 'What is VeriCite?',
+    answer:
       'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
   },
   {
     question: 'What types of citations does VeriCite verify?',
     answer:
-      'VeriCite validates citations to state and federal cases, state and federal laws, law reviews, academic journals, and secondary sources.',
+      'VeriCite validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
   },
   {
     question: 'Can VeriCite catch AI-generated hallucinated authorities?',
