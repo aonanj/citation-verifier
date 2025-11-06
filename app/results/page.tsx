@@ -854,7 +854,7 @@ export default function ResultsPage() {
             className={`${styles.button} ${styles.buttonGhost}`}
             onClick={handleNewVerification}
           >
-            New Verification
+            New document
           </button>
           <button
             type="button"
