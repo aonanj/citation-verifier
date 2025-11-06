@@ -106,7 +106,6 @@ export default function TermsOfUsePage() {
               ))}
             </section>
           ))}
-        <br />
         <Link href="/" className={styles.backLink}>
           ⇱ Back to home
         </Link>
