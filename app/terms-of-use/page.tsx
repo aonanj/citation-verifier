@@ -85,9 +85,6 @@ export default function TermsOfUsePage() {
   return (
     <main className={styles.page}>
       <div className={styles.container}>
-        <Link href="/" className={styles.backLink}>
-          Back to home
-        </Link>
         <header className={styles.header}>
           <span className={styles.eyebrow}>VeriCite Legal</span>
           <h1 className={styles.title}>Terms of Use</h1>
@@ -109,6 +106,10 @@ export default function TermsOfUsePage() {
               ))}
             </section>
           ))}
+        <br />
+        <Link href="/" className={styles.backLink}>
+          ⇱ Back to home
+        </Link>
         </div>
 
         <footer className={styles.contact}>
