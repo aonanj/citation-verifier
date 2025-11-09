@@ -30,7 +30,7 @@ def init_database(*, drop_existing: bool = False) -> None:
 
 def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Initialise the database schema for the CiteSure service."
+        description="Initialise the database schema for the JurisCheck service."
     )
     parser.add_argument(
         "--drop-existing",

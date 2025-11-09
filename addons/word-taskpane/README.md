@@ -1,4 +1,4 @@
-# CiteSure Word Task Pane (Prototype)
+# JurisCheck Word Task Pane (Prototype)
 
 Prototype Office task pane that packages the current Word document as a base64 `.docx` and sends it to the existing `POST /api/verify` endpoint. The UI is intentionally minimal to maintain backend compatibility for both the Word add-in and the Next.js frontend.
 
@@ -57,7 +57,7 @@ Prototype Office task pane that packages the current Word document as a base64 `
    ```
    (On Windows, copy to `%LOCALAPPDATA%\Microsoft\Office\16.0\WEF\` instead.)
 2. Start Word and open any document (preferably a copy; the add-in sends the full contents to the backend).
-3. Insert → Add-ins → My Add-ins. Choose the **Shared Folder** tab (it appears only after Step 1). Select “CiteSure” to load the task pane.
+3. Insert → Add-ins → My Add-ins. Choose the **Shared Folder** tab (it appears only after Step 1). Select “JurisCheck” to load the task pane.
 4. If the add-in doesn’t appear, verify the manifest exists in the folder above and restart Word—cached manifests load when Word launches.
 
 ## Using the prototype

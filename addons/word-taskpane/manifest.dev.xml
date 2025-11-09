@@ -8,8 +8,8 @@
   <Version>0.1.0.0</Version>
   <ProviderName>Phaethon Order LLC</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="CiteSure" />
-  <Description DefaultValue="Prototype task pane that sends the Word document to the CiteSure backend." />
+  <DisplayName DefaultValue="JurisCheck" />
+  <Description DefaultValue="Prototype task pane that sends the Word document to the JurisCheck backend." />
   <IconUrl DefaultValue="https://localhost:5174/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:5174/icon-80.png" />
   <SupportUrl DefaultValue="https://localhost:5174" />
@@ -75,13 +75,13 @@
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://phaethon.llc" />
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="GetStarted.Title" DefaultValue="CiteSure" />
-        <bt:String id="Group.Label" DefaultValue="CiteSure" />
+        <bt:String id="GetStarted.Title" DefaultValue="JurisCheck" />
+        <bt:String id="Group.Label" DefaultValue="JurisCheck" />
         <bt:String id="TaskPaneButton.Label" DefaultValue="Open Verifier" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="GetStarted.Description" DefaultValue="Open the task pane to verify citations in the current document." />
-        <bt:String id="TaskPaneButton.Tooltip" DefaultValue="Send the document to the CiteSure backend." />
+        <bt:String id="TaskPaneButton.Tooltip" DefaultValue="Send the document to the JurisCheck backend." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
