@@ -21,7 +21,7 @@ const termsSections = [
   {
     heading: '2. Account Eligibility & Security',
     body: [
-      'Accounts are available to legal professionals, law firms, academic institutions, and their authorized contractors. You are responsible for maintaining the confidentiality of login credentials and for all activity that occurs under your account.',
+      'Accounts are available to individuals, law firms, academic institutions, and their authorized contractors. You are responsible for maintaining the confidentiality of login credentials and for all activity that occurs under your account.',
       'Notify support@phaethon.llc immediately if you suspect unauthorized access, credential compromise, or changes to the status of the individuals who use JurisCheck on your behalf.',
     ],
   },

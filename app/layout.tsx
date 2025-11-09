@@ -105,7 +105,7 @@ const jsonLd = {
 export const metadata: Metadata = {
   metadataBase,
   title: {
-    default: 'JurisCheck - Citation Verification for Legal Professionals',
+    default: 'JurisCheck - Citation Verification for Legal Documents',
     template: '%s | JurisCheck Citation Verification',
   },
   description:
@@ -187,12 +187,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   </span>
                   <div>
                     <span className="site-footer__label">JurisCheck</span>
-                    <span className="site-footer__tagline">Citation confidence for legal professionals.</span>
+                    <span className="site-footer__tagline">Citation confidence for legal documents.</span>
                   </div>
                 </div>
                 <div className="site-footer__links">
                   <a href="/terms-of-use">Terms of Use</a>
                   <a href="mailto:support@phaethon.llc">Contact Support</a>
+                  <a href="https://www.phaethonorder.com" target="_blank" rel="noopener noreferrer">
+                    Visit phaethonorder.com
+                  </a>
                 </div>
                 <p className="site-footer__copyright">© {currentYear} Phaethon Order LLC. All rights reserved.</p>
               </div>
