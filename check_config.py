@@ -36,7 +36,7 @@ def check_env_var(name: str, required: bool = True) -> Tuple[bool, str]:
 
 def main() -> None:
     print("=" * 60)
-    print("Citation Verifier Configuration Check")
+    print("CiteSure Configuration Check")
     print("=" * 60)
     print()
 
