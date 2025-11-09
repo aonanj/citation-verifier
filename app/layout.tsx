@@ -44,7 +44,7 @@ const faqEntriesLd = [
   {
     name: 'What is JurisCheck?',
     text:
-      'JurisCheck is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), JurisCheck helps ensure that all citations are authentic and properly cited. JurisCheck is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+      'JurisCheck is a service to verify that legal citations exist and are accurate. In other words, JurisCheck checks for fake citations. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), JurisCheck helps ensure that all citations are authentic and properly cited. JurisCheck is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
   },
   {
     name: 'What types of citations does JurisCheck verify?',
@@ -52,7 +52,7 @@ const faqEntriesLd = [
       'JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
   },
   {
-    name: 'Can JurisCheck catch AI-generated hallucinated authorities?',
+    name: 'Can JurisCheck catch AI-generated, hallucinated, and false citations?',
     text:
       'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
   },
