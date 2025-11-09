@@ -12,10 +12,10 @@ const ogImageUrl = new URL('/images/CitationVerifierLogo.png', metadataBase).hre
 const currentYear = new Date().getFullYear();
 const webApplicationLd = {
   '@type': 'WebApplication',
-  name: 'VeriCite Citation Verification',
+  name: 'CiteSure Citation Verification',
   url: normalizedSiteUrl,
   description:
-    'VeriCite is a Bluebook-native legal citation verification service that catches AI-generated hallucinations and other inaccuracies in legal citations.',
+    'CiteSure is a Bluebook-native legal citation verification service that catches AI-generated hallucinations and other inaccuracies in legal citations.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   inLanguage: 'en-US',
@@ -42,17 +42,17 @@ const webApplicationLd = {
 
 const faqEntriesLd = [
   {
-    name: 'What is VeriCite?',
+    name: 'What is CiteSure?',
     text:
-      'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations, VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+      'CiteSure is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations, CiteSure helps ensure that all citations are authentic and properly cited. CiteSure is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
   },
   {
-    name: 'What types of citations does VeriCite verify?',
+    name: 'What types of citations does CiteSure verify?',
     text:
-      'VeriCite validates Bluebook-formatted case law, statutes, regulations, and secondary sources drawn from federal and state reporters, journals, and treatises.',
+      'CiteSure validates Bluebook-formatted case law, statutes, regulations, and secondary sources drawn from federal and state reporters, journals, and treatises.',
   },
   {
-    name: 'Can VeriCite catch AI-generated hallucinated authorities?',
+    name: 'Can CiteSure catch AI-generated hallucinated authorities?',
     text:
       'Yes. Every citation is scored against areputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive.',
   },
@@ -64,12 +64,12 @@ const faqEntriesLd = [
   {
     name: 'Is my document secure during the verification process?',
     text:
-      'Documents are encrypted for upload to VeriCite, and are deleted after processing. Documents can also be locally processed so only citation data is sent to VeriCite through our Microsoft Word Add-In -- contact support@phaethon.llc for access.',
+      'Documents are encrypted for upload to CiteSure, and are deleted after processing. Documents can also be locally processed so only citation data is sent to CiteSure through our Microsoft Word Add-In -- contact support@phaethon.llc for access.',
   },
   {
     name: 'Are verification results retained for later review?',
     text:
-      'In the interest of user privacy, VeriCite does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+      'In the interest of user privacy, CiteSure does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
   },
 ];
 
@@ -95,11 +95,11 @@ const jsonLd = {
 export const metadata: Metadata = {
   metadataBase,
   title: {
-    default: 'VeriCite - Citation Verification for Legal Professionals',
-    template: '%s | VeriCite Citation Verification',
+    default: 'CiteSure - Citation Verification for Legal Professionals',
+    template: '%s | CiteSure Citation Verification',
   },
   description:
-    'VeriCite is a Bluebook-native legal citation verification service that helps attorneys, legal teams, and scholars confirm authorities before filing briefs, memos, and journal articles.',
+    'CiteSure is a Bluebook-native legal citation verification service that helps attorneys, legal teams, and scholars confirm authorities before filing briefs, memos, and journal articles.',
   keywords: [
     'legal citation verification',
     'Bluebook compliance',
@@ -120,24 +120,24 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     url: metadataBase,
-    title: 'VeriCite Citation Verification Platform',
+    title: 'CiteSure Citation Verification Platform',
     description:
       'Automated Bluebook citation verification for briefs, motions, and legal scholarship with instant validation reporting.',
-    siteName: 'VeriCite',
+    siteName: 'CiteSure',
     images: [
       {
         url: ogImageUrl,
         width: 1200,
         height: 630,
-        alt: 'VeriCite citation verification web application interface',
+        alt: 'CiteSure citation verification web application interface',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'VeriCite - Bluebook Citation Verification',
+    title: 'CiteSure - Bluebook Citation Verification',
     description:
-      'Verify legal citations before filing. VeriCite checks Bluebook authorities, pin cites, and references in minutes.',
+      'Verify legal citations before filing. CiteSure checks Bluebook authorities, pin cites, and references in minutes.',
     images: [ogImageUrl],
   },
   robots: {
@@ -176,7 +176,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     <img src="/images/scales-of-justice.png" alt="" aria-hidden="true" />
                   </span>
                   <div>
-                    <span className="site-footer__label">VeriCite</span>
+                    <span className="site-footer__label">CiteSure</span>
                     <span className="site-footer__tagline">Citation confidence for legal professionals.</span>
                   </div>
                 </div>

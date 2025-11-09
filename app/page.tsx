@@ -48,17 +48,17 @@ const NEWS_ITEMS = [
 
 const FAQ_ITEMS = [
   {
-    question: 'What is VeriCite?',
+    question: 'What is CiteSure?',
     answer:
-      'VeriCite is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), VeriCite helps ensure that all citations are authentic and properly cited. VeriCite is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+      'CiteSure is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), CiteSure helps ensure that all citations are authentic and properly cited. CiteSure is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
   },
   {
-    question: 'What types of citations does VeriCite verify?',
+    question: 'What types of citations does CiteSure verify?',
     answer:
-      'VeriCite validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
+      'CiteSure validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
   },
   {
-    question: 'Can VeriCite catch AI-generated hallucinated authorities?',
+    question: 'Can CiteSure catch AI-generated hallucinated authorities?',
     answer:
       'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
   },
@@ -70,12 +70,12 @@ const FAQ_ITEMS = [
   {
     question: 'Is my document secure during the verification process?',
     answer:
-      'Documents are encrypted for upload to VeriCite, and are deleted after processing. Documents can also be locally processed so only citation data is sent to VeriCite through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
+      'Documents are encrypted for upload to CiteSure, and are deleted after processing. Documents can also be locally processed so only citation data is sent to CiteSure through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
   },
   {
     question: 'Are verification results retained for later review?',
     answer:
-      'In the interest of user privacy, VeriCite does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+      'In the interest of user privacy, CiteSure does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
   },
   {
     question: 'What can I do if I am not satisfied with the verification results?',
@@ -554,12 +554,12 @@ function HomePageContent() {
         <section className={styles.heroCard}>
           <div className={styles.heroHeader}>
             <span className={styles.heroMark}>
-              <img src="/images/scales-of-justice.png" alt="VeriCite crest" />
+              <img src="/images/scales-of-justice.png" alt="CiteSure crest" />
             </span>
             <div>
               <span className={styles.heroEyebrow}>Bluebook-native verification</span>
               <h1 className={styles.heroTitle}>
-                VeriCite
+                CiteSure
                 <span className={styles.heroAccent}>Citation confidence for legal documents.</span>
               </h1>
               <p className={styles.heroSubtitle}>
@@ -570,7 +570,7 @@ function HomePageContent() {
 
           <div className={styles.heroBody}>
             <p>
-              VeriCite is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles,
+              CiteSure is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles,
               law review notes, and other documents citing primarily to US state and federal case law and statutes,
               academic and professional journals and periodicals, and secondary legal sources.
             </p>

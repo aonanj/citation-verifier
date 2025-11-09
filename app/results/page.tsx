@@ -603,7 +603,7 @@ export default function ResultsPage() {
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
-      doc.text('VeriCite Verification Report', margin, cursorY);
+      doc.text('CiteSure Verification Report', margin, cursorY);
       cursorY += 26;
 
       writeText(`Generated: ${new Date().toLocaleString()}`);
@@ -757,7 +757,7 @@ export default function ResultsPage() {
       }
 
       const timestampSlug = new Date().toISOString().replace(/[:.]/g, '-');
-      doc.save(`vericite-report-${timestampSlug}.pdf`);
+      doc.save(`citesure-report-${timestampSlug}.pdf`);
     } catch (error) {
       console.error('Failed to generate PDF export', error);
     } finally {
@@ -796,7 +796,7 @@ export default function ResultsPage() {
     return (
       <div className={styles.authGate}>
         <div className={styles.authGateCard}>
-          <span className={styles.authGateLabel}>VeriCite</span>
+          <span className={styles.authGateLabel}>CiteSure</span>
           <h1 className={styles.authGateTitle}>Checking your session…</h1>
           <p className={styles.authGateDescription}>
             Verifying authentication status...
@@ -813,7 +813,7 @@ export default function ResultsPage() {
           <span className={styles.authGateLabel}>Sign in required</span>
           <h1 className={styles.authGateTitle}>Sign in to continue</h1>
           <p className={styles.authGateDescription}>
-            Please sign in to continue with VeriCite...
+            Please sign in to continue with CiteSure...
           </p>
           {auth0Error && <p className={styles.authGateError}>{auth0Error.message}</p>}
           <div className={styles.authGateActions}>
