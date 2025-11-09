@@ -86,7 +86,7 @@ load_dotenv()
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://citation-verifier.vercel.app")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://www.jurischeck.com")
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY

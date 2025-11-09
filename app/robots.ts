@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://citation-verifier.vercel.app').replace(/\/+$/, '');
+const siteOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.jurischeck.com').replace(/\/+$/, '');
 
 export default function robots(): MetadataRoute.Robots {
   return {

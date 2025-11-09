@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://citation-verifier.vercel.app';
+const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.jurischeck.com';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();

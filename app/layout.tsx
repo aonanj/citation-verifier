@@ -5,7 +5,7 @@ import { ReactNode } from 'react';
 import './globals.css';
 import { Providers } from './providers';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://citation-verifier.vercel.app';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.jurischeck.com';
 const normalizedSiteUrl = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
 const metadataBase = new URL(normalizedSiteUrl);
 const ogImageUrl = new URL('/images/CitationVerifierLogo.png', metadataBase).href;
@@ -44,32 +44,42 @@ const faqEntriesLd = [
   {
     name: 'What is JurisCheck?',
     text:
-      'JurisCheck is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations, JurisCheck helps ensure that all citations are authentic and properly cited. JurisCheck is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+      'JurisCheck is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), JurisCheck helps ensure that all citations are authentic and properly cited. JurisCheck is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
   },
   {
     name: 'What types of citations does JurisCheck verify?',
     text:
-      'JurisCheck validates Bluebook-formatted case law, statutes, regulations, and secondary sources drawn from federal and state reporters, journals, and treatises.',
+      'JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
   },
   {
     name: 'Can JurisCheck catch AI-generated hallucinated authorities?',
     text:
-      'Yes. Every citation is scored against areputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive.',
+      'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
+  },
+  {
+    name: 'What makes JurisCheck better than other citation verification tools, such as CiteSure.com?',
+    text:
+      'JurisCheck allows you to upload an entire document and verify all citations in one go, rather than having to manually check each citation individually. Furthermore, JurisCheck verifies multiple fields for each citation, such as case name, title, author, reporter or journal, and year, and provides details on any mismatched fields, rather than just a pass/fail result.',
   },
   {
     name: 'How quickly will my verification report be ready?',
     text:
-      'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time.',
+      'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
   },
   {
     name: 'Is my document secure during the verification process?',
     text:
-      'Documents are encrypted for upload to JurisCheck, and are deleted after processing. Documents can also be locally processed so only citation data is sent to JurisCheck through our Microsoft Word Add-In -- contact support@phaethon.llc for access.',
+      'Documents are encrypted for upload to JurisCheck, and are deleted after processing. Documents can also be locally processed so only citation data is sent to JurisCheck through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
   },
   {
     name: 'Are verification results retained for later review?',
     text:
       'In the interest of user privacy, JurisCheck does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+  },
+  {
+    name: 'What can I do if I am not satisfied with the verification results?',
+    text:
+      'Export the verification results as a pdf. Send an email to support@phaethon.llc with the exported pdf and a description of the issue, including approximate date and time. Your issue will be reviewed and we will follow up with you to discuss next steps within three business days.',
   },
 ];
 

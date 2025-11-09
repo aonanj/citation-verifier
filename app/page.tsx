@@ -63,6 +63,11 @@ const FAQ_ITEMS = [
       'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
   },
   {
+    question: 'What makes JurisCheck better than other citation verification tools, such as CiteSure.com?',
+    answer:
+      'JurisCheck allows you to upload an entire document and verify all citations in one go, rather than having to manually check each citation individually. Furthermore, JurisCheck verifies multiple fields for each citation, such as case name, title, author, reporter or journal, and year, and provides details on any mismatched fields, rather than just a pass/fail result.',
+  },
+  {
     question: 'How quickly will my verification report be ready?',
     answer:
       'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
