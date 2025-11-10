@@ -12,10 +12,10 @@ const ogImageUrl = new URL('/images/CitationVerifierLogo.png', metadataBase).hre
 const currentYear = new Date().getFullYear();
 const webApplicationLd = {
   '@type': 'WebApplication',
-  name: 'JurisCheck Citation Verification',
+  name: 'JurisCheck Citation Checker',
   url: normalizedSiteUrl,
   description:
-    'JurisCheck is a Bluebook-native legal citation verification service that catches AI-generated hallucinations and other inaccuracies in legal citations.',
+    'JurisCheck is a Bluebook-native legal citation verification service that catches AI-generated hallucinations, fake citations, and other inaccuracies in legal documents.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   inLanguage: 'en-US',
@@ -29,6 +29,7 @@ const webApplicationLd = {
   },
   featureList: [
     'Automated verification of Bluebook citations and string cites',
+    'Fake citation detection for AI-generated documents',
     'Clustering of short-form references with full citations',
     'Instant verification reports with confidence indicators',
   ],
@@ -119,6 +120,18 @@ export const metadata: Metadata = {
     'court filing preparation',
     'citation checker',
     'authenticating legal authorities',
+    'legal document review',
+    'fake citation detection',
+    'legal writing tools',
+    'law review citation verification',
+    'fake citation checker',
+    'legal scholarship tools',
+    'legal tech solutions',
+    'law practice management',
+    'legal document automation',
+    'legal citation analysis',
+    'legal compliance software',
+    'legal research tools',
   ],
   category: 'business',
   creator: 'Phaethon Order LLC',
@@ -132,7 +145,7 @@ export const metadata: Metadata = {
     url: metadataBase,
     title: 'JurisCheck Citation Verification Platform',
     description:
-      'Automated Bluebook citation verification for briefs, motions, and legal scholarship with instant validation reporting.',
+      'Automated citation checker for briefs, motions, and legal and academic documents with instant validation reporting.',
     siteName: 'JurisCheck',
     images: [
       {
@@ -147,7 +160,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'JurisCheck - Bluebook Citation Verification',
     description:
-      'Verify legal citations before filing. JurisCheck checks Bluebook authorities, pin cites, and references in minutes.',
+      'Verify citations in legal and academic documents. JurisCheck catches fake citations and other inaccuracies in legal and academic documents.',
     images: [ogImageUrl],
   },
   robots: {
