@@ -610,9 +610,21 @@ async def verify_document(
 
     sanitized = _sanitize_citations(compiled)
 
-    record_document_usage(db, user, file.filename, credits_used=1)
-
-    logger.info("Document verified for user %s. Remaining credits: %s", auth.sub, user.credits)
+    citation_count = len(sanitized)
+    if citation_count > 0:
+        record_document_usage(db, user, file.filename, credits_used=1)
+        logger.info(
+            "Document verified for user %s. Citations detected: %s. Remaining credits: %s",
+            auth.sub,
+            citation_count,
+            user.credits,
+        )
+    else:
+        logger.info(
+            "No citations detected for user %s in %s; credit not deducted.",
+            auth.sub,
+            file.filename,
+        )
 
     return VerificationResponse(
         citations=sanitized,
