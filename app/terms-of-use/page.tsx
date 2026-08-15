@@ -106,15 +106,26 @@ export default function TermsOfUsePage() {
               ))}
             </section>
           ))}
+          <section className={styles.noticeCard}>
+            <p>Note on JurisCheck operations and features:</p>
+            <ul className={styles.noticeList}>
+              <li className={styles.noticeListItem}>Web sites, textbooks, and other sources without an available API, SDK, or similar centralized service cannot be verified.</li>
+              <li className={styles.noticeListItem}>
+                Citations with <em>infra</em> signals are ignored during verification process.
+              </li>
+              <li className={styles.noticeListItem}>Block quotes and inline citations are ignored during verification process.</li>
+              <li className={styles.noticeListItem}>Citation results may be corrupted/mismatched by footnotes that are not Bluebook-compliant.</li>
+            </ul>
+          </section>
         <Link href="/" className={styles.backLink}>
           ⇱ Back to home
         </Link>
         </div>
 
         <footer className={styles.contact}>
-          <h2 className={styles.sectionHeading}>Questions?</h2>
+          <h2 className={styles.sectionHeading}>Inquiries and Support</h2>
           <p className={styles.paragraph}>
-            Reach the JurisCheck team at{' '}
+            Contact JurisCheck support at{' '}
             <a href="mailto:support@phaethon.llc" className={styles.link}>
               support@phaethon.llc
             </a>{' '}

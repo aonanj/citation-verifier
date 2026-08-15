@@ -54,38 +54,53 @@ const FAQ_ITEMS = [
   },
   {
     question: 'What types of citations does JurisCheck verify?',
-    answer:
-      'JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, and secondary sources of law.',
+    answer: (
+      <>
+       JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, secondary sources of law, and more, provided that citations are reasonably compliant with Bluebook style. Details available{' '}
+        <a href="/terms-of-use">here</a>.
+      </>
+    ),      
   },
   {
     question: 'Can JurisCheck catch AI-generated hallucinated authorities?',
     answer:
-      'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple fields are independently checked for each citation to ensure verification results are accurate and comprehensive. Any missing or inaccurate fields are flagged with a warning, so even subtle hallucinations and incomplete citations are caught.',
+      'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple citation parts are independently checked to ensure verification results are accurate and comprehensive. Missing or inconsistent parts are flagged with a warning so partial matches are not assumed to be correct.',
   },
   {
     question: 'What makes JurisCheck better than other citation verification tools, such as CiteSure.com?',
     answer:
-      'JurisCheck allows you to upload an entire document and verify all citations in one go, rather than having to manually check each citation individually. Furthermore, JurisCheck verifies multiple fields for each citation, such as case name, title, author, reporter or journal, and year, and provides details on any mismatched fields, rather than just a pass/fail result.',
+      'JurisCheck is designed with an intuitive interface that avoids rigid and tedious requirements for use: simply upload an (unmodified) document to verify its citations. A robust extraction algorithm identifies citations without requiring strict rule conformance or manual setup. Verification results are displayed both inline in the original document and as a separate report, with auditable details for each verification result.',
   },
   {
     question: 'How quickly will my verification report be ready?',
     answer:
-      'Most documents are processed in just a few minutes or less. Document length and the number and type of citations may increase processing time. State law citations may require a longer processing time due to the complexity of querying state law sources.',
+      'Most documents are processed in less than five minutes. The duration until a results report is ready is dependent on numerous factors outside of direct control, such as rate limits imposed by third-party services, citation complexity, number of passes to confirm verifications, etc. Specifically, most state law citations increase processing time due to the number of sources queried.',
   },
   {
     question: 'Is my document secure during the verification process?',
-    answer:
-      'Documents are encrypted for upload to JurisCheck, and are deleted after processing. Documents can also be locally processed so only citation data is sent to JurisCheck through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
+    answer: (
+      <>
+        Documents are encrypted for upload to JurisCheck, and are deleted after processing.
+        A Word Add-In is also available so documents can be locally processed, extracting
+        citations in order before the verification process while keeping sensitive data on
+        the local machine. Contact{' '}
+        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
+      </>
+    ),
   },
   {
     question: 'Are verification results retained for later review?',
     answer:
-      'In the interest of user privacy, JurisCheck does not retain uploaded documents or verification results. Users are encouraged to save or download their verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+      'In the interest of data privacy and security, JurisCheck does not retain uploaded documents or verification results. Users are encouraged to save or download verification reports immediately after processing completes (an export pdf option is provided on the results page).',
   },
   {
     question: 'What can I do if I am not satisfied with the verification results?',
-    answer:
-      'Export the verification results as a pdf. Send an email to support@phaethon.llc with the exported pdf and a description of the issue, including approximate date and time. Your issue will be reviewed and we will follow up with you to discuss next steps within three business days.',
+    answer: (
+      <>
+        Contact{' '}
+        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> with a description of the issue. When possible, please indicate date and time that the issue occured, exported verification report, and any other details. A response can be expected within three business days. 
+      </>
+    ),
   },
 ];
 
@@ -534,7 +549,7 @@ function HomePageContent() {
               </div>
             </div>
             <p className={styles.verificationNotice}>
-              Please allow the verification process to complete. Navigating away from this page or closing your browser will cause your verification results to be lost.
+              Please allow the verification process to complete. Navigating away from this page or closing your browser will cause verification results to be lost.
             </p>
           </div>
         </div>
@@ -565,19 +580,19 @@ function HomePageContent() {
               <span className={styles.heroEyebrow}>Bluebook-native verification</span>
               <h1 className={styles.heroTitle}>
                 JurisCheck
-                <span className={styles.heroAccent}>Citation confidence for legal documents.</span>
+                <span className={styles.heroAccent}>Comprehensive validation for document citation confidence.</span>
               </h1>
               <p className={styles.heroSubtitle}>
-                Citation verification web service for briefs, memos, and other court filings, legal documents, and journal articles.
+                Citation verification web service designed specifically for briefs, memos, and other legal documents, as well as articles and other works following Bluebook citation style.
               </p>
             </div>
           </div>
 
           <div className={styles.heroBody}>
             <p>
-              JurisCheck is a full-stack toolchain to verify legal citations in briefs, memos, legal journal articles,
+              JurisCheck is a full-stack tool that verifies legal citations in briefs, memos, legal journal articles,
               law review notes, and other documents citing primarily to US state and federal case law and statutes,
-              academic and professional journals and periodicals, and secondary legal sources.
+              academic and professional journals and periodicals, and secondary legal sources. 
             </p>
           </div>
           <div className={styles.authActions}>
@@ -608,7 +623,7 @@ function HomePageContent() {
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Bluebook-native citation checks</h3>
               <p className={styles.featureCardCopy}>
-                Accurately identifies most citations in Bluebook format, including string citations and citations with introductory signals. Short-form citations are matched to their parent citations.
+                Consistent and robust identification of all Bluebook-style citations, including string citations and citations with introductory signals. Short-form and abbreviated citations are matched to full parent citations.
               </p>
             </article>
             <article className={styles.featureCard}>
@@ -618,15 +633,15 @@ function HomePageContent() {
               </p>
             </article>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Verification confirmations across multiple fields</h3>
+              <h3 className={styles.featureCardTitle}>Multi-pass procedure confirms each citation verification </h3>
               <p className={styles.featureCardCopy}>
-                Citations are verified against multiple fields, such as case name, source (e.g., reporter, journal, etc.), volume, page, year, etc. Get warnings for missing or inaccurate fields.
+                Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is independently checked across multiple authorities to ensure results are highly accurate.
               </p>
             </article>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Compatible with multiple formats</h3>
+              <h3 className={styles.featureCardTitle}>Accepts multiple file formats and citation styles</h3>
               <p className={styles.featureCardCopy}>
-                Works with docx, pdf, and txt files, including pdf image files. Support for both inline and footnote citations.
+                Compatible with multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Works seamlessly with inline and footnote citation styles.
               </p>
             </article>
           </div>
@@ -636,7 +651,7 @@ function HomePageContent() {
           <article className={styles.uploadCard}>
             <h2 className={styles.uploadHeading}>Upload document</h2>
             <p className={styles.uploadDescription}>
-              Upload a pdf, docx, or txt file (10 MB max). Verification results are displayed after processing completes. Processing time varies with document length and complexity.
+              Verification process begins upon clicking 'Verify citations' button. Results are displayed as soon as process is complete. Processing time may be several minutes depending on document length and citation complexity. Navigating away from or closing the page causes immediate loss of verification results.
             </p>
 
             {infoMessage && (
@@ -745,7 +760,7 @@ function HomePageContent() {
               aria-controls="faq-content"
             >
               <span className={styles.faqArrow} aria-hidden="true">{isFaqExpanded ? '▼' : '▶︎'}</span>
-              <span className={styles.faqToggleLabel}>Frequently asked questions</span>
+              <span className={styles.faqToggleLabel}>FAQs</span>
             </button>
           </h2>
           <div
@@ -765,18 +780,9 @@ function HomePageContent() {
         </section>
 
         <section className={styles.noticeCard}>
-          <p>Note that not all citation formats are recognized or verified.</p>
-          <ul className={styles.noticeList}>
-            <li className={styles.noticeListItem}>Web sites, textbooks, and unsupported sources are ignored.</li>
-            <li className={styles.noticeListItem}>
-              <em>infra</em> signals are omitted from verification.
-            </li>
-            <li className={styles.noticeListItem}>Irregular formats can offset automatic footnote numbering.</li>
-            <li className={styles.noticeListItem}>Block quotes are not supported.</li>
-          </ul>
           <p>
-            <strong>Important:</strong> Please avoid uploading confidential or privileged information. A Microsoft Word
-            add-in with identical functionality keeps data on-device. Contact{' '}
+            <strong>Note:</strong> Uploading confidential or privileged information is not recommended. JurisCheck does not store or retain any uploaded data, but does not warrant data security or privacy not directly controlled. JurisCheck is now available as a Word
+            Add-In for use with sensitive documents - contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>
         </section>

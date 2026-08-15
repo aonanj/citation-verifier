@@ -2,6 +2,7 @@
 
 import type { Metadata } from 'next';
 import { ReactNode } from 'react';
+// @ts-ignore - Next.js handles global CSS imports at build time.
 import './globals.css';
 import { Providers } from './providers';
 
