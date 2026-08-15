@@ -900,7 +900,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
   gap: 0.5rem;
 }
 
@@ -1091,10 +1090,9 @@
   border: 1px solid rgba(249, 115, 22, 0.3);
   background: linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(249, 115, 22, 0.05));
   color: var(--text-secondary);
-  opacity: 0.6;
+  opacity: 0.5;
   box-shadow: var(--shadow-soft);
-  display: flex;
-  flex-direction: column;
+  display: block;
   justify-content: center;
   align-items: flex-start;
   gap: 1rem;
@@ -1122,7 +1120,7 @@
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
-  max-width: 76ch;
+  max-width: none;
   color: var(--text-secondary);
 }
 

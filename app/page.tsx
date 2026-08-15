@@ -21,28 +21,40 @@ const formatCurrency = (amountCents: number): string => {
 
 const NEWS_ITEMS = [
   {
-    title: 'California judge fines attorney as AI regulation debate escalates (CalMatters)',
+    title: 'California Judge Fines Attorney as AI Regulation Debate Escalates (CalMatters)',
     href: 'https://calmatters.org/economy/technology/2025/09/chatgpt-lawyer-fine-ai-regulation/',
   },
   {
-    title: 'Massachusetts lawyer sanctioned for AI-generated fictitious cases (MSBA)',
+    title: 'Massachusetts Lawyer Sanctioned for AI-generated Fictitious Cases (MSBA)',
     href: 'https://www.msba.org/site/site/content/News-and-Publications/News/General-News/Massachusetts_Lawyer-Sanctioned_for_AI_Generated-Fictitious_Cases.aspx',
   },
   {
-    title: 'Federal court steps up scrutiny of ChatGPT research in filings (Esquire Solutions)',
+    title: 'Federal Court Steps Up Scrutiny of ChatGPT Research in Filings (Esquire Solutions)',
     href: 'https://www.esquiresolutions.com/federal-court-turns-up-the-heat-on-attorneys-using-chatgpt-for-research/',
   },
   {
-    title: 'Judge disqualifies Butler Snow attorneys over AI citations (Reuters)',
+    title: 'Judge Disqualifies Butler Snow Attorneys Over AI Citations (Reuters)',
     href: 'https://www.reuters.com/legal/government/judge-disqualifies-three-butler-snow-attorneys-case-over-ai-citations-2025-07-24/',
   },
   {
-    title: 'Judges cite AI hallucinations in growing sanctions inquiries (NatLawReview)',
+    title: 'Judges Cite AI Hallucinations in Growing Sanctions Inquiries (NatLawReview)',
     href: 'https://natlawreview.com/article/more-sanctions-inquiries-against-lawyers-judges-cite-hallucinations',
   },
   {
     title: 'Maryland Appellate Court Refers Attorney to Attorney Grievance Commission for AI Misuse (MD Courts)',
     href: 'https://www.mdcourts.gov/data/opinions/cosa/2025/0361s25.pdf',
+  },
+  {
+    title: 'Penalties Stack Up as AI Spreads Through the Legal System (NPR)',
+    href: 'https://www.npr.org/2026/04/03/nx-s1-5761454/penalties-stack-up-ai-spreads-through-legal-system',
+  },
+  {
+    title: 'Judge Punishes 4 Lawyers After Catching Both Sides Using A.I. in Lawsuit (New York Times)',
+    href: 'https://www.nytimes.com/2026/06/09/us/ai-lawyers-sanctioned-mississippi.html',
+  },
+  {
+    title: 'Top Connecticut Court Warns Lawyers On AI Risks After Fake Citations (Reuters)',
+    href: 'https://www.reuters.com/legal/litigation/top-connecticut-court-warns-lawyers-ai-risks-after-fake-citations-2026-08-03',
   },
 ];
 
@@ -50,26 +62,29 @@ const FAQ_ITEMS = [
   {
     question: 'What is JurisCheck?',
     answer:
-      'JurisCheck is a service to verify that legal citations exist and are accurate. In view of the increasing use of AI in law and the increasingly serve consequences levied against attorneys that file legal documents with AI hallucinations (see "AI Litigation Watch" above), JurisCheck helps ensure that all citations are authentic and properly cited. JurisCheck is also a perfect tool for attorney review work, law review editors, law school professors and TAs, and anyone else who needs to verify the accuracy of legal citations in any document.',
+      'JurisCheck is a highly accurate, robust, and accessible service that automates the verification process necessary for ensuring the accuracy of citations in memos, briefs, articles, and other legal-related documents. A tool that instantly eliminates the tedium of manual verification, JurisCheck ensures that all citations in a document are authentic and properly cited, providing a simple solution for reviewing attorneys, law review editors, law school professors and TAs, and anyone using AI for drafting.',
   },
   {
     question: 'What types of citations does JurisCheck verify?',
     answer: (
       <>
-       JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, secondary sources of law, and more, provided that citations are reasonably compliant with Bluebook style. Details available{' '}
+       JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, secondary sources of law, and more, provided that citations are sufficiently compliant with Bluebook style. Details available{' '}
         <a href="/terms-of-use">here</a>.
       </>
     ),      
   },
   {
-    question: 'Can JurisCheck catch AI-generated hallucinated authorities?',
+    question: 'Does JurisCheck catch AI-hallucinated citations?',
     answer:
-      'Yes. Every citation is scored against at least one reputable and authoritative source, such as Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, and OpenAlex. Multiple citation parts are independently checked to ensure verification results are accurate and comprehensive. Missing or inconsistent parts are flagged with a warning so partial matches are not assumed to be correct.',
+      'Yes. Every citation is scored against at least one source widely recognized as authoritative – examples include Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, OpenAlex, and similar sources. Multiple citation parts are independently checked to ensure verification results are comprehensively accurate. Missing or inconsistent parts are flagged with a warning so partial matches are not assumed to be correct.',
   },
   {
     question: 'What makes JurisCheck better than other citation verification tools, such as CiteSure.com?',
-    answer:
-      'JurisCheck is designed with an intuitive interface that avoids rigid and tedious requirements for use: simply upload an (unmodified) document to verify its citations. A robust extraction algorithm identifies citations without requiring strict rule conformance or manual setup. Verification results are displayed both inline in the original document and as a separate report, with auditable details for each verification result.',
+    answer: (
+    <>
+      JurisCheck is designed with an intuitive interface that avoids rigid and tedious requirements for use: simply upload an (unmodified) document to verify its citations. A robust extraction algorithm identifies citations without requiring strict rule conformance or manual setup. Verification results are displayed both inline in the original document and as a separate report, with auditable details for each verification result. Recently, JurisCheck was ranked above similar services offered by WestLaw and Lexis:{' '}<a href="https://www.nexlaw.ai/blog/best-ai-tools-verify-legal-citations-2026">Best AI Tools That Verify Legal Citations in 2026 (Ranked for US Litigators)</a>.
+    </>  
+    ),
   },
   {
     question: 'How quickly will my verification report be ready?',
@@ -98,7 +113,7 @@ const FAQ_ITEMS = [
     answer: (
       <>
         Contact{' '}
-        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> with a description of the issue. When possible, please indicate date and time that the issue occured, exported verification report, and any other details. A response can be expected within three business days. 
+        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> with a description of the issue. When possible, please indicate date and time that the issue occurred, exported verification report, and any other details. A response can be expected within three business days. 
       </>
     ),
   },
@@ -633,15 +648,15 @@ function HomePageContent() {
               </p>
             </article>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Multi-pass procedure confirms each citation verification </h3>
+              <h3 className={styles.featureCardTitle}>Multi-pass verification & confirmation</h3>
               <p className={styles.featureCardCopy}>
                 Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is independently checked across multiple authorities to ensure results are highly accurate.
               </p>
             </article>
             <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Accepts multiple file formats and citation styles</h3>
+              <h3 className={styles.featureCardTitle}>Broad format and style compatibility</h3>
               <p className={styles.featureCardCopy}>
-                Compatible with multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Works seamlessly with inline and footnote citation styles.
+                Seamless operation across multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Works seamlessly with inline and footnote citation styles.
               </p>
             </article>
           </div>
