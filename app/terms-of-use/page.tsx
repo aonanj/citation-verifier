@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     'Terms of Use for JurisCheck covering eligibility, payments, acceptable use requirements, confidentiality, and support.',
 };
 
-const updatedDate = 'November 2, 2025';
+const updatedDate = 'August 1, 2026';
 
 const termsSections = [
   {
@@ -106,8 +106,8 @@ export default function TermsOfUsePage() {
               ))}
             </section>
           ))}
-          <section className={styles.noticeCard}>
-            <p>Note on JurisCheck operations and features:</p>
+          <section id="noticeCard" className={styles.noticeCard}>
+            <p>Notice regarding JurisCheck functionality:</p>
             <ul className={styles.noticeList}>
               <li className={styles.noticeListItem}>Web sites, textbooks, and other sources without an available API, SDK, or similar centralized service cannot be verified.</li>
               <li className={styles.noticeListItem}>

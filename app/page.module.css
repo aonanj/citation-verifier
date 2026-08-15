@@ -868,6 +868,15 @@
   color: var(--text-secondary);
 }
 
+.faqAnswer a {
+  text-decoration: underline;
+  color: var(--accent);
+}
+
+.faqAnswer a:hover {
+  text-decoration: none;
+}
+
 .heroList {
   margin: 0;
   padding: 0;

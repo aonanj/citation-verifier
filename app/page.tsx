@@ -69,7 +69,7 @@ const FAQ_ITEMS = [
     answer: (
       <>
        JurisCheck validates citations to state and federal cases, state and federal laws, law reviews, academic and professional journals and periodicals, secondary sources of law, and more, provided that citations are sufficiently compliant with Bluebook style. Details available{' '}
-        <a href="/terms-of-use">here</a>.
+        <a href="/terms-of-use#noticeCard">here</a>.
       </>
     ),      
   },
@@ -598,7 +598,7 @@ function HomePageContent() {
                 <span className={styles.heroAccent}>Comprehensive validation for document citation confidence.</span>
               </h1>
               <p className={styles.heroSubtitle}>
-                Citation verification web service designed specifically for briefs, memos, and other legal documents, as well as articles and other works following Bluebook citation style.
+                Citation verification web service specifically designed for the legal space.
               </p>
             </div>
           </div>
@@ -606,8 +606,8 @@ function HomePageContent() {
           <div className={styles.heroBody}>
             <p>
               JurisCheck is a full-stack tool that verifies legal citations in briefs, memos, legal journal articles,
-              law review notes, and other documents citing primarily to US state and federal case law and statutes,
-              academic and professional journals and periodicals, and secondary legal sources. 
+              law review notes, and other documents citing state and federal case law and statutes,
+              academic and professional journals and periodicals, secondary legal sources, and similar authorities. 
             </p>
           </div>
           <div className={styles.authActions}>
@@ -628,7 +628,7 @@ function HomePageContent() {
         <section className={styles.featureHighlights} aria-labelledby="feature-highlights-heading">
           <div className={styles.featureHighlightsHeader}>
             <h2 id="feature-highlights-heading" className={styles.sectionTitle}>
-              Fact Check Citations Before Filing
+              Fast Check Citations Before Filing
             </h2>
             <p className={styles.sectionSubtitle}>
               Automate verification of citations in legal briefs and documents. Submit documents with confidence in their accuracy.
@@ -644,19 +644,19 @@ function HomePageContent() {
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Comprehensive authority coverage</h3>
               <p className={styles.featureCardCopy}>
-                Validates citations against authoritative databases and APIs, including Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, and Justia.
+                Validates citations against authoritative databases and APIs, including Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, OpenAlex, and more.
               </p>
             </article>
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Multi-pass verification & confirmation</h3>
               <p className={styles.featureCardCopy}>
-                Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is independently checked across multiple authorities to ensure results are highly accurate.
+                Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is confirmed across multiple authorities to ensure results are highly accurate.
               </p>
             </article>
             <article className={styles.featureCard}>
               <h3 className={styles.featureCardTitle}>Broad format and style compatibility</h3>
               <p className={styles.featureCardCopy}>
-                Seamless operation across multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Works seamlessly with inline and footnote citation styles.
+                Seamless operation across multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Accepts inline and footnote citation styles.
               </p>
             </article>
           </div>
@@ -666,7 +666,7 @@ function HomePageContent() {
           <article className={styles.uploadCard}>
             <h2 className={styles.uploadHeading}>Upload document</h2>
             <p className={styles.uploadDescription}>
-              Verification process begins upon clicking 'Verify citations' button. Results are displayed as soon as process is complete. Processing time may be several minutes depending on document length and citation complexity. Navigating away from or closing the page causes immediate loss of verification results.
+              Click 'Verify citations' to begin. Results report is displayed after verification process is complete. Please keep this page open during this process.
             </p>
 
             {infoMessage && (
@@ -796,8 +796,8 @@ function HomePageContent() {
 
         <section className={styles.noticeCard}>
           <p>
-            <strong>Note:</strong> Uploading confidential or privileged information is not recommended. JurisCheck does not store or retain any uploaded data, but does not warrant data security or privacy not directly controlled. JurisCheck is now available as a Word
-            Add-In for use with sensitive documents - contact{' '}
+            <strong>Note:</strong> Uploading confidential or privileged information is not recommended. JurisCheck does not store or retain any uploaded data, but does not warrant data security or privacy not directly controlled. JurisCheck can be securely used as a Word
+            Add-In. Contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>
         </section>
