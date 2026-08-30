@@ -23,8 +23,13 @@ logger = get_logger()
 # Library of Congress Search API configuration
 _LOC_SEARCH_URL = "https://www.loc.gov/search/"
 _LOC_TIMEOUT = httpx.Timeout(15.0, connect=10.0, read=10.0)
-_LOC_MAX_RETRIES = 3
+_LOC_MAX_RETRIES = 1
 _LOC_BACKOFF_FACTOR = 2.0
+# Overall wall-clock budget for verifying a single citation across all query
+# variants/retries, so one slow/flaky external lookup can't stall a request
+# for minutes (see production incident: a full retry sweep across all query
+# variants took ~6.5 minutes and blocked the whole request).
+_LOC_TOTAL_BUDGET_SECONDS = 45.0
 
 # Match thresholds for fuzzy string matching
 _TITLE_MATCH_THRESHOLD = 72  # Minimum similarity score for title matches
@@ -516,15 +521,27 @@ def verify_secondary_citation(
     # Try each query until we find a match
     best_match: Tuple[Dict[str, Any], float, Dict[str, Any]] | None = None
     all_errors: List[str] = []
-    
+    search_start = time.monotonic()
+
     for query_idx, query in enumerate(queries):
+        if time.monotonic() - search_start > _LOC_TOTAL_BUDGET_SECONDS:
+            logger.error(
+                "Exceeded LOC search time budget (%.0fs) after %d/%d queries; "
+                "stopping further attempts for this citation.",
+                _LOC_TOTAL_BUDGET_SECONDS,
+                query_idx,
+                len(queries),
+            )
+            all_errors.append(f"time_budget_exceeded_after_{query_idx}_queries")
+            break
+
         logger.info(
             "Executing LOC search %d/%d: %s",
             query_idx + 1,
             len(queries),
             query,
         )
-        
+
         results, error = _execute_loc_search(query)
         
         if error:

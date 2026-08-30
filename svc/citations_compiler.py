@@ -38,6 +38,7 @@ from verifiers.federal_law_verifier import (
     verify_federal_law_citation,
 )
 from verifiers.journal_verifier import verify_journal_citation
+from verifiers.secondary_sources_verifier import verify_secondary_citation
 from verifiers.state_law_verifier import verify_state_law_citation
 
 logger = get_logger()
@@ -65,6 +66,28 @@ async def _verify_state_async(
     except Exception as exc:  # pragma: no cover - defensive safeguard
         logger.exception("State law verification task failed for %s: %s", resource_key, exc)
         status, substatus, details = "error", "state_law_async_failed", None
+    return resource_key, status, substatus, details
+
+
+async def _verify_secondary_async(
+    resource_key: str,
+    cite: Any,
+    normalized: str | None,
+    resource_dict: Dict[str, Any],
+) -> Tuple[str, str, str | None, Dict[str, Any] | None]:
+    """Run the secondary-source (Library of Congress) verifier off the main event loop."""
+    try:
+        status, substatus, details = await asyncio.to_thread(
+            verify_secondary_citation, cite, normalized, resource_dict
+        )
+    except Exception as exc:  # pragma: no cover - defensive safeguard
+        logger.exception("Secondary source verification task failed for %s: %s", resource_key, exc)
+        status, substatus, details = "error", "secondary_verification_async_failed", None
+    logger.info(
+        "Added new secondary citation to database: %s (status: %s)",
+        cite.matched_text[:50],
+        status,
+    )
     return resource_key, status, substatus, details
 
 # --- helper functions ------------------------------------------
@@ -496,9 +519,10 @@ def _process_secondary_citations(
     )
     
     # Process full citations first
+    secondary_tasks: List[asyncio.Task] = []
     for cite in full_citations:
-        _add_secondary_to_db(cite, citation_db, is_full=True)
-    
+        _add_secondary_to_db(cite, citation_db, is_full=True, secondary_tasks=secondary_tasks)
+
     # Process resolved short citations
     # Filter out Id. citations that refer to non-secondary sources
     for cite in resolved_shorts:
@@ -508,19 +532,27 @@ def _process_secondary_citations(
                 cite.span[0],
             )
             continue
-        _add_secondary_to_db(cite, citation_db, is_full=False)
+        _add_secondary_to_db(cite, citation_db, is_full=False, secondary_tasks=secondary_tasks)
 
 def _add_secondary_to_db(
     cite: SecondaryCitation,
     citation_db: Dict[str, Dict[str, Any]],
     is_full: bool,
+    secondary_tasks: List[asyncio.Task],
 ) -> None:
     """Add a secondary citation to the citation database.
-    
+
+    Full citations that require Library of Congress verification are inserted
+    with a "pending" status and their verification is scheduled as an async
+    task (appended to secondary_tasks) so the blocking LOC API call runs off
+    the main event loop instead of stalling the whole request.
+
     Args:
         cite: The SecondaryCitation to add.
         citation_db: Citation database to update (modified in place).
         is_full: Whether this is a full citation (vs short form).
+        secondary_tasks: List to append a verification asyncio.Task to, for
+            full citations that need LOC verification.
     """
     # Determine resource key
     if cite.antecedent_key and not is_full:
@@ -575,12 +607,13 @@ def _add_secondary_to_db(
         ),
     }
     
-    # Only verify full citations
+    # Only verify full citations; schedule the (blocking) LOC lookup as a
+    # background task instead of calling it inline so it doesn't stall the
+    # event loop or hold this request's DB session idle for minutes.
     if is_full:
-        from verifiers.secondary_sources_verifier import verify_secondary_citation
-        status, substatus, verification_details = verify_secondary_citation(
-            cite, normalized, resource_dict
-        )
+        status = "pending"
+        substatus = "secondary_verification_pending"
+        verification_details = None
     else:
         # Short forms inherit verification status from their antecedent
         status = "warning"
@@ -588,7 +621,7 @@ def _add_secondary_to_db(
         verification_details = {
             "note": "Short form citation without resolved antecedent",
         }
-    
+
     # Create new entry
     citation_db[resource_key] = {
         "type": "secondary",
@@ -600,12 +633,19 @@ def _add_secondary_to_db(
         "full_citation_obj": cite,
         "occurrences": [occurrence],
     }
-    
-    logger.info(
-        "Added new secondary citation to database: %s (status: %s)",
-        cite.matched_text[:50],
-        status,
-    )
+
+    if is_full:
+        secondary_tasks.append(
+            asyncio.create_task(
+                _verify_secondary_async(resource_key, cite, normalized, resource_dict)
+            )
+        )
+    else:
+        logger.info(
+            "Added new secondary citation to database: %s (status: %s)",
+            cite.matched_text[:50],
+            status,
+        )
 
 
 
@@ -826,6 +866,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     # Step 8: Build citation database in sorted order
     citation_db: Dict[str, Dict[str, Any]] = {}
     state_tasks = []
+    secondary_tasks: List[asyncio.Task] = []
 
     for entry in citation_entries:
         if entry['type'] == 'eyecite':
@@ -947,14 +988,16 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             # Process secondary citation
             cite = entry['citation']
             is_full = (entry['type'] == 'secondary_full')
-            _add_secondary_to_db(cite, citation_db, is_full)
+            _add_secondary_to_db(cite, citation_db, is_full, secondary_tasks=secondary_tasks)
 
-    # Complete state law verifications
-    if state_tasks:
-        for resource_key_task, status, substatus, verification_details in await asyncio.gather(*state_tasks):
+    # Complete async verifications (state law + secondary sources) concurrently,
+    # off the main event loop, so slow external lookups don't block the request.
+    pending_tasks = state_tasks + secondary_tasks
+    if pending_tasks:
+        for resource_key_task, status, substatus, verification_details in await asyncio.gather(*pending_tasks):
             entry = citation_db.get(resource_key_task)
             if not entry:
-                logger.error("State verification completed for unknown resource_key %s", resource_key_task)
+                logger.error("Async verification completed for unknown resource_key %s", resource_key_task)
                 continue
             entry["status"] = status
             entry["substatus"] = substatus

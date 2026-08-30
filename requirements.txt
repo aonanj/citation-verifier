@@ -4,122 +4,122 @@
 #
 #    pip-compile --cert=None --client-cert=None --index-url=None --pip-args=None requirements.in
 #
-annotated-types==0.7.0
+annotated-types>=0.7.0
     # via
     #   -r requirements.in
     #   pydantic
-anyio==4.11.0
+anyio>=4.11.0
     # via
     #   httpx
     #   openai
     #   starlette
-certifi==2025.8.3
+certifi>=2025.8.3
     # via
     #   httpcore
     #   httpx
-click==8.3.0
+click>=8.3.0
     # via uvicorn
-courts-db==0.10.26
+courts-db>=0.10.26
     # via eyecite
-distro==1.9.0
+distro>=1.9.0
     # via openai
-eyecite==2.7.6
+eyecite>=2.7.6
     # via -r requirements.in
-fast-diff-match-patch==2.1.0
+fast-diff-match-patch>=2.1.0
     # via eyecite
-fastapi==0.117.1
+fastapi>=0.117.1
     # via -r requirements.in
-h11==0.16.0
+h11>=0.16.0
     # via
     #   httpcore
     #   uvicorn
-httpcore==1.0.9
+httpcore>=1.0.9
     # via httpx
-httpx==0.28.1
+httpx>=0.28.1
     # via
     #   -r requirements.in
     #   openai
-idna==3.10
+idna>=3.10
     # via
     #   anyio
     #   httpx
-jiter==0.11.0
+jiter>=0.11.0
     # via openai
-lxml==6.0.2
+lxml>=6.0.2
     # via
     #   eyecite
     #   python-docx
-markupsafe==3.0.3
+markupsafe>=3.0.3
     # via werkzeug
-openai==2.0.1
+openai>=2.0.1
     # via -r requirements.in
-packaging==25.0
+packaging>=25.0
     # via pytesseract
-pillow==11.3.0
+pillow>=11.3.0
     # via pytesseract
-psycopg==3.2.10
+psycopg>=3.2.10
     # via -r requirements.in
-psycopg-binary==3.2.10
+psycopg-binary>=3.2.10
     # via -r requirements.in
-pyahocorasick==2.2.0
+pyahocorasick>=2.2.0
     # via eyecite
-pydantic==2.11.9
+pydantic>=2.11.9
     # via
     #   fastapi
     #   openai
-pydantic-core==2.33.2
+pydantic-core>=2.33.2
     # via pydantic
-pymupdf==1.26.4
+pymupdf>=1.26.4
     # via -r requirements.in
-pytesseract==0.3.13
+pytesseract>=0.3.13
     # via -r requirements.in
-python-docx==1.2.0
+python-docx>=1.2.0
     # via -r requirements.in
-python-dotenv==1.1.1
+python-dotenv>=1.1.1
     # via -r requirements.in
-python-multipart==0.0.20
+python-multipart>=0.0.20
     # via -r requirements.in
-rapidfuzz==3.14.1
+rapidfuzz>=3.14.1
     # via -r requirements.in
-regex==2025.9.18
+regex>=2025.9.18
     # via
     #   -r requirements.in
     #   eyecite
-reporters-db==3.2.58
+reporters-db>=3.2.58
     # via eyecite
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]>=3.3.0
     # via -r requirements.in
-cryptography==43.0.1
+cryptography>=43.0.1
     # via python-jose
-ecdsa==0.19.0
+ecdsa>=0.19.0
     # via python-jose
-pyasn1==0.6.0
+pyasn1>=0.6.0
     # via python-jose
-rsa==4.9
+rsa>=4.9
     # via python-jose
-sqlalchemy==2.0.36
+sqlalchemy>=2.0.36
     # via -r requirements.in
-greenlet==3.1.1
+greenlet>=3.1.1
     # via sqlalchemy
-requests==2.32.3
+requests>=2.32.3
     # via stripe
-charset-normalizer==3.4.0
+charset-normalizer>=3.4.0
     # via requests
-urllib3==2.2.3
+urllib3>=2.2.3
     # via requests
-pyjwt==2.9.0
+pyjwt>=2.9.0
     # via stripe
-sniffio==1.3.1
+sniffio>=1.3.1
     # via
     #   anyio
     #   openai
-starlette==0.48.0
+starlette>=0.48.0
     # via fastapi
-stripe==13.1.1
+stripe>=13.1.1
     # via -r requirements.in
-tqdm==4.67.1
+tqdm>=4.67.1
     # via openai
-typing-extensions==4.15.0
+typing-extensions>=4.15.0
     # via
     #   fastapi
     #   openai
@@ -127,11 +127,11 @@ typing-extensions==4.15.0
     #   pydantic-core
     #   python-docx
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection>=0.4.2
     # via pydantic
-uvicorn==0.36.0
+uvicorn>=0.36.0
     # via -r requirements.in
-werkzeug==3.1.3
+werkzeug>=3.1.3
     # via -r requirements.in
-wheel==0.45.1
+wheel>=0.45.1
     # via -r requirements.in

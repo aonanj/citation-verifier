@@ -581,6 +581,11 @@ async def verify_document(
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
     user = get_or_create_user(db, auth.sub, auth.email)
+    # Release the transaction opened by the read above before the slow
+    # verification work below runs, so the connection sits idle (not
+    # idle-in-transaction) and can't be killed by the database's
+    # idle-in-transaction timeout while we wait on external APIs.
+    db.commit()
     if user.credits <= 0:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -612,13 +617,24 @@ async def verify_document(
 
     citation_count = len(sanitized)
     if citation_count > 0:
-        record_document_usage(db, user, file.filename, credits_used=1)
-        logger.info(
-            "Document verified for user %s. Citations detected: %s. Remaining credits: %s",
-            auth.sub,
-            citation_count,
-            user.credits,
-        )
+        try:
+            record_document_usage(db, user, file.filename, credits_used=1)
+        except Exception as exc:  # pragma: no cover - unexpected failure
+            logger.exception(
+                "Failed to record usage/deduct credit for user %s, file %s; "
+                "returning results without deducting a credit: %s",
+                auth.sub,
+                file.filename,
+                exc,
+            )
+            db.rollback()
+        else:
+            logger.info(
+                "Document verified for user %s. Citations detected: %s. Remaining credits: %s",
+                auth.sub,
+                citation_count,
+                user.credits,
+            )
     else:
         logger.info(
             "No citations detected for user %s in %s; credit not deducted.",
