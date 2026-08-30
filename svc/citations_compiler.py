@@ -27,6 +27,7 @@ from svc.string_citation_handler import (
     CitationSegment,
     StringCitationDetector,
     StringCitationSplitter,
+    create_standalone_segment,
 )
 from utils.cleaner import clean_str
 from utils.logger import get_logger
@@ -245,20 +246,22 @@ def _process_citation_segment(
     for resource, resolved_cites in resolutions.items():
         for cite in resolved_cites:
             cite_span = get_span(cite)
-            cite_index = _get_index(cite)
 
-            if cite_span and cite_index is not None:
+            if cite_span:
                 seg_start, seg_end = cite_span
                 # Calculate adjusted position in original document
                 adjusted_start = segment.original_span[0] + seg_start
                 adjusted_end = segment.original_span[0] + seg_end
 
-                # Store adjusted span separately (don't modify eyecite object)
-                adjusted_spans[cite_index] = (adjusted_start, adjusted_end)
+                # Store adjusted span separately (don't modify eyecite object).
+                # Keyed by object identity rather than eyecite's per-call token
+                # index: each segment's get_citations() call restarts indexing
+                # from 0, so index-keyed storage collides once more than one
+                # segment is processed.
+                adjusted_spans[id(cite)] = (adjusted_start, adjusted_end)
 
-            # Track segment metadata for this citation
-            if cite_index is not None:
-                segment_metadata[cite_index] = segment
+            # Track segment metadata for this citation (same identity keying).
+            segment_metadata[id(cite)] = segment
 
     return resolutions, segment_metadata
 
@@ -274,15 +277,14 @@ def _get_adjusted_span(
 
     Args:
         cite: Citation object.
-        adjusted_spans: Dict of adjusted spans.
+        adjusted_spans: Dict of adjusted spans, keyed by id(cite).
 
     Returns:
         Tuple of (start, end) or None if span unavailable.
     """
-    cite_index = _get_index(cite)
-
-    if cite_index is not None and cite_index in adjusted_spans:
-        return adjusted_spans[cite_index]
+    adjusted = adjusted_spans.get(id(cite))
+    if adjusted is not None:
+        return adjusted
 
     # Fallback to native span
     return get_span(cite)
@@ -302,6 +304,46 @@ def _merge_resolutions(
         if resource_key not in target:
             target[resource_key] = []
         target[resource_key].extend(resolved_cites)
+
+
+def _compute_gap_ranges(
+    covered_ranges: Set[Tuple[int, int]],
+    text_length: int,
+) -> List[Tuple[int, int]]:
+    """Compute the complement of covered_ranges over [0, text_length).
+
+    Used to find text not covered by any detected string citation, so that
+    text can still be scanned by eyecite as standalone segments instead of
+    being silently skipped.
+
+    Args:
+        covered_ranges: Set of (start, end) ranges already covered by
+            detected string citations.
+        text_length: Length of the full document text.
+
+    Returns:
+        List of (start, end) gap ranges, sorted by position.
+    """
+    if not covered_ranges:
+        return [(0, text_length)] if text_length > 0 else []
+
+    merged: List[Tuple[int, int]] = []
+    for start, end in sorted(covered_ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    gaps: List[Tuple[int, int]] = []
+    cursor = 0
+    for start, end in merged:
+        if start > cursor:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < text_length:
+        gaps.append((cursor, text_length))
+
+    return gaps
 
 
 def _resolve_string_local_shorts(
@@ -326,11 +368,10 @@ def _resolve_string_local_shorts(
 
     for resource_key, cites in resolutions.items():
         for cite in cites:
-            cite_idx = _get_index(cite)
-            if cite_idx is None or cite_idx not in segment_metadata:
+            segment = segment_metadata.get(id(cite))
+            if segment is None:
                 continue
 
-            segment = segment_metadata[cite_idx]
             group_id = segment.string_group_id
 
             if group_id is None:
@@ -707,6 +748,35 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 logger.error("Failed to split string citation: %s", exc)
                 continue
 
+    # Text outside the detected string-citation spans still needs to be
+    # scanned by eyecite. Without this, full/short citations outside the
+    # detected string sentences are silently dropped whenever at least one
+    # string citation exists elsewhere in the document.
+    gap_segment_count = 0
+    if all_segments:
+        for gap_start, gap_end in _compute_gap_ranges(covered_ranges, len(text)):
+            gap_text = text[gap_start:gap_end]
+            stripped_gap_text = gap_text.strip()
+            if not stripped_gap_text:
+                continue
+            # Preserve the offset of the stripped text within the gap so
+            # spans still line up with the original document (mirrors how
+            # StringCitationSplitter locates part_stripped within its part).
+            leading_ws = len(gap_text) - len(gap_text.lstrip())
+            segment_start = gap_start + leading_ws
+            segment_end = segment_start + len(stripped_gap_text)
+            all_segments.append(
+                create_standalone_segment(stripped_gap_text, segment_start, segment_end)
+            )
+            gap_segment_count += 1
+
+        logger.info(
+            "Assembled %d string segment(s) and %d gap segment(s) covering "
+            "the remaining document text",
+            len(all_segments) - gap_segment_count,
+            gap_segment_count,
+        )
+
     all_resolutions: Dict[Any, Any] = {}
     all_segment_metadata: Dict[int, CitationSegment] = {}
     adjusted_spans: _AdjustedSpans = {}
@@ -968,7 +1038,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             # Add occurrences with string group metadata
             for cite in resolved_cites:
                 cite_idx = _get_index(cite)
-                segment = all_segment_metadata.get(cite_idx) if cite_idx else None
+                segment = all_segment_metadata.get(id(cite))
 
                 cite_span = _get_adjusted_span(cite, adjusted_spans)
 
