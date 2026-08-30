@@ -17,24 +17,35 @@ from utils.logger import get_logger
 
 logger = get_logger()
 
+# Shared "volume + multi-word reporter" fragment: 1-3 capitalized chunks
+# (each may contain internal periods, e.g. "Fed.", "Reg.", "F.2d") between
+# the volume number and the page number, covering both single-word reporters
+# ("U.S.", "F.2d") and multi-word ones ("Fed. Reg.", "F. Supp.").
+_REPORTER = r'[A-Z][\w.]*(?:\s+[A-Z][\w.]*){0,2}'
+
 # Semicolon boundary pattern with lookahead for next citation start
 _SEMICOLON_BOUNDARY: Final = re.compile(
     r';\s*(?='
     r'(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+v\.|'  # Case name (e.g., "Brown v.")
     r'In\s+re\s+[A-Z]|'  # In re citation
-    r'\d+\s+[A-Z][\w.]+\s+[A-Z]|'  # Reporter (e.g., "347 U.S.")
+    rf'\d+\s+{_REPORTER}\s+[A-Z0-9]|'  # Reporter (e.g., "347 U.S." or "66 Fed. Reg.")
     r'[A-Z][\w.]+\s*§|'  # Statute section
+    r'\d+\s+[A-Z][\w.]*\s*§|'  # Numbered statute (e.g., "18 U.S.C. §")
+    r"[A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*,\s*\d+\s+[A-Z]|"  # Title, ## Reporter
     r'id\.|supra|cf\.|see|compare|accord|contra|but)'  # Short forms/signals
     r')',
     re.MULTILINE | re.IGNORECASE
 )
 
-# Pattern to detect likely string citations
+# Pattern to detect likely string citations. Alternatives are NOT anchored to
+# a trailing ";" so the final citation in a string (which has no semicolon
+# after it) still counts as an indicator.
 _STRING_CITATION_INDICATORS: Final = re.compile(
     r'(?:'
-    r'(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+v\.[^;]{10,80};)|'  # Case + semicolon
-    r'(?:\d+\s+[A-Z][\w.]+\s+\d+[^;]{0,80};)|'  # Reporter cite + semicolon
-    r'(?:[A-Z][\w.]+\s*§\s*[\d.]+[^;]{0,60};)'  # Statute + semicolon
+    r'(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+v\.[^;]{10,80})|'  # Case citation
+    rf'(?:\d+\s+{_REPORTER}\s+\d+[^;]{{0,80}})|'  # Reporter citation
+    r'(?:[A-Z][\w.]+\s*§\s*[\d.]+[^;]{0,60})|'  # Statute citation
+    rf"(?:[A-Z][A-Za-z.']+(?:\s+[A-Z][A-Za-z.']+)*,\s*\d+\s+{_REPORTER}\s+\d+[^;]{{0,80}})"  # Title-leading citation
     r')',
     re.MULTILINE
 )
@@ -45,6 +56,41 @@ _SIGNAL_WORDS: Final = frozenset({
     'cf.', 'compare', 'but see', 'but cf.',
     'accord', 'contra', 'e.g.',
 })
+
+# Compiled signal-word matcher with letter-boundary guards, so "lessee"
+# doesn't match the substring "see" (can't use \b adjacent to periods in
+# words like "cf.", so boundaries are asserted explicitly).
+_SIGNAL_RE: Final = re.compile(
+    r'(?<![A-Za-z])(?:'
+    + '|'.join(re.escape(s) for s in sorted(_SIGNAL_WORDS, key=len, reverse=True))
+    + r')(?![A-Za-z])',
+    re.IGNORECASE,
+)
+
+# Small, closed set of universal lowercase Latin/legal abbreviations that
+# aren't proper-noun-shaped (so the sentence splitter's "starts uppercase"
+# rule can't catch them) but must never be treated as ending a sentence.
+# Deliberately NOT a list of party-name/journal abbreviations -- those are
+# open-ended and are instead covered by the "starts uppercase" rule.
+_LOWERCASE_ABBREVIATIONS: Final = frozenset({"cf", "etc", "vs"})
+
+# Candidate sentence-split point: a period followed by one or more
+# whitespace characters, then a capital letter or digit. Requiring actual
+# whitespace (not \s*) keeps "Educ., 347" / "Co., 927" from ever being
+# candidates, since a comma follows the period directly.
+_SENTENCE_BOUNDARY: Final = re.compile(r'\.(\s+)(?=[A-Z0-9])')
+
+# Word token immediately preceding a candidate split point.
+_PRECEDING_TOKEN: Final = re.compile(r"([\w'’]+)$")
+
+# Paragraph breaks are always genuine sentence/segment boundaries.
+_PARAGRAPH_BREAK: Final = re.compile(r'\n\s*\n+')
+
+# Defensive cap on candidate-segment length passed to is_likely_string_citation.
+# With guarded splitting, real sentences stay far below this; it only guards
+# against a pathological no-period document (e.g. OCR junk) being treated as
+# one giant string-citation candidate.
+_MAX_SEGMENT_LENGTH: Final = 1500
 
 # Patterns that should NOT be split (inside parentheticals)
 _PROTECTED_CONTEXTS: Final = re.compile(
@@ -144,6 +190,9 @@ class StringCitationDetector:
         if not text_segment or len(text_segment.strip()) < 20:
             return False
 
+        if len(text_segment) > _MAX_SEGMENT_LENGTH:
+            return False
+
         # Count semicolons that are citation boundaries (not in parentheticals)
         protected_ranges = self._get_protected_ranges(text_segment)
         semicolons = self._count_boundary_semicolons(
@@ -160,11 +209,9 @@ class StringCitationDetector:
             return True
 
         # Check for signal words followed by multiple citations
-        lower_text = text_segment.lower()
-        for signal in _SIGNAL_WORDS:
-            if signal in lower_text and semicolons >= 1:
-                # Signal word + at least one semicolon suggests string
-                return True
+        if semicolons >= 1 and _SIGNAL_RE.search(text_segment):
+            # Signal word + at least one semicolon suggests string
+            return True
 
         return False
 
@@ -172,6 +219,14 @@ class StringCitationDetector:
         """Split text into sentence-like spans for analysis.
 
         Focuses on citation-heavy regions rather than grammatical sentences.
+        Deliberately biased toward keeping text together when uncertain:
+        over-merging only risks a spurious string_group_id on harmless
+        trailing text (still processed correctly by eyecite downstream),
+        while over-fragmenting is what breaks string-citation detection
+        entirely (the bug this heuristic exists to avoid). Never splits on
+        ";" -- semicolons are the string-citation-internal delimiter and
+        must stay inside one candidate span for is_likely_string_citation
+        and StringCitationSplitter to see them.
 
         Args:
             text: Input text.
@@ -179,20 +234,55 @@ class StringCitationDetector:
         Returns:
             List of (start, end) tuples marking sentence boundaries.
         """
-        # Simple sentence boundary detection
-        # Period/semicolon followed by capital or end-of-text
-        sentence_pattern = re.compile(
-            r'[.;]\s*(?=[A-Z]|\s*$)', re.MULTILINE
-        )
+        cut_points: List[int] = []
+
+        for match in _PARAGRAPH_BREAK.finditer(text):
+            cut_points.append(match.end())
+
+        for match in _SENTENCE_BOUNDARY.finditer(text):
+            lookahead_char = text[match.end()] if match.end() < len(text) else ""
+            if lookahead_char.isdigit():
+                # Bluebook abbreviations are routinely followed by numbers
+                # ("ch. 5", "Cal. 3d", "Jan. 5", "no. 2"); a real sentence
+                # starting with a bare digit is vanishingly rare here.
+                continue
+
+            preceding_text = text[:match.start()]
+            token_match = _PRECEDING_TOKEN.search(preceding_text)
+            token = token_match.group(1) if token_match else ""
+
+            if token == "":
+                # Period directly follows ")", '"', etc. -- a genuine
+                # citation-ending boundary (e.g. "(1954).").
+                cut_points.append(match.end())
+                continue
+
+            last_component = token.rstrip(".").split(".")[-1]
+            if len(last_component) <= 1:
+                # Single-letter component: "v.", the "S" in "U.S", a
+                # personal initial "B." -- never a sentence boundary.
+                continue
+            if token[0].isupper():
+                # Short Title-Case token before a period is reliably an
+                # abbreviation in citation-dense legal text (party name,
+                # institution, journal, reporter, court -- "Pharm.",
+                # "Hous.", "Fed.", "Cir.", "Cal.", "Mass.", "Educ.", "Co.",
+                # "Inc."), whereas a genuine sentence-final word is
+                # essentially always lowercase ("review.", "applies.",
+                # "controls."). Generalizes to any abbreviation without a
+                # maintained whitelist.
+                continue
+            if token.lower() in _LOWERCASE_ABBREVIATIONS:
+                continue
+
+            cut_points.append(match.end())
 
         sentences: List[Tuple[int, int]] = []
         start = 0
-
-        for match in sentence_pattern.finditer(text):
-            end = match.end()
+        for end in sorted(set(cut_points)):
             if end > start:
                 sentences.append((start, end))
-            start = end
+                start = end
 
         # Add final segment if exists
         if start < len(text):

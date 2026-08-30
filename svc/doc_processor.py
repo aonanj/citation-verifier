@@ -6,7 +6,7 @@ from collections import Counter
 from typing import Any, Dict, Final, Iterable, List, Optional, Sequence, Set
 from xml.etree import ElementTree as ET
 
-import fitz  # PyMuPDF
+import pymupdf
 import pytesseract
 from docx import Document
 from docx.document import Document as DocxDocument
@@ -361,13 +361,13 @@ def _render_line_with_inline_footnotes(
     return line_text.rstrip()
 
 
-def _extract_pdf_page_text(page: fitz.Page) -> str:
+def _extract_pdf_page_text(page: pymupdf.Page) -> str:
     try:
-        text_dict: Any = page.get_text("dict")
+        text_dict: Any = page.get_text("dict") # type: ignore[attr-defined]
     except Exception:  # pragma: no cover - defensive
-        return page.get_text("text")
+        return page.get_text("text") # type: ignore[attr-defined]
     if not isinstance(text_dict, dict):
-        return page.get_text("text")
+        return page.get_text("text") # type: ignore[attr-defined]
 
     primary_font_size = _primary_font_size(text_dict)
     page_height = float(page.rect.height)
@@ -395,7 +395,7 @@ def _extract_pdf_page_text(page: fitz.Page) -> str:
             logger.info(
                 "Detected footnotes without main text on page %s", getattr(page, "number", 0) + 1
             )
-        return page.get_text("text")
+        return page.get_text("text") # type: ignore[attr-defined]
 
     lines_out: List[str] = []
     for block_lines in main_blocks:
@@ -427,15 +427,15 @@ def extract_pdf_text(file: FileStorage) -> str:
 
     try:
         pdf_bytes = file.stream.read()
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
             for page in doc:
                 page_text = _extract_pdf_page_text(page)
                 if not page_text.strip():
-                    raw_text = page.get_text("text")
+                    raw_text = page.get_text("text") # type: ignore[attr-defined]
                     if raw_text.strip():
                         page_text = raw_text
                     else:
-                        pix = page.get_pixmap()
+                        pix = page.get_pixmap() # type: ignore[attr-defined]
                         img = Image.frombytes(
                             mode="RGB",
                             size=(pix.width, pix.height),

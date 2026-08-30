@@ -136,7 +136,7 @@ def verify_state_law_citation(
             return "error", "openai_client_init_failed", None
 
         input = PROMPT + f"Citation to verify: {bluebook_citation}"
-        model: ResponsesModel = "gpt-5"
+        model: ResponsesModel = "gpt-5.6-luna"
 
         response = client.responses.create(
             model = model,
@@ -147,7 +147,7 @@ def verify_state_law_citation(
             }],
             tool_choice = "auto",
             text = { "verbosity": "low" },
-            reasoning = { "effort": "low"}
+            reasoning = { "effort": "medium" }
         )
 
         output_message = None
