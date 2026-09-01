@@ -10,6 +10,7 @@ import httpx
 from eyecite.models import FullCitation
 from rapidfuzz import fuzz, process
 
+from utils.case_name_normalizer import case_names_equivalent
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
 from utils.resource_resolver import resolve_case_name
@@ -295,7 +296,7 @@ def verify_case_citation(
                 scorer=fuzz.partial_ratio,
                 score_cutoff=75
             )
-            if result is None:
+            if result is None and not case_names_equivalent(expected_name, actual_name):
                 mismatches.append("case_name")
     elif expected_name_norm or actual_name_norm:
         mismatches.append("case_name")
