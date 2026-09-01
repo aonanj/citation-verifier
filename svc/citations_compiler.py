@@ -76,6 +76,28 @@ async def _verify_state_async(
     return resource_key, status, substatus, details
 
 
+async def _verify_federal_async(
+    resource_key: str,
+    primary_full: Any,
+    normalized_key: str | None,
+    resource_dict: Dict[str, Any],
+    fallback_citation: str | None,
+) -> Tuple[str, str, str | None, Dict[str, Any] | None]:
+    """Run the federal law verifier off the main event loop."""
+    try:
+        status, substatus, details = await asyncio.to_thread(
+            verify_federal_law_citation,
+            primary_full,
+            normalized_key,
+            resource_dict,
+            fallback_citation=fallback_citation,
+        )
+    except Exception as exc:  # pragma: no cover - defensive safeguard
+        logger.exception("Federal law verification task failed for %s: %s", resource_key, exc)
+        status, substatus, details = "error", "federal_law_async_failed", None
+    return resource_key, status, substatus, details
+
+
 async def _verify_journal_async(
     resource_key: str,
     primary_full: Any,
@@ -965,6 +987,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     state_tasks = []
     secondary_tasks: List[asyncio.Task] = []
     journal_tasks: List[asyncio.Task] = []
+    federal_tasks: List[asyncio.Task] = []
 
     for entry in citation_entries:
         if entry['type'] == 'eyecite':
@@ -1016,11 +1039,19 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                     jurisdiction = classify_full_law_jurisdiction(primary_full)
 
                 if jurisdiction == "federal":
-                    status, substatus, verification_details = verify_federal_law_citation(
-                        primary_full,
-                        normalized_key,
-                        resource_dict,
-                        fallback_citation=fallback_value,
+                    status = "pending"
+                    substatus = "federal_law_verification_pending"
+                    verification_details = None
+                    federal_tasks.append(
+                        asyncio.create_task(
+                            _verify_federal_async(
+                                resource_key,
+                                primary_full,
+                                normalized_key,
+                                resource_dict,
+                                fallback_value,
+                            )
+                        )
                     )
                 elif jurisdiction == "state":
                     status = "pending"
@@ -1098,7 +1129,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
     # Complete async verifications (state law + secondary sources + journals) concurrently,
     # off the main event loop, so slow external lookups don't block the request.
-    pending_tasks = state_tasks + secondary_tasks + journal_tasks
+    pending_tasks = state_tasks + secondary_tasks + journal_tasks + federal_tasks
     if pending_tasks:
         for resource_key_task, status, substatus, verification_details in await asyncio.gather(*pending_tasks):
             entry = citation_db.get(resource_key_task)
