@@ -46,6 +46,12 @@ logger = get_logger()
 
 _AdjustedSpans = Dict[int, Tuple[int, int]]
 
+# Journal verification hits OpenAlex/Semantic Scholar sequentially today via
+# time.sleep-based rate limiting inside the verifier; serialize the async
+# tasks with this semaphore so moving to asyncio.to_thread doesn't fan out
+# concurrent requests against Semantic Scholar's ~1 RPS limit.
+_journal_verification_semaphore = asyncio.Semaphore(1)
+
 # --- async helpers -------------------------------------------------
 
 async def _verify_state_async(
@@ -67,6 +73,27 @@ async def _verify_state_async(
     except Exception as exc:  # pragma: no cover - defensive safeguard
         logger.exception("State law verification task failed for %s: %s", resource_key, exc)
         status, substatus, details = "error", "state_law_async_failed", None
+    return resource_key, status, substatus, details
+
+
+async def _verify_journal_async(
+    resource_key: str,
+    primary_full: Any,
+    normalized_key: str | None,
+    resource_dict: Dict[str, Any],
+) -> Tuple[str, str, str | None, Dict[str, Any] | None]:
+    """Run the journal verifier off the main event loop."""
+    try:
+        async with _journal_verification_semaphore:
+            status, substatus, details = await asyncio.to_thread(
+                verify_journal_citation,
+                primary_full,
+                normalized_key,
+                resource_dict,
+            )
+    except Exception as exc:  # pragma: no cover - defensive safeguard
+        logger.exception("Journal verification task failed for %s: %s", resource_key, exc)
+        status, substatus, details = "error", "journal_verification_async_failed", None
     return resource_key, status, substatus, details
 
 
@@ -937,6 +964,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     citation_db: Dict[str, Dict[str, Any]] = {}
     state_tasks = []
     secondary_tasks: List[asyncio.Task] = []
+    journal_tasks: List[asyncio.Task] = []
 
     for entry in citation_entries:
         if entry['type'] == 'eyecite':
@@ -1018,10 +1046,18 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                     }
 
             elif entry_type == "journal":
-                status, substatus, verification_details = verify_journal_citation(
-                    primary_full,
-                    normalized_key,
-                    resource_dict,
+                status = "pending"
+                substatus = "journal_verification_pending"
+                verification_details = None
+                journal_tasks.append(
+                    asyncio.create_task(
+                        _verify_journal_async(
+                            resource_key,
+                            primary_full,
+                            normalized_key,
+                            resource_dict,
+                        )
+                    )
                 )
 
             citation_db[resource_key] = {
@@ -1060,9 +1096,9 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             is_full = (entry['type'] == 'secondary_full')
             _add_secondary_to_db(cite, citation_db, is_full, secondary_tasks=secondary_tasks)
 
-    # Complete async verifications (state law + secondary sources) concurrently,
+    # Complete async verifications (state law + secondary sources + journals) concurrently,
     # off the main event loop, so slow external lookups don't block the request.
-    pending_tasks = state_tasks + secondary_tasks
+    pending_tasks = state_tasks + secondary_tasks + journal_tasks
     if pending_tasks:
         for resource_key_task, status, substatus, verification_details in await asyncio.gather(*pending_tasks):
             entry = citation_db.get(resource_key_task)

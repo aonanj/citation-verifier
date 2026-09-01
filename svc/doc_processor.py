@@ -29,6 +29,7 @@ _SMART_APOSTROPHES_RE: Final = re.compile("[\u2018\u2019]")
 _SUPERSCRIPT_TRANSLATION: Final = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 _SUPERSCRIPT_CHARACTERS: Final = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹")
 _FOOTNOTE_LINE_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)[\.\)]?\s*(.*)")
+_FOOTNOTE_START_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)([\.\)])?\s*(.*)")
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
@@ -155,7 +156,18 @@ def _primary_font_size(text_dict: Dict[str, Any]) -> float:
 
 
 def _line_text_from_spans(spans: Iterable[Dict[str, Any]]) -> str:
-    return "".join(str(span.get("text") or "") for span in spans)
+    parts: List[str] = []
+    prev_span: Optional[Dict[str, Any]] = None
+    prev_text = ""
+    for span in spans:
+        text = str(span.get("text") or "")
+        if _needs_space_between(prev_span, prev_text, span, text):
+            parts.append(" ")
+        parts.append(text)
+        if text:
+            prev_span = span
+            prev_text = text
+    return "".join(parts)
 
 
 def _normalize_footnote_token(token: str) -> str:
@@ -204,6 +216,90 @@ def _span_bbox(span: Dict[str, Any]) -> Sequence[float]:
     if isinstance(bbox, Sequence) and len(bbox) >= 4:
         return bbox
     return (0.0, 0.0, 0.0, 0.0)
+
+
+def _needs_space_between(
+    prev_span: Optional[Dict[str, Any]],
+    prev_text: str,
+    next_span: Optional[Dict[str, Any]],
+    next_text: str,
+) -> bool:
+    """Detect a lost inter-word space between two adjacent PyMuPDF spans.
+
+    PyMuPDF only synthesizes a space glyph when the horizontal gap between
+    spans exceeds roughly 0.6 space-widths; tightly-tracked/kerned law-review
+    PDFs routinely fall below that, leaving two words glued together
+    ("Bill" + "Rights" -> "BillRights") with no whitespace character at all
+    for any later normalization step to recover.
+    """
+    if not prev_span or not next_span or not prev_text or not next_text:
+        return False
+    if not prev_text[-1].isalnum() or not next_text[0].isalnum():
+        return False
+    if len(prev_text.strip()) == 1 and len(next_text.strip()) == 1:
+        return False
+    prev_bbox = _span_bbox(prev_span)
+    next_bbox = _span_bbox(next_span)
+    gap = float(next_bbox[0]) - float(prev_bbox[2])
+    prev_size = float(prev_span.get("size", 0.0) or 0.0)
+    next_size = float(next_span.get("size", 0.0) or 0.0)
+    candidates = [size for size in (prev_size, next_size) if size > 0]
+    font_size = min(candidates) if candidates else 10.0
+    return gap >= 0.05 * font_size
+
+
+def _needs_space_between_chars(
+    prev_bbox: Optional[Sequence[float]],
+    prev_char: str,
+    next_bbox: Optional[Sequence[float]],
+    next_char: str,
+    font_size: float,
+) -> bool:
+    """Detect a lost inter-word space between two adjacent glyphs in a PDF.
+
+    PyMuPDF's own text-extraction decides whether to synthesize a space
+    character between glyphs *before* spans are ever exposed to Python -
+    two words separated only by a tight coordinate gap (kerned/justified
+    law-review text, no literal space glyph) can end up concatenated inside
+    a single span's text with no whitespace character anywhere for later
+    normalization to recover. This inspects the raw per-character bboxes
+    (`page.get_text("rawdict")`) to catch that case directly.
+
+    Unlike the span-level `_needs_space_between`, there is no reliable
+    single-glyph guard against letterspaced/tracked text at this
+    granularity - every comparison here is inherently glyph-to-glyph.
+    """
+    if not prev_bbox or not next_bbox or not prev_char or not next_char:
+        return False
+    if not prev_char.isalnum() or not next_char.isalnum():
+        return False
+    gap = float(next_bbox[0]) - float(prev_bbox[2])
+    size = font_size if font_size > 0 else 10.0
+    return gap >= 0.08 * size
+
+
+def _reconstruct_span_text(span: Dict[str, Any]) -> str:
+    """Rebuild a rawdict span's text from its characters, inserting spaces
+    lost to PyMuPDF's own glyph-gap heuristic (see `_needs_space_between_chars`).
+    """
+    chars = span.get("chars")
+    if not chars:
+        return str(span.get("text") or "")
+    font_size = float(span.get("size", 0.0) or 0.0)
+    parts: List[str] = []
+    prev_bbox: Optional[Sequence[float]] = None
+    prev_char = ""
+    for ch in chars:
+        c = str(ch.get("c") or "")
+        if not c:
+            continue
+        bbox = _span_bbox(ch)
+        if _needs_space_between_chars(prev_bbox, prev_char, bbox, c, font_size):
+            parts.append(" ")
+        parts.append(c)
+        prev_bbox = bbox
+        prev_char = c
+    return "".join(parts)
 
 
 def _block_top(block: Dict[str, Any]) -> float:
@@ -269,24 +365,50 @@ def _parse_footnote_lines(lines: Iterable[str]) -> Dict[int, str]:
         buffer = []
 
     for raw_line in lines:
+        raw_stripped = raw_line.strip() if raw_line else ""
         normalized = _normalize_superscripts(raw_line)
         stripped = normalized.strip()
         if not stripped:
             if buffer:
                 buffer.append("")
             continue
-        match = _FOOTNOTE_LINE_RE.match(stripped)
-        if match:
+        match = _FOOTNOTE_START_RE.match(stripped)
+        if not match:
+            if current_number is not None:
+                buffer.append(stripped)
+            continue
+
+        number_str = match.group(1)
+        digits = number_str if number_str.isdigit() else _normalize_superscripts(number_str)
+        try:
+            parsed_number = int(digits)
+        except (TypeError, ValueError):
+            parsed_number = None
+
+        has_punct = match.group(2) is not None
+        superscript_start = bool(raw_stripped) and raw_stripped[0] in _SUPERSCRIPT_CHARACTERS
+        # Many real documents number footnotes with a bare digit and no
+        # trailing "." or ")" at all (confirmed against a real fixture), so
+        # punctuation can't be required for the common case. Instead, treat
+        # a line as a genuine new footnote only when its number is exactly
+        # one more than the current footnote - footnote numbering is always
+        # strictly sequential, whereas a wrapped citation fragment (e.g. a
+        # volume number landing at the start of a line) essentially never
+        # coincides with that exact value. A punctuated "1" is additionally
+        # accepted as a numbering restart (e.g. a new article/section).
+        is_new_footnote = (
+            current_number is None
+            or superscript_start
+            or (parsed_number is not None and parsed_number == current_number + 1)
+            or (has_punct and parsed_number == 1)
+        )
+
+        if is_new_footnote:
             flush()
-            number_str = match.group(1)
-            digits = number_str if number_str.isdigit() else _normalize_superscripts(number_str)
-            try:
-                current_number = int(digits)
-            except (TypeError, ValueError):
-                current_number = None
-            remainder = match.group(2).strip()
+            current_number = parsed_number
+            remainder = match.group(3).strip()
             buffer = [remainder] if remainder else []
-        elif current_number is not None:
+        else:
             buffer.append(stripped)
 
     if buffer:
@@ -351,23 +473,41 @@ def _render_line_with_inline_footnotes(
     primary_font_size: float,
     used: Set[int],
 ) -> str:
-    parts: List[str] = []
-    for span in line.get("spans", []):
-        parts.append(
-            _render_span_with_inline_footnotes(span, footnotes, primary_font_size, used)
-        )
-    line_text = "".join(parts)
+    spans = line.get("spans", [])
+    joined: List[str] = []
+    last_nonempty_span: Optional[Dict[str, Any]] = None
+    last_nonempty_part = ""
+    for span in spans:
+        part = _render_span_with_inline_footnotes(span, footnotes, primary_font_size, used)
+        if _needs_space_between(last_nonempty_span, last_nonempty_part, span, part):
+            joined.append(" ")
+        joined.append(part)
+        if part:
+            last_nonempty_span = span
+            last_nonempty_part = part
+    line_text = "".join(joined)
     line_text = re.sub(r" {2,}", " ", line_text)
     return line_text.rstrip()
 
 
 def _extract_pdf_page_text(page: pymupdf.Page) -> str:
     try:
-        text_dict: Any = page.get_text("dict") # type: ignore[attr-defined]
+        # "rawdict" exposes per-character bboxes (unlike "dict", which only
+        # gives pre-joined span text) - needed to detect inter-word spaces
+        # PyMuPDF's own extraction silently dropped. See
+        # _needs_space_between_chars for why.
+        text_dict: Any = page.get_text("rawdict") # type: ignore[attr-defined]
     except Exception:  # pragma: no cover - defensive
         return page.get_text("text") # type: ignore[attr-defined]
     if not isinstance(text_dict, dict):
         return page.get_text("text") # type: ignore[attr-defined]
+
+    for block in text_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                span["text"] = _reconstruct_span_text(span)
 
     primary_font_size = _primary_font_size(text_dict)
     page_height = float(page.rect.height)

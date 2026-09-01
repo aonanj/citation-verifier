@@ -70,7 +70,7 @@ def _result_matches_citation(
     result_title = result.get("title")
     normalized_result_title = normalize_case_name_for_compare(result_title)
 
-    title_matches = (
+    title_matches = bool(
         normalized_citation_title
         and normalized_result_title
         and (
@@ -78,6 +78,24 @@ def _result_matches_citation(
             or normalized_result_title in normalized_citation_title
         )
     )
+    if not title_matches and normalized_citation_title and normalized_result_title:
+        # Fall back to fuzzy matching for titles corrupted by extraction artifacts
+        # (e.g. a lost inter-word space) rather than genuine typos or OCR noise.
+        title_matches = bool(
+            process.extractOne(
+                normalized_citation_title,
+                [normalized_result_title],
+                scorer=fuzz.partial_ratio,
+                score_cutoff=85,
+            )
+        )
+
+    authorships = result.get("authorships", [])
+    result_authors = [
+        name
+        for name in (authorship.get("author", {}).get("display_name") for authorship in authorships)
+        if name
+    ]
 
     if not title_matches:
         logger.info(
@@ -87,7 +105,7 @@ def _result_matches_citation(
             "source": "openalex",
             "unverified_fields": "title",
             "returned_values": {
-                "title": citation_title
+                "title": result_title
             },
         }
         return "warning", "Unverified details", details
@@ -100,12 +118,11 @@ def _result_matches_citation(
             "source": "openalex",
             "unverified_fields": "author",
             "returned_values": {
-                "author": citation_author
+                "author": ", ".join(result_authors)
             },
         }
         return "warning", "Unverified details", details
 
-    authorships = result.get("authorships", [])
     for authorship in authorships:
         author_obj = authorship.get("author", {})
         display_name = author_obj.get("display_name")
@@ -118,12 +135,20 @@ def _result_matches_citation(
             logger.info(f"Author match found: {display_name}")
             return "verified", None, {"source": "openalex", "matched_author": display_name}
 
+        if display_name:
+            similarity = process.extractOne(
+                citation_author, [display_name], scorer=fuzz.partial_ratio, score_cutoff=75
+            )
+            if similarity:
+                logger.info(f"Author match found via fuzzy match: {display_name}")
+                return "verified", None, {"source": "openalex", "matched_author": display_name}
+
     logger.info(f"No author match found for: {citation_author}")
     details = {
             "source": "openalex",
             "unverified_fields": "author",
             "returned_values": {
-                "author": citation_author
+                "author": ", ".join(result_authors)
             },
         }
     return "warning", "Unverified details", details
@@ -204,12 +229,18 @@ def _verify_author_title_with_openalex(
         if not citation_title and ji:
             citation_title = clean_str(ji.get("title"))
 
+    best_warning: Optional[Tuple[str, str | None, Dict[str, Any] | None]] = None
     for idx, result in enumerate(results):
-        if _result_matches_citation(result, citation_author, citation_title):
-            result, _, _ = _result_matches_citation(result, citation_author, citation_title)
-            if result == "verified":
-                logger.info(f"OpenAlex result matched author+title on result index {idx}")
-                return "verified", None, {"source": "openalex", "data": f"{citation_author}, {citation_title}"}
+        status, substatus, details = _result_matches_citation(result, citation_author, citation_title)
+        if status == "verified":
+            logger.info(f"OpenAlex result matched author+title on result index {idx}")
+            return "verified", None, {"source": "openalex", "data": f"{citation_author}, {citation_title}"}
+        if status == "warning" and best_warning is None:
+            best_warning = (status, substatus, details)
+
+    if best_warning is not None:
+        logger.info("OpenAlex result partially matched author+title after filter search")
+        return best_warning
 
     logger.info("No OpenAlex result matched author+title after filter search")
     return "no_match", "Not found in OpenAlex", {"source": "openalex"}
@@ -268,7 +299,7 @@ def _verify_journal_citation_with_openalex(
                 first_result = data['results'][0]
                 if first_result and "display_name" in first_result:
                     returned_name = first_result["display_name"]
-                    similarity = process.extractOne(name, returned_name, scorer=fuzz.partial_ratio, score_cutoff=75)
+                    similarity = process.extractOne(name, [returned_name], scorer=fuzz.partial_ratio, score_cutoff=75)
                     if similarity:
                         logger.info(f"OpenAlex source match found: {returned_name} for name='{name}' with similarity={similarity}")
                         source_url = first_result["id"]
@@ -287,6 +318,23 @@ def _verify_journal_citation_with_openalex(
     
     logger.info(f"OpenAlex source search results reporter_full_name='{reporter_full_name}: Source ID={source_id}'")
 
+    if source_id is None:
+        logger.info(f"No OpenAlex source found for reporter_full_name={reporter_full_name}")
+        return "no_match", "journal source not found in OpenAlex", {"source": "openalex"}
+    if not volume or not page:
+        logger.info("Missing volume/page for OpenAlex volume+page fallback search")
+        return "no_match", "insufficient citation data for search", {"source": "openalex"}
+
+    # Extracted title/author, used to confirm a volume+page hit when available.
+    extracted_author = clean_str(resource_dict.get("author")) if resource_dict else None
+    extracted_title = clean_str(resource_dict.get("title")) if resource_dict else None
+    if not extracted_author or not extracted_title:
+        ji = get_journal_author_title(primary_full)
+        if not extracted_author and ji:
+            extracted_author = clean_str(ji.get("author"))
+        if not extracted_title and ji:
+            extracted_title = clean_str(ji.get("title"))
+
     filter = f"primary_location.source.id:{source_id},biblio.volume:{str(volume)},biblio.first_page:{str(page)}"
 
     params_works: Dict[str, Any] = {"filter": filter, "per-page": 100, "cursor": "*", "mailto": mailto}
@@ -296,28 +344,40 @@ def _verify_journal_citation_with_openalex(
             response.raise_for_status()
         data_works = response.json()
         logger.info(f"OpenAlex works search response data: {data_works}")
-        if data_works is not None and 'results' in data_works:
-            results = data_works['results']
-            for result in results:
-                extracted_volume = result.get("biblio", {}).get("volume")
-                logger.info(f"OpenAlex work volume: {extracted_volume}")
-                extracted_page = result.get("biblio", {}).get("first_page")
-                logger.info(f"OpenAlex work first_page: {extracted_page}")
-                if (volume and extracted_volume and str(volume) == str(extracted_volume)) and (page and extracted_page and str(page) == str(extracted_page)):
-                    logger.info(f"OpenAlex work match found for volume={volume} and page={page}")
-                    return "verified", None, {"source": "openalex", "data": f"volume={volume}, page={page}"}
-
     except httpx.HTTPError as e:
         logger.error(f"OpenAlex HTTP error: {e} for filter search on {source_id}")
         return "error", f"openalex http error: {e}", None
     except Exception as e:
         logger.error(f"OpenAlex unknown error: {e} for filter search on {source_id}")
         return "error", f"openalex error: {e}", None
+
     results_works = data_works.get("results", []) if isinstance(data_works, dict) else []
+    best_warning: Optional[Tuple[str, str | None, Dict[str, Any] | None]] = None
+    for result in results_works:
+        extracted_volume = result.get("biblio", {}).get("volume")
+        extracted_page = result.get("biblio", {}).get("first_page")
+        logger.info(f"OpenAlex work volume: {extracted_volume}, first_page: {extracted_page}")
+        if not (
+            volume and extracted_volume and str(volume) == str(extracted_volume)
+            and page and extracted_page and str(page) == str(extracted_page)
+        ):
+            continue
+        logger.info(f"OpenAlex work match found for volume={volume} and page={page}")
+        if not extracted_author and not extracted_title:
+            # No title/author to confirm against - volume+page match alone is sufficient.
+            return "verified", None, {"source": "openalex", "data": f"volume={volume}, page={page}"}
+        status, substatus, details = _result_matches_citation(result, extracted_author, extracted_title)
+        if status == "verified":
+            return "verified", None, {"source": "openalex", "data": f"volume={volume}, page={page}"}
+        if status == "warning" and best_warning is None:
+            best_warning = (status, substatus, details)
+
+    if best_warning is not None:
+        return best_warning
     if not results_works:
         logger.info(f"No OpenAlex results for filter search on {source_id}")
         return "no_match", "Not found in OpenAlex", {"not found": "title", "source": "openalex"}
-    
+
     return "no_match", "Not found in OpenAlex", None
 
 def _verify_title_with_semantic_scholar(
@@ -441,6 +501,14 @@ def _verify_title_with_semantic_scholar(
             or paper_title_norm in search_title_norm
         )
         if not title_match:
+            # Fall back to fuzzy matching for titles corrupted by extraction
+            # artifacts (e.g. a lost inter-word space).
+            title_match = bool(
+                process.extractOne(
+                    search_title_norm, [paper_title_norm], scorer=fuzz.partial_ratio, score_cutoff=85
+                )
+            )
+        if not title_match:
             continue
 
         if search_author and search_author_norm:
@@ -533,6 +601,18 @@ def _verify_citation_with_semantic_scholar(
         year = resource_dict.get('year') if resource_dict else None
     logger.info(f"Primary full year: {year}")
 
+    # Extracted title/author, used to confirm a volume+page hit when available.
+    extracted_author = clean_str(resource_dict.get("author")) if resource_dict else None
+    extracted_title = clean_str(resource_dict.get("title")) if resource_dict else None
+    if not extracted_author or not extracted_title:
+        ji = get_journal_author_title(primary_full)
+        if not extracted_author and ji:
+            extracted_author = clean_str(ji.get("author"))
+        if not extracted_title and ji:
+            extracted_title = clean_str(ji.get("title"))
+    extracted_title_norm = normalize_case_name_for_compare(extracted_title)
+    extracted_author_norm = normalize_case_name_for_compare(extracted_author)
+
     reporter_editions = getattr(primary_full, 'all_editions', None)
     if reporter_editions and len(reporter_editions) > 0:
         reporter_name = getattr(reporter_editions[0], 'reporter', None)
@@ -556,7 +636,7 @@ def _verify_citation_with_semantic_scholar(
 
     vol_s = str(volume).strip()
     page_s = str(page).strip()
-    year_str = str(year).strip()
+    year_str = str(year).strip() if year is not None else ""
 
     queries: List[str] = []
 
@@ -598,8 +678,9 @@ def _verify_citation_with_semantic_scholar(
                 "query": q,
                 "limit": _SEMANTIC_SCHOLAR_MAX_SEARCH,
                 "fields": _FIELDS,
-                "year": year_str
             }
+            if year_str:
+                params["year"] = year_str
             attempt = 0
             while True:
                 last_call = _sleep_min_interval(last_call)
@@ -609,6 +690,49 @@ def _verify_citation_with_semantic_scholar(
                     data = r.json() or {}
                     items = data.get("data", []) if isinstance(data, dict) else []
                     if items and len(items) > 0:
+                        matched_paper = None
+                        for candidate in items[:10]:
+                            candidate_title_norm = normalize_case_name_for_compare(candidate.get("title"))
+                            if extracted_title_norm and candidate_title_norm:
+                                title_ok = (
+                                    extracted_title_norm == candidate_title_norm
+                                    or extracted_title_norm in candidate_title_norm
+                                    or candidate_title_norm in extracted_title_norm
+                                )
+                                if not title_ok:
+                                    title_ok = bool(
+                                        process.extractOne(
+                                            extracted_title_norm, [candidate_title_norm],
+                                            scorer=fuzz.partial_ratio, score_cutoff=85,
+                                        )
+                                    )
+                            else:
+                                title_ok = not extracted_title_norm
+
+                            author_ok = not extracted_author_norm
+                            if extracted_author_norm:
+                                for a in candidate.get("authors") or []:
+                                    a_name = a.get("name")
+                                    a_norm = normalize_case_name_for_compare(a_name)
+                                    if a_norm and (
+                                        extracted_author_norm in a_norm or a_norm in extracted_author_norm
+                                    ):
+                                        author_ok = True
+                                        break
+                                    if a_name and process.extractOne(
+                                        extracted_author, [a_name], scorer=fuzz.partial_ratio, score_cutoff=75
+                                    ):
+                                        author_ok = True
+                                        break
+
+                            if title_ok and author_ok:
+                                matched_paper = candidate
+                                break
+
+                        if matched_paper is not None and (extracted_title_norm or extracted_author_norm):
+                            logger.info("Semantic Scholar volume/page fallback verified via title/author match")
+                            return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
+
                         logger.info(f"Semantic Scholar match found first result: {items[0]}")
                         returned_title = items[0].get("title")
                         returned_authors = []
@@ -673,21 +797,47 @@ def verify_journal_citation(
         - data is the OpenAlex work data if verified, otherwise None
     """
 
+    # Precedence: verified > warning > no_match/error. The first verified result
+    # short-circuits; a warning is held (first one wins) while later paths are
+    # still tried, since a title-search miss (e.g. an extraction-corrupted
+    # title) can still be confirmed by the volume/page fallbacks below.
+    best_warning: Optional[Tuple[str, str | None, Dict[str, Any] | None]] = None
+
     validation = _verify_author_title_with_openalex(
         citation=primary_full,
         resource_dict=resource_dict,
     )
-
     if validation[0] == "verified":
         logger.info(f"Journal citation verified by OpenAlex: {primary_full}")
         return validation
+    if validation[0] == "warning" and best_warning is None:
+        best_warning = validation
 
     validation = _verify_title_with_semantic_scholar(
         primary_full=primary_full,
         resource_dict=resource_dict,
     )
-    if validation[0] == "verified" or validation[0] == "warning":
+    if validation[0] == "verified":
         logger.info(f"Journal citation verified by Semantic Scholar: {primary_full}")
         return validation
+    if validation[0] == "warning" and best_warning is None:
+        best_warning = validation
+
+    validation = _verify_journal_citation_with_openalex(primary_full, resource_dict)
+    if validation[0] == "verified":
+        logger.info(f"Journal citation verified by OpenAlex volume/page fallback: {primary_full}")
+        return validation
+    if validation[0] == "warning" and best_warning is None:
+        best_warning = validation
+
+    validation = _verify_citation_with_semantic_scholar(primary_full, resource_dict)
+    if validation[0] == "verified":
+        logger.info(f"Journal citation verified by Semantic Scholar volume/page fallback: {primary_full}")
+        return validation
+    if validation[0] == "warning" and best_warning is None:
+        best_warning = validation
+
+    if best_warning is not None:
+        return best_warning
 
     return "no_match", "Not found in OpenAlex or Semantic Scholar", None
