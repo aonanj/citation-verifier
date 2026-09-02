@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Set, Tuple
 from eyecite import clean_text, get_citations, resolve_citations
 from eyecite.models import (
     CaseCitation,
+    CitationBase,
     FullCaseCitation,
     FullCitation,
     FullJournalCitation,
@@ -258,15 +259,21 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
 def _process_citation_segment(
     segment: CitationSegment,
     adjusted_spans: _AdjustedSpans,  # New parameter to collect adjusted spans
-) -> Tuple[Dict[Any, Any], Dict[int, CitationSegment]]:
-    """Process a single citation segment with eyecite.
+) -> Tuple[List[CitationBase], Dict[int, CitationSegment]]:
+    """Run eyecite detection (not resolution) on a single citation segment.
+
+    Resolution happens once, globally, over every segment's citations in
+    document order (see _resolve_all_citations) -- eyecite drops any
+    short/id/supra citation it cannot resolve, so resolving per segment
+    silently lost citations whose full antecedent lived in a different
+    segment.
 
     Args:
         segment: The citation segment to process.
         adjusted_spans: Dict to store adjusted span information (modified in place).
 
     Returns:
-        Tuple of (resolutions dict, segment_metadata dict).
+        Tuple of (citations list, segment_metadata dict).
     """
     segment_text = segment.text
     cleaned = clean_text(segment_text, ["all_whitespace", "underscores"])
@@ -275,44 +282,57 @@ def _process_citation_segment(
         citations = get_citations(cleaned)
     except Exception as exc:
         logger.error("eyecite.get_citations failed for segment: %s", exc)
-        return {}, {}
-
-    try:
-        resolutions = resolve_citations(
-            citations,
-            resolve_full_citation=_bind_full_citation,
-        )
-    except Exception as exc:
-        logger.error("eyecite.resolve_citations failed for segment: %s", exc)
-        resolutions = {
-            f"raw:{idx}": [citation]
-            for idx, citation in enumerate(citations)
-        }
+        return [], {}
 
     # Adjust spans to original document coordinates
     segment_metadata: Dict[int, CitationSegment] = {}
 
-    for resource, resolved_cites in resolutions.items():
-        for cite in resolved_cites:
-            cite_span = get_span(cite)
+    for cite in citations:
+        cite_span = get_span(cite)
 
-            if cite_span:
-                seg_start, seg_end = cite_span
-                # Calculate adjusted position in original document
-                adjusted_start = segment.original_span[0] + seg_start
-                adjusted_end = segment.original_span[0] + seg_end
+        if cite_span:
+            seg_start, seg_end = cite_span
+            # Calculate adjusted position in original document
+            adjusted_start = segment.original_span[0] + seg_start
+            adjusted_end = segment.original_span[0] + seg_end
 
-                # Store adjusted span separately (don't modify eyecite object).
-                # Keyed by object identity rather than eyecite's per-call token
-                # index: each segment's get_citations() call restarts indexing
-                # from 0, so index-keyed storage collides once more than one
-                # segment is processed.
-                adjusted_spans[id(cite)] = (adjusted_start, adjusted_end)
+            # Store adjusted span separately (don't modify eyecite object).
+            # Keyed by object identity rather than eyecite's per-call token
+            # index: each segment's get_citations() call restarts indexing
+            # from 0, so index-keyed storage collides once more than one
+            # segment is processed.
+            adjusted_spans[id(cite)] = (adjusted_start, adjusted_end)
 
-            # Track segment metadata for this citation (same identity keying).
-            segment_metadata[id(cite)] = segment
+        # Track segment metadata for this citation (same identity keying).
+        segment_metadata[id(cite)] = segment
 
-    return resolutions, segment_metadata
+    return citations, segment_metadata
+
+
+def _resolve_all_citations(citations: List[CitationBase]) -> Dict[Any, Any]:
+    """Resolve a flat, document-ordered list of citations in a single pass.
+
+    Must be called once over every segment's citations together (rather than
+    per segment) since eyecite's resolve_citations resolves short/id/supra
+    forms only against full citations it has already seen in the same call.
+
+    Args:
+        citations: Citations in document order.
+
+    Returns:
+        Resolutions dict (resource -> list of resolved citations).
+    """
+    try:
+        return resolve_citations(
+            citations,
+            resolve_full_citation=_bind_full_citation,
+        )
+    except Exception as exc:
+        logger.error("eyecite.resolve_citations failed: %s", exc)
+        return {
+            f"raw:{idx}": [citation]
+            for idx, citation in enumerate(citations)
+        }
 
 
 def _get_adjusted_span(
@@ -337,22 +357,6 @@ def _get_adjusted_span(
 
     # Fallback to native span
     return get_span(cite)
-
-
-def _merge_resolutions(
-    target: Dict[str, Any],
-    source: Dict[str, Any],
-) -> None:
-    """Merge source resolutions into target.
-
-    Args:
-        target: Target resolutions dict (modified in place).
-        source: Source resolutions dict.
-    """
-    for resource_key, resolved_cites in source.items():
-        if resource_key not in target:
-            target[resource_key] = []
-        target[resource_key].extend(resolved_cites)
 
 
 def _compute_gap_ranges(
@@ -829,14 +833,25 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     all_resolutions: Dict[Any, Any] = {}
     all_segment_metadata: Dict[int, CitationSegment] = {}
     adjusted_spans: _AdjustedSpans = {}
+    all_citations: List[CitationBase] = []
 
-    for segment in all_segments:
-        seg_resolutions, seg_metadata = _process_citation_segment(
+    # Segments must be visited in document order: resolve_citations resolves
+    # short/id/supra forms only against full citations already seen earlier
+    # in the same call, and all_segments holds string segments followed by
+    # gap segments (not necessarily in document order).
+    for segment in sorted(all_segments, key=lambda seg: seg.original_span[0]):
+        seg_citations, seg_metadata = _process_citation_segment(
             segment,
             adjusted_spans
         )
-        _merge_resolutions(all_resolutions, seg_resolutions)
+        all_citations.extend(seg_citations)
         all_segment_metadata.update(seg_metadata)
+
+    if all_segments:
+        # Resolve once over the document-ordered list: eyecite drops any
+        # short form it cannot resolve, so per-segment resolution silently
+        # lost shorts whose antecedent lived in another segment.
+        all_resolutions = _resolve_all_citations(all_citations)
 
     if not all_segments:
         logger.info("No string citations detected; using standard eyecite processing")
@@ -849,17 +864,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             logger.info("No citations detected in text; returning empty result set")
             return {}
 
-        try:
-            all_resolutions = resolve_citations(
-                citations,
-                resolve_full_citation=_bind_full_citation,
-            )
-        except Exception as exc:
-            logger.error("eyecite resolve_citations failed: %s", exc)
-            all_resolutions = {
-                f"raw:{idx}": [citation]
-                for idx, citation in enumerate(citations)
-            }
+        all_resolutions = _resolve_all_citations(citations)
 
     if not all_resolutions or not any(all_resolutions.values()):
         logger.info("No citations detected; returning empty result set")

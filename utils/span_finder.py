@@ -10,17 +10,12 @@ from .logger import get_logger
 
 logger = get_logger()
 
-class Reporter:
-    pass
-class Edition:
-    pass
-
 def get_span(obj: CitationBase) -> Tuple[int, int] | None:
     """Get the span (start, end) of the citation in the source text."""
 
     try:
         span = obj.span()
-        if span is not None and isinstance(span, tuple) and len(span) == 2 and span[0] is not None and span[1] is not None and span[0] > 0 and span[1] > span[0]:
+        if span is not None and isinstance(span, tuple) and len(span) == 2 and span[0] is not None and span[1] is not None and span[0] >= 0 and span[1] > span[0]:
             return span
     except Exception as e:
         logger.error(f"Error getting span: {e}")

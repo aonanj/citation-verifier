@@ -206,7 +206,7 @@ def resolve_case_name(case_name: str | None, obj=None) -> str | None:
     if span is None:
         return fallback
     start, end = span
-    if start is None or end is None or start <= 0 or end <= 0:
+    if start is None or end is None or start < 0 or end < 0:
         return fallback
 
     document = getattr(obj, "document", None)
@@ -350,7 +350,7 @@ def resolve_case_court_year(case_year: str | None, obj) -> dict[str | Any | None
 
     span = get_span(obj)
     start, end = span if span is not None else (None, None)
-    if start is None or end is None or start <= 0 or end <= 0:
+    if start is None or end is None or start < 0 or end < 0:
         return fallback
 
     document = getattr(obj, "document", None)
