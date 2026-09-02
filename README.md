@@ -34,7 +34,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **State law**: OpenAI `gpt-5.6-luna` Responses API with built-in web search tool access (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
   - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries on title and author, with fallback to query on volume, journal, page, and year.
   - **Secondary Sources**: Library of Congress Search API query with fuzzy matching for legal encyclopedias (C.J.S., Am. Jur.), restatements, ALR annotations, and treatises.   
-- **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences, extracted text, and reference citation grouping information for the UI.
+- **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences (each carrying its footnote number, if any), extracted text, footnote location ranges, and reference citation grouping information for the UI.
 
 Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
@@ -285,7 +285,7 @@ The Dockerfile uses Python 3.12-slim, installs Tesseract OCR, and exposes port 8
 - **Payments**: Each verification consumes one credit ($4.50 per document, with 5/10/20-document bundles available). Purchase credits via the Stripe checkout buttons in the UI.
 - **File limits**: Uploaded files must be PDF, DOCX, or TXT format. Files are validated before processing.
 - **Results visualization**: The frontend highlights every matched occurrence in context; hover or scan the numbered badges to correlate citation cards with text spans.
-- **Citation sequence**: The sequential order of citations in the document is maintained. Note, however, that the numbering displayed for verified citations may not correspond to the footnote numbering in documents using footnote citations. 
+- **Citation sequence**: The sequential order of citations in the document is maintained. For documents with footnote citations, the Citation Status List is grouped by footnote ("Main text", "Footnote 1", "Footnote 2", …) instead of a flat 1..N list, and the Highlighted Document tab and PDF export mark each footnote's location with an `n.N` badge, so the report's numbering matches the document's own footnote numbering. DOCX footnote numbers follow the order footnotes first appear in the body (matching Word's own display numbering); custom numbering restarts and endnotes are not honored.
 - **String citations**: Citations separated by semicolons are individually verified. The sequential order of citations in the document is maintained.
 - **Status interpretation**: `substatus` provides detailed explanations for warnings and errors (e.g., `case name mismatch`, `closest_match: …`, `confidence: 0.75`).
 

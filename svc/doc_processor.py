@@ -2,8 +2,10 @@
 
 import os
 import re
+from bisect import bisect_right
 from collections import Counter
-from typing import Any, Dict, Final, Iterable, List, Optional, Sequence, Set
+from dataclasses import dataclass
+from typing import Any, Dict, Final, Iterable, List, Optional, Sequence, Set, Tuple
 from xml.etree import ElementTree as ET
 
 import pymupdf
@@ -31,8 +33,111 @@ _SUPERSCRIPT_CHARACTERS: Final = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹")
 _FOOTNOTE_LINE_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)[\.\)]?\s*(.*)")
 _FOOTNOTE_START_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)([\.\)])?\s*(.*)")
 
+# Private-use-area sentinels used to wrap an inlined footnote body between the
+# moment it's spliced into the running text and _strip_footnote_markers(),
+# which runs after _normalize() and converts the wrapped bodies back into
+# plain text plus a FootnoteSpan(number, start, end) per body. Chosen from the
+# Unicode Private Use Area (U+E000-U+F8FF, general category "Co") specifically
+# because \w, \s and every regex used in this module (_HYPHEN_WRAP_RE,
+# _EXCESS_BREAKS_RE, the smart-quote/apostrophe subs, _needs_space_between's
+# isalnum() check) do not match "Co" characters, so normalization sees these
+# markers as inert punctuation and never corrupts them.
+_FN_OPEN: Final = ""
+_FN_SEP: Final = ""
+_FN_CLOSE: Final = ""
+
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
+
+
+@dataclass(frozen=True)
+class FootnoteSpan:
+    """A footnote's location within an ExtractedDocument's `text`.
+
+    `start`/`end` index into the fully normalized, sentinel-stripped text
+    (i.e. they are valid offsets into ExtractedDocument.text), not into any
+    intermediate representation.
+    """
+
+    number: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class ExtractedDocument:
+    """Result of extracting a document: flat text plus footnote provenance."""
+
+    text: str
+    footnotes: Tuple[FootnoteSpan, ...]
+
+
+def _wrap_footnote(number: int, body: str) -> str:
+    """Wrap a footnote body in sentinel markers for later recovery.
+
+    Must only be called with an already-stripped, non-empty `body` - an empty
+    body would produce a marker with nothing between _FN_SEP and _FN_CLOSE,
+    which _strip_footnote_markers still handles correctly (a zero-length
+    FootnoteSpan) but which is never useful to a caller.
+    """
+    return f"{_FN_OPEN}{number}{_FN_SEP}{body}{_FN_CLOSE}"
+
+
+def _strip_footnote_markers(text: str) -> Tuple[str, Tuple[FootnoteSpan, ...]]:
+    """Remove _wrap_footnote() markers, returning plain text plus their spans.
+
+    Single left-to-right pass so offsets are always consistent with the
+    output text (no double-pass drift). A malformed marker (an _FN_OPEN with
+    no matching _FN_SEP/_FN_CLOSE, or a stray _FN_SEP/_FN_CLOSE with no
+    opener - not expected from this module's own writers, but guarded against
+    defensively) has its sentinel character(s) dropped without emitting a
+    FootnoteSpan, rather than corrupting the surrounding text.
+    """
+    footnotes: List[FootnoteSpan] = []
+    out: List[str] = []
+    out_len = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == _FN_OPEN:
+            close_idx = text.find(_FN_CLOSE, i + 1)
+            sep_idx = text.find(_FN_SEP, i + 1, close_idx if close_idx != -1 else n)
+            number_str = text[i + 1:sep_idx] if sep_idx != -1 else ""
+            if close_idx != -1 and sep_idx != -1 and number_str.isdigit():
+                body = text[sep_idx + 1:close_idx]
+                start = out_len
+                out.append(body)
+                out_len += len(body)
+                footnotes.append(FootnoteSpan(number=int(number_str), start=start, end=out_len))
+                i = close_idx + 1
+                continue
+            i += 1
+            continue
+        if ch == _FN_SEP or ch == _FN_CLOSE:
+            i += 1
+            continue
+        out.append(ch)
+        out_len += 1
+        i += 1
+    return "".join(out), tuple(footnotes)
+
+
+def footnote_number_for_offset(footnotes: Sequence[FootnoteSpan], offset: int) -> Optional[int]:
+    """Return the footnote number containing `offset` in ExtractedDocument.text, or None.
+
+    Assumes `footnotes` is sorted by `start` ascending and non-overlapping,
+    which _strip_footnote_markers guarantees (it emits spans in the order
+    encountered scanning left-to-right).
+    """
+    if not footnotes:
+        return None
+    starts = [f.start for f in footnotes]
+    idx = bisect_right(starts, offset) - 1
+    if idx < 0:
+        return None
+    span = footnotes[idx]
+    return span.number if span.start <= offset < span.end else None
 
 
 def _load_footnotes_map(docx: DocxDocument) -> Dict[int, str]:
@@ -96,7 +201,18 @@ def _iter_block_items(container: DocxDocument | _Cell) -> Iterable[Paragraph | T
             yield Table(child, container)  # type: ignore[arg-type]
 
 
-def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
+def _para_with_inline_footnotes(
+    p: Paragraph, footnotes: Dict[int, str], numbering: Dict[int, int]
+) -> str:
+    """Inline footnote bodies at their reference markers.
+
+    `numbering` maps a footnote's XML `w:id` (not the displayed number - ids
+    can have gaps, e.g. separator/continuation ids are skipped in
+    _load_footnotes_map) to its 1-based display number, assigned the first
+    time that id is seen across the whole document body walk (see
+    _extract_docx_with_footnotes). It is shared and mutated across every call
+    for a given document so numbering is consistent and sequential.
+    """
     parts: List[str] = []
     for run in p.runs:
         r = run._r
@@ -107,7 +223,11 @@ def _para_with_inline_footnotes(p: Paragraph, footnotes: Dict[int, str]) -> str:
             for ref in refs:
                 fid = int(ref.get(qn("w:id")))
                 ftxt = footnotes.get(fid, "").strip()
-                parts.append(f" {ftxt} ")
+                display_number = numbering.setdefault(fid, len(numbering) + 1)
+                if ftxt:
+                    parts.append(f" {_wrap_footnote(display_number, ftxt)} ")
+                else:
+                    parts.append("  ")
             continue
         if run.text:
             parts.append(run.text)
@@ -457,7 +577,7 @@ def _render_span_with_inline_footnotes(
                 result.append(" ")
             clean_text = footnote_text.strip()
             if clean_text:
-                result.append(clean_text)
+                result.append(_wrap_footnote(num_val, clean_text))
                 result.append(" ")
                 used.add(num_val)
         else:
@@ -554,13 +674,22 @@ def _extract_pdf_page_text(page: pymupdf.Page) -> str:
         if lines_out:
             lines_out.append("")
         for num in unused:
-            lines_out.append(footnotes[num])
+            lines_out.append(_wrap_footnote(num, footnotes[num]))
 
     return "\n".join(lines_out)
 
 
-def extract_pdf_text(file: FileStorage) -> str:
-    """Extract text from PDF file, inserting footnotes inline when present."""
+def extract_pdf_text(file: FileStorage) -> ExtractedDocument:
+    """Extract text from PDF file, inserting footnotes inline when present.
+
+    Returns an ExtractedDocument: `text` is inline-footnote text with
+    sentinel markers stripped, `footnotes` gives each footnote's number and
+    character span within `text`. Footnotes recovered from pages that fell
+    back to raw `page.get_text("text")` or OCR (no main-text blocks, or
+    "rawdict" extraction failed) are not represented - those code paths never
+    wrap a footnote body, matching pre-existing best-effort behavior for
+    those pages.
+    """
 
     file.stream.seek(0)
     page_texts: List[str] = []
@@ -587,16 +716,23 @@ def extract_pdf_text(file: FileStorage) -> str:
         raise ValueError(f"Failed to extract text from PDF: {exc}") from exc
 
     combined = "\n\n\f\n\n".join(page_texts).strip()
-    return _normalize(combined)
+    normalized = _normalize(combined)
+    text, footnotes = _strip_footnote_markers(normalized)
+    return ExtractedDocument(text=text, footnotes=footnotes)
 
 def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
-    """Return DOCX body text with footnotes inserted inline at their references.
+    """Return DOCX body text with footnotes inlined at their references.
 
-    Footnote content is inserted at each reference as: "[n: footnote text]".
-    Footnote numbering follows the order of first appearance in the document.
+    Each footnote body is wrapped in sentinel markers (see _wrap_footnote) so
+    the caller can later recover (display_number, span) via
+    _strip_footnote_markers. The display number is the 1-based order in which
+    each footnote's `w:id` is first encountered walking the document body
+    (paragraphs and nested table paragraphs, in document order) - this
+    matches Word's own displayed numbering, which is positional rather than
+    tied to the `w:id` values in word/footnotes.xml.
 
     Args:
-        path: Filesystem path to a .docx file.
+        doc: An opened python-docx Document.
 
     Returns:
         A single string containing paragraph text with inline footnotes.
@@ -606,18 +742,18 @@ def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
         ValueError: If the file does not have a .docx extension.
     """
     footnotes = _load_footnotes_map(doc)
-
+    numbering: Dict[int, int] = {}
 
     lines: List[str] = []
 
     for block in _iter_block_items(doc):
         if isinstance(block, Paragraph):
-            t = _para_with_inline_footnotes(block, footnotes)
+            t = _para_with_inline_footnotes(block, footnotes, numbering)
             if t:
                 lines.append(t)
         else:
             for par in _iter_table_paragraphs(block):
-                t = _para_with_inline_footnotes(par, footnotes)
+                t = _para_with_inline_footnotes(par, footnotes, numbering)
                 if t:
                     lines.append(t)
 
@@ -625,14 +761,15 @@ def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
 
 
 
-def extract_docx_text(file: FileStorage) -> str:
+def extract_docx_text(file: FileStorage) -> ExtractedDocument:
     """Extract text from DOCX file, including footnotes inline.
 
     Args:
         file: FileStorage object containing DOCX data.
 
     Returns:
-        Extracted and normalized text with footnotes inline.
+        ExtractedDocument with normalized text (footnotes inline, sentinel
+        markers stripped) and each footnote's number/span within that text.
 
     Raises:
         ValueError: If DOCX cannot be opened or processed.
@@ -645,20 +782,22 @@ def extract_docx_text(file: FileStorage) -> str:
         raise ValueError(f"Failed to open DOCX file: {exc}") from exc
 
     full_text = _extract_docx_with_footnotes(doc)
-    return _normalize(full_text)
+    normalized = _normalize(full_text)
+    text, footnotes = _strip_footnote_markers(normalized)
+    return ExtractedDocument(text=text, footnotes=footnotes)
 
 
-def extract_text(file: FileStorage) -> str:
-    """Extract text from uploaded file based on file extension.
+def extract_document(file: FileStorage) -> ExtractedDocument:
+    """Extract text and footnote provenance from an uploaded file.
 
-    Supports PDF, DOCX, and TXT files. Includes footnote extraction
-    for PDF and DOCX formats.
+    Supports PDF, DOCX, and TXT files. Includes footnote extraction for PDF
+    and DOCX formats; TXT files never have footnotes.
 
     Args:
         file: FileStorage object containing the uploaded file.
 
     Returns:
-        Extracted and normalized text content.
+        ExtractedDocument with normalized text and footnote spans.
 
     Raises:
         ValueError: If file format is unsupported or extraction fails.
@@ -670,7 +809,7 @@ def extract_text(file: FileStorage) -> str:
     if ext == ".txt":
         try:
             raw_text = file.stream.read().decode("utf-8")
-            return _normalize(raw_text)
+            return ExtractedDocument(text=_normalize(raw_text), footnotes=())
         except Exception as exc:
             raise ValueError(f"Failed to read TXT file: {exc}") from exc
     elif ext == ".pdf":
@@ -681,3 +820,21 @@ def extract_text(file: FileStorage) -> str:
         raise ValueError(
             f"Unsupported file format: {ext}. Supported formats: .pdf, .docx, .txt"
         )
+
+
+def extract_text(file: FileStorage) -> str:
+    """Extract text from uploaded file based on file extension.
+
+    Thin compatibility wrapper around extract_document() for callers that
+    only need the flat text and not footnote provenance.
+
+    Args:
+        file: FileStorage object containing the uploaded file.
+
+    Returns:
+        Extracted and normalized text content.
+
+    Raises:
+        ValueError: If file format is unsupported or extraction fails.
+    """
+    return extract_document(file).text

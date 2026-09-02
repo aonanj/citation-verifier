@@ -2,14 +2,14 @@
 
 import io
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import stripe
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.datastructures import FileStorage
@@ -23,7 +23,7 @@ from database.crud import (
 from database.models import Payment, UserAccount
 from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
-from svc.doc_processor import extract_text
+from svc.doc_processor import FootnoteSpan, extract_document, footnote_number_for_offset
 from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
 from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
@@ -39,6 +39,9 @@ class CitationOccurrence(BaseModel):
     # New fields for string citation support
     string_group_id: str | None = None
     position_in_string: int | None = None
+    # Footnote the occurrence's span falls within, if any (None for main-text
+    # occurrences or documents with no footnotes).
+    footnote_number: int | None = None
 
 
 class CitationEntry(BaseModel):
@@ -52,10 +55,17 @@ class CitationEntry(BaseModel):
     verification_details: Dict[str, Any] | None = None
 
 
+class FootnoteRange(BaseModel):
+    number: int
+    start: int
+    end: int
+
+
 class VerificationResponse(BaseModel):
     citations: List[CitationEntry]
     extracted_text: str | None = None
     remaining_credits: int
+    footnotes: List[FootnoteRange] = Field(default_factory=list)
 
 
 class UserBalanceResponse(BaseModel):
@@ -522,7 +532,10 @@ def _process_checkout_completion(
         "already_processed": False,
     }
 
-def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
+def _sanitize_citations(
+    raw: Dict[str, Dict[str, Any]],
+    footnotes: Sequence[FootnoteSpan] = (),
+) -> List[CitationEntry]:
     sanitized: List[CitationEntry] = []
     for resource_key, payload in raw.items():
         occurrences_payload = payload.get("occurrences", [])
@@ -531,6 +544,9 @@ def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
         for occurrence in occurrences_payload:
             span = occurrence.get("span")
             span_list = list(span) if isinstance(span, tuple) else span
+            footnote_number = (
+                footnote_number_for_offset(footnotes, span_list[0]) if span_list else None
+            )
             occurrences.append(
                 CitationOccurrence(
                     citation_category=occurrence.get("citation_category"),
@@ -539,6 +555,7 @@ def _sanitize_citations(raw: Dict[str, Dict[str, Any]]) -> List[CitationEntry]:
                     pin_cite=occurrence.get("pin_cite"),
                     string_group_id=occurrence.get("string_group_id"),
                     position_in_string=occurrence.get("position_in_string"),
+                    footnote_number=footnote_number,
                 )
             )
 
@@ -599,13 +616,15 @@ async def verify_document(
     )
 
     try:
-        extracted_text = extract_text(storage)
+        extracted = extract_document(storage)
     except ValueError as exc:
-        logger.error(f"Error in extract_text: {exc}")
+        logger.error(f"Error in extract_document: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - unexpected failure
-        logger.error(f"Error in extract_text: {exc}")
+        logger.error(f"Error in extract_document: {exc}")
         raise HTTPException(status_code=500, detail="Failed to extract text.") from exc
+
+    extracted_text = extracted.text
 
     try:
         compiled = await compile_citations(extracted_text)
@@ -613,7 +632,7 @@ async def verify_document(
         logger.error(f"Error in compile_citations: {exc}")
         raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
 
-    sanitized = _sanitize_citations(compiled)
+    sanitized = _sanitize_citations(compiled, extracted.footnotes)
 
     citation_count = len(sanitized)
     if citation_count > 0:
@@ -646,6 +665,9 @@ async def verify_document(
         citations=sanitized,
         extracted_text=extracted_text,
         remaining_credits=user.credits,
+        footnotes=[
+            FootnoteRange(number=f.number, start=f.start, end=f.end) for f in extracted.footnotes
+        ],
     )
 
 

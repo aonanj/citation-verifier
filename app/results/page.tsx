@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { jsPDF } from 'jspdf';
 import { useAuth0 } from "@auth0/auth0-react";
@@ -12,6 +12,13 @@ type CitationOccurrence = {
   matched_text: string | null;
   span: number[] | null;
   pin_cite: string | null;
+  footnote_number?: number | null;
+};
+
+type FootnoteRange = {
+  number: number;
+  start: number;
+  end: number;
 };
 
 type CitationEntry = {
@@ -47,6 +54,7 @@ type VerificationResponse = {
   citations: CitationEntry[];
   extracted_text?: string | null;
   remaining_credits?: number | null;
+  footnotes?: FootnoteRange[] | null;
 };
 
 type StatusTheme = {
@@ -67,6 +75,7 @@ type HighlightSegment = {
     indicator: string;
     indicatorColor: string;
   };
+  marker?: string;
 };
 
 type HighlightRange = {
@@ -75,6 +84,7 @@ type HighlightRange = {
   end: number;
   theme: StatusTheme;
   citationOrder: number;
+  footnoteNumber: number | null;
 };
 
 const STATUS_THEMES: Record<string, StatusTheme> = {
@@ -370,6 +380,7 @@ const calculateHighlightRanges = (text: string, citations: CitationEntry[]): Hig
       end: match.end,
       theme,
       citationOrder: citationIndex + 1,
+      footnoteNumber: occurrence.footnote_number ?? null,
     });
 
     searchCursor = Math.max(searchCursor, match.end);
@@ -388,6 +399,8 @@ const calculateHighlightRanges = (text: string, citations: CitationEntry[]): Hig
 const buildHighlightSegments = (
   extractedText: string | null,
   citations: CitationEntry[],
+  footnotes: FootnoteRange[],
+  footnoteMode: boolean,
 ): HighlightSegment[] => {
   if (!extractedText || extractedText.length === 0) {
     return [];
@@ -395,8 +408,9 @@ const buildHighlightSegments = (
 
   const textLength = extractedText.length;
   const ranges = calculateHighlightRanges(extractedText, citations);
+  const markerQueue = [...footnotes].sort((a, b) => a.start - b.start);
 
-  if (ranges.length === 0) {
+  if (ranges.length === 0 && markerQueue.length === 0) {
     return [
       {
         key: 'plain-all',
@@ -407,8 +421,36 @@ const buildHighlightSegments = (
 
   const segments: HighlightSegment[] = [];
   let cursor = 0;
+  let markerIdx = 0;
+
+  // Emits any queued footnote markers whose start is strictly before `limit`.
+  // A marker whose start falls inside the highlight range just processed
+  // (cursor already past it) collapses to a zero-width segment snapped to
+  // the current cursor, so it appears right after that range rather than
+  // splitting it.
+  const flushMarkersBefore = (limit: number) => {
+    while (markerIdx < markerQueue.length && markerQueue[markerIdx].start < limit) {
+      const footnote = markerQueue[markerIdx];
+      const markerPos = Math.max(footnote.start, cursor);
+      if (markerPos > cursor) {
+        segments.push({
+          key: `plain-${cursor}-${markerPos}-fn${footnote.number}`,
+          content: extractedText.slice(cursor, markerPos),
+        });
+        cursor = markerPos;
+      }
+      segments.push({
+        key: `marker-${footnote.number}-${footnote.start}`,
+        content: '',
+        marker: `n.${footnote.number}`,
+      });
+      markerIdx += 1;
+    }
+  };
 
   ranges.forEach((range, index) => {
+    flushMarkersBefore(range.start);
+
     if (range.start > cursor) {
       segments.push({
         key: `plain-${cursor}-${range.start}-${index}`,
@@ -423,18 +465,26 @@ const buildHighlightSegments = (
       return;
     }
 
+    const indicator = footnoteMode
+      ? range.footnoteNumber != null
+        ? `n.${range.footnoteNumber}`
+        : 'text'
+      : `#${range.citationOrder}`;
+
     segments.push({
       key: `highlight-${range.key}-${index}`,
       content: extractedText.slice(highlightStart, range.end),
       highlight: {
         color: range.theme.highlight,
-        indicator: `#${range.citationOrder}`,
+        indicator,
         indicatorColor: range.theme.indicator,
       },
     });
 
     cursor = range.end;
   });
+
+  flushMarkersBefore(textLength + 1);
 
   if (cursor < textLength) {
     segments.push({
@@ -446,10 +496,271 @@ const buildHighlightSegments = (
   return segments;
 };
 
+// Splices a "[n.N] " marker into `text` right where each footnote body
+// begins, for the PDF export's plain-text "Extracted document text" section
+// (which has no highlight spans to snap markers against, unlike
+// buildHighlightSegments).
+const buildTextWithFootnoteMarkers = (text: string, footnotes: FootnoteRange[]): string => {
+  if (footnotes.length === 0) {
+    return text;
+  }
+  const sorted = [...footnotes].sort((a, b) => a.start - b.start);
+  const parts: string[] = [];
+  let cursor = 0;
+  sorted.forEach((footnote) => {
+    const pos = Math.max(footnote.start, cursor);
+    parts.push(text.slice(cursor, pos));
+    parts.push(`[n.${footnote.number}] `);
+    cursor = pos;
+  });
+  parts.push(text.slice(cursor));
+  return parts.join('');
+};
+
+type EntryDetailViewModel = {
+  theme: StatusTheme;
+  formattedStatus: string;
+  formattedSubstatus: string | null;
+  hasSubstatus: boolean;
+  displayCitation: string;
+  cardStyle: CSSProperties;
+  showMismatchDetails: boolean;
+  mismatchDetails: Array<{ field: string; label: string; citationValue: string; lookupValue: string }>;
+  mismatchedFieldsDisplay: string | null;
+  lookupResultSourceDisplay: string;
+  showUnverifiedDetailBlock: boolean;
+  unverifiedFieldsDisplay: string | null;
+  returnedEntries: Array<[string, unknown]>;
+};
+
+const getEntryDetailViewModel = (citation: CitationEntry): EntryDetailViewModel => {
+  const theme = getStatusTheme(citation.status);
+  const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
+  const formattedSubstatus = formatIdentifier(citation.substatus);
+  const hasSubstatus = Boolean(formattedSubstatus);
+  const displayCitation = getDisplayCitation(citation);
+  const isUnverifiedDetailsWarning =
+    normalizeKey(citation.status) === 'warning' &&
+    normalizeKey(citation.substatus) === 'unverified details';
+  const unverifiedFields = citation.verification_details?.unverified_fields;
+  const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
+    ? unverifiedFields.join(', ')
+    : unverifiedFields ?? null;
+  const returnedValues = citation.verification_details?.returned_values;
+  const returnedEntries =
+    returnedValues && typeof returnedValues === 'object'
+      ? Object.entries(returnedValues as Record<string, unknown>)
+      : [];
+  const detailSourceRaw = citation.verification_details?.source ?? null;
+  const formattedLookupSource = detailSourceRaw
+    ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
+    : null;
+  const hasVerificationDetailContent =
+    Boolean(formattedLookupSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
+  const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
+  const cardStyle = {
+    '--status-badge-bg': theme.badgeBackground,
+    '--status-border': theme.badgeBorder,
+    '--status-text': theme.badgeText,
+    '--status-pill-bg': theme.pillBackground,
+    '--status-pill-text': theme.pillText,
+    '--status-indicator': theme.indicator,
+  } as CSSProperties;
+  const mismatchedFieldsRaw = citation.verification_details?.mismatched_fields ?? [];
+  const mismatchedFields = Array.isArray(mismatchedFieldsRaw) ? mismatchedFieldsRaw : [];
+  const extractedDetails = (citation.verification_details?.extracted ?? {}) as Record<string, unknown>;
+  const referenceDetails = (citation.verification_details?.court_listener ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const mismatchDetails = mismatchedFields.map((field) => {
+    const label = formatIdentifier(field) ?? field;
+    const citationValueRaw = Object.prototype.hasOwnProperty.call(extractedDetails, field)
+      ? extractedDetails[field]
+      : null;
+    const lookupValueRaw = Object.prototype.hasOwnProperty.call(referenceDetails, field)
+      ? referenceDetails[field]
+      : null;
+    return {
+      field,
+      label,
+      citationValue: formatDetailValue(citationValueRaw ?? null),
+      lookupValue: formatDetailValue(lookupValueRaw ?? null),
+    };
+  });
+  const mismatchedFieldsDisplay =
+    mismatchDetails.length > 0 ? mismatchDetails.map(({ label }) => label).join(', ') : null;
+  const showMismatchDetails =
+    normalizeKey(citation.status) === 'warning' && mismatchDetails.length > 0;
+  const lookupResultSourceDisplay = formattedLookupSource ?? 'Unspecified source';
+
+  return {
+    theme,
+    formattedStatus,
+    formattedSubstatus,
+    hasSubstatus,
+    displayCitation,
+    cardStyle,
+    showMismatchDetails,
+    mismatchDetails,
+    mismatchedFieldsDisplay,
+    lookupResultSourceDisplay,
+    showUnverifiedDetailBlock,
+    unverifiedFieldsDisplay,
+    returnedEntries,
+  };
+};
+
+const renderDetailBlocks = (vm: EntryDetailViewModel): ReactNode => (
+  <>
+    {vm.showMismatchDetails && (
+      <div className={styles.mismatchDetails}>
+        <div className={styles.mismatchDetailsHeader}>
+          <strong>Mismatched Fields</strong> {vm.mismatchedFieldsDisplay}
+          <span>compared against {vm.lookupResultSourceDisplay}</span>
+        </div>
+        <div className={styles.mismatchGrid}>
+          {vm.mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
+            <div key={field} className={styles.mismatchItem}>
+              <div className={styles.mismatchLabel}>{label}</div>
+              <div className={styles.mismatchValuePair}>
+                <span className={styles.mismatchValueKey}>Citation Value</span>
+                <span className={styles.mismatchValue}>{citationValue}</span>
+              </div>
+              <div className={styles.mismatchValuePair}>
+                <span className={styles.mismatchValueKey}>Lookup Result</span>
+                <span className={styles.mismatchValue}>{lookupValue}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {vm.showUnverifiedDetailBlock && (
+      <div className={styles.mismatchDetails}>
+        <div className={styles.mismatchDetailsHeader}>
+          <strong>Unverified Fields</strong> {vm.unverifiedFieldsDisplay}
+          <span>reported from {vm.lookupResultSourceDisplay}</span>
+        </div>
+        <div className={styles.mismatchGrid}>
+          {vm.returnedEntries.length > 0 && (
+            <div className={styles.mismatchItem}>
+              <div className={styles.mismatchLabel}>Lookup Result</div>
+              <div className={styles.unverifiedLookupValues}>
+                {vm.returnedEntries.map(([key, value]) => (
+                  <div key={key} className={styles.mismatchValuePair}>
+                    <span className={styles.mismatchValueKey}>{formatIdentifier(key) ?? key}</span>
+                    <span className={styles.mismatchValue}>{formatDetailValue(value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </>
+);
+
+type FootnoteRow = {
+  key: string;
+  citation: CitationEntry;
+  originalIndex: number;
+  occurrence: CitationOccurrence;
+  occurrenceIndex: number;
+  isPrimary: boolean;
+  footnoteNumber: number | null;
+};
+
+type FootnoteGroup = {
+  key: string;
+  label: string;
+  footnoteNumber: number | null;
+  rows: FootnoteRow[];
+};
+
+// Groups every citation's occurrences by the footnote they were found in
+// (a "Main text" group, key null, holds occurrences with no footnote_number).
+// Used only when at least one occurrence actually carries a footnote_number
+// (see footnoteMode in the component) - for documents with no footnotes this
+// still runs but produces a single "Main text" group that the component
+// ignores in favor of the original 1..N card list.
+const buildFootnoteGroups = (citations: CitationEntry[]): FootnoteGroup[] => {
+  const rows: FootnoteRow[] = [];
+
+  citations.forEach((citation, originalIndex) => {
+    const sorted = sortOccurrences(citation.occurrences);
+    const fullIdx = sorted.findIndex((occ) => occ.citation_category === 'full' && Boolean(occ.matched_text));
+    const firstIdx = sorted.findIndex((occ) => Boolean(occ.matched_text));
+    const primaryIndex = fullIdx !== -1 ? fullIdx : firstIdx !== -1 ? firstIdx : 0;
+
+    sorted.forEach((occurrence, occurrenceIndex) => {
+      rows.push({
+        key: `${citation.resource_key}-${occurrenceIndex}`,
+        citation,
+        originalIndex,
+        occurrence,
+        occurrenceIndex,
+        isPrimary: occurrenceIndex === primaryIndex,
+        footnoteNumber: occurrence.footnote_number ?? null,
+      });
+    });
+  });
+
+  const groupMap = new Map<string, FootnoteGroup>();
+  rows.forEach((row) => {
+    const groupKey = row.footnoteNumber === null ? 'main' : `footnote-${row.footnoteNumber}`;
+    let group = groupMap.get(groupKey);
+    if (!group) {
+      group = {
+        key: groupKey,
+        label: row.footnoteNumber === null ? 'Main text' : `Footnote ${row.footnoteNumber}`,
+        footnoteNumber: row.footnoteNumber,
+        rows: [],
+      };
+      groupMap.set(groupKey, group);
+    }
+    group.rows.push(row);
+  });
+
+  const groups = Array.from(groupMap.values());
+  groups.forEach((group) => {
+    group.rows.sort((a, b) => {
+      const aStart = Array.isArray(a.occurrence.span)
+        ? a.occurrence.span[0] ?? Number.MAX_SAFE_INTEGER
+        : Number.MAX_SAFE_INTEGER;
+      const bStart = Array.isArray(b.occurrence.span)
+        ? b.occurrence.span[0] ?? Number.MAX_SAFE_INTEGER
+        : Number.MAX_SAFE_INTEGER;
+      if (aStart !== bStart) {
+        return aStart - bStart;
+      }
+      if (a.originalIndex !== b.originalIndex) {
+        return a.originalIndex - b.originalIndex;
+      }
+      return a.occurrenceIndex - b.occurrenceIndex;
+    });
+  });
+
+  groups.sort((a, b) => {
+    if (a.footnoteNumber === null) {
+      return b.footnoteNumber === null ? 0 : -1;
+    }
+    if (b.footnoteNumber === null) {
+      return 1;
+    }
+    return a.footnoteNumber - b.footnoteNumber;
+  });
+
+  return groups;
+};
+
 export default function ResultsPage() {
   const router = useRouter();
   const [citations, setCitations] = useState<CitationEntry[]>([]);
   const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [footnotes, setFootnotes] = useState<FootnoteRange[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
@@ -471,6 +782,7 @@ export default function ResultsPage() {
     const payload = JSON.parse(resultsData) as VerificationResponse;
     setCitations(payload.citations ?? []);
     setExtractedText(payload.extracted_text ?? null);
+    setFootnotes(payload.footnotes ?? []);
   }, [isAuthenticated, router]);
 
   const citationCount = citations.length;
@@ -485,6 +797,31 @@ export default function ResultsPage() {
     return annotatedCitations.filter(({ citation }) => UNVERIFIED_STATUSES.has(normalizeKey(citation.status)));
   }, [annotatedCitations, showUnverifiedOnly]);
   const displayedCitationCount = displayedCitations.length;
+
+  const footnoteGroups = useMemo(() => buildFootnoteGroups(citations), [citations]);
+  const footnoteMode = useMemo(
+    () => footnoteGroups.some((group) => group.footnoteNumber !== null),
+    [footnoteGroups],
+  );
+  const displayedFootnoteGroups = useMemo(() => {
+    if (!showUnverifiedOnly) {
+      return footnoteGroups;
+    }
+    return footnoteGroups
+      .map((group) => ({
+        ...group,
+        rows: group.rows.filter((row) => UNVERIFIED_STATUSES.has(normalizeKey(row.citation.status))),
+      }))
+      .filter((group) => group.rows.length > 0);
+  }, [footnoteGroups, showUnverifiedOnly]);
+  const footnoteRowTotal = useMemo(
+    () => footnoteGroups.reduce((sum, group) => sum + group.rows.length, 0),
+    [footnoteGroups],
+  );
+  const displayedFootnoteRowCount = useMemo(
+    () => displayedFootnoteGroups.reduce((sum, group) => sum + group.rows.length, 0),
+    [displayedFootnoteGroups],
+  );
 
   const citationSummary = useMemo(() => {
     if (citations.length === 0) {
@@ -527,8 +864,8 @@ export default function ResultsPage() {
   }, [citations]);
 
   const highlightedExtractSegments = useMemo(
-    () => buildHighlightSegments(extractedText, citations),
-    [citations, extractedText],
+    () => buildHighlightSegments(extractedText, citations, footnotes, footnoteMode),
+    [citations, extractedText, footnotes, footnoteMode],
   );
 
   const handleNewVerification = () => {
@@ -642,13 +979,7 @@ export default function ResultsPage() {
         addSectionHeading('Citation details');
       }
 
-      citations.forEach((citation, index) => {
-        const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
-        const formattedSubstatus = formatIdentifier(citation.substatus);
-        const displayCitation = getDisplayCitation(citation);
-        const occurrences = sortOccurrences(citation.occurrences);
-        const isNoMatch =
-          normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+      const writeVerificationNotes = (citation: CitationEntry) => {
         const unverifiedFields = citation.verification_details?.unverified_fields;
         const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
           ? unverifiedFields.join(', ')
@@ -666,28 +997,6 @@ export default function ResultsPage() {
         const extractedYear = citation.verification_details?.extracted?.year ?? '—';
         const referenceCaseName = citation.verification_details?.court_listener?.case_name ?? '—';
         const referenceYear = citation.verification_details?.court_listener?.year ?? '—';
-
-        ensureSpace(24);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
-        const citationHeading = doc.splitTextToSize(`${index + 1}. ${displayCitation}`, contentWidth);
-        citationHeading.forEach((line) => {
-          ensureSpace(18);
-          doc.text(line, margin, cursorY);
-          cursorY += 18;
-        });
-
-        writeText(
-          `Status: ${formattedStatus}${formattedSubstatus ? ` — ${formattedSubstatus}` : ''}`,
-          {
-            lineHeight: 14,
-          },
-        );
-        writeText(`Occurrences: ${occurrences.length}`, { lineHeight: 14 });
-
-        if (isNoMatch) {
-          writeText(`Reference key: ${citation.resource_key}`, { lineHeight: 14 });
-        }
 
         if (formattedDetailSource || unverifiedFieldsDisplay || returnedEntries.length > 0) {
           writeText('Verification notes:', { fontStyle: 'bold', lineHeight: 16 });
@@ -716,39 +1025,125 @@ export default function ResultsPage() {
             });
           }
         }
+      };
 
-        if (occurrences.length > 0) {
-          writeText('Occurrences:', { fontStyle: 'bold', lineHeight: 16 });
-          occurrences.forEach((occurrence, occurrenceIndex) => {
-            const occurrenceLabelParts = [`${occurrenceIndex + 1}`];
-            if (occurrence.citation_category) {
-              occurrenceLabelParts.push(formatIdentifier(occurrence.citation_category) ?? '');
-            }
-            writeText(`• Occurrence ${occurrenceLabelParts.filter(Boolean).join(' ')}`, {
-              indent: 12,
-              lineHeight: 14,
+      if (footnoteMode) {
+        footnoteGroups.forEach((group) => {
+          ensureSpace(20);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(13);
+          doc.text(group.label, margin, cursorY);
+          cursorY += 20;
+
+          group.rows.forEach((row) => {
+            const vm = getEntryDetailViewModel(row.citation);
+            const rowLabel = row.occurrence.matched_text ?? vm.displayCitation;
+            const categoryLabel = formatIdentifier(row.occurrence.citation_category);
+
+            ensureSpace(18);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            const rowHeading = doc.splitTextToSize(`• ${rowLabel}`, contentWidth - 12);
+            rowHeading.forEach((line) => {
+              ensureSpace(15);
+              doc.text(line, margin + 12, cursorY);
+              cursorY += 15;
             });
-            if (occurrence.matched_text) {
-              writeText(occurrence.matched_text, { indent: 24, lineHeight: 14, fontSize: 10 });
+
+            writeText(
+              `Status: ${vm.formattedStatus}${vm.formattedSubstatus ? ` — ${vm.formattedSubstatus}` : ''}`,
+              { indent: 12, lineHeight: 14, fontSize: 10 },
+            );
+            writeText(
+              `Type: ${formatIdentifier(row.citation.type) ?? 'Unknown'}${categoryLabel ? ` — Category: ${categoryLabel}` : ''}`,
+              { indent: 12, lineHeight: 14, fontSize: 10 },
+            );
+            if (!row.isPrimary) {
+              writeText(`Authority: ${vm.displayCitation}`, { indent: 12, lineHeight: 14, fontSize: 10 });
             }
-            if (occurrence.span && occurrence.span.length === 2) {
-              writeText(`Span: ${occurrence.span[0]} – ${occurrence.span[1]}`, {
-                indent: 24,
+            if (row.isPrimary) {
+              writeVerificationNotes(row.citation);
+            }
+            if (row.occurrence.span && row.occurrence.span.length === 2) {
+              writeText(`Span: ${row.occurrence.span[0]} – ${row.occurrence.span[1]}`, {
+                indent: 12,
                 lineHeight: 14,
                 fontSize: 10,
               });
             }
+            cursorY += 4;
           });
-        }
 
-        cursorY += 6;
-      });
+          cursorY += 4;
+        });
+      } else {
+        citations.forEach((citation, index) => {
+          const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
+          const formattedSubstatus = formatIdentifier(citation.substatus);
+          const displayCitation = getDisplayCitation(citation);
+          const occurrences = sortOccurrences(citation.occurrences);
+          const isNoMatch =
+            normalizeKey(citation.status) === 'no match' || normalizeKey(citation.status) === 'no_match';
+
+          ensureSpace(24);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          const citationHeading = doc.splitTextToSize(`${index + 1}. ${displayCitation}`, contentWidth);
+          citationHeading.forEach((line) => {
+            ensureSpace(18);
+            doc.text(line, margin, cursorY);
+            cursorY += 18;
+          });
+
+          writeText(
+            `Status: ${formattedStatus}${formattedSubstatus ? ` — ${formattedSubstatus}` : ''}`,
+            {
+              lineHeight: 14,
+            },
+          );
+          writeText(`Occurrences: ${occurrences.length}`, { lineHeight: 14 });
+
+          if (isNoMatch) {
+            writeText(`Reference key: ${citation.resource_key}`, { lineHeight: 14 });
+          }
+
+          writeVerificationNotes(citation);
+
+          if (occurrences.length > 0) {
+            writeText('Occurrences:', { fontStyle: 'bold', lineHeight: 16 });
+            occurrences.forEach((occurrence, occurrenceIndex) => {
+              const occurrenceLabelParts = [`${occurrenceIndex + 1}`];
+              if (occurrence.citation_category) {
+                occurrenceLabelParts.push(formatIdentifier(occurrence.citation_category) ?? '');
+              }
+              writeText(`• Occurrence ${occurrenceLabelParts.filter(Boolean).join(' ')}`, {
+                indent: 12,
+                lineHeight: 14,
+              });
+              if (occurrence.matched_text) {
+                writeText(occurrence.matched_text, { indent: 24, lineHeight: 14, fontSize: 10 });
+              }
+              if (occurrence.span && occurrence.span.length === 2) {
+                writeText(`Span: ${occurrence.span[0]} – ${occurrence.span[1]}`, {
+                  indent: 24,
+                  lineHeight: 14,
+                  fontSize: 10,
+                });
+              }
+            });
+          }
+
+          cursorY += 6;
+        });
+      }
 
       if (extractedText) {
         addSectionHeading('Extracted document text');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
-        const lines = doc.splitTextToSize(extractedText, contentWidth);
+        const textForExport =
+          footnotes.length > 0 ? buildTextWithFootnoteMarkers(extractedText, footnotes) : extractedText;
+        const lines = doc.splitTextToSize(textForExport, contentWidth);
         lines.forEach((line) => {
           ensureSpace(14);
           doc.text(line, margin, cursorY);
@@ -948,9 +1343,13 @@ export default function ResultsPage() {
                 {tabRow}
                 <div className={styles.listToolbar}>
                   <span className={styles.listToolbarStatus}>
-                    {showUnverifiedOnly
-                      ? `Showing ${displayedCitationCount} unverified citation${displayedCitationCount === 1 ? '' : 's'}`
-                      : `Showing all ${citationCount} citation${citationCount === 1 ? '' : 's'}`}
+                    {footnoteMode
+                      ? showUnverifiedOnly
+                        ? `Showing ${displayedFootnoteRowCount} unverified citation occurrence${displayedFootnoteRowCount === 1 ? '' : 's'}`
+                        : `Showing all ${footnoteRowTotal} citation occurrence${footnoteRowTotal === 1 ? '' : 's'}`
+                      : showUnverifiedOnly
+                        ? `Showing ${displayedCitationCount} unverified citation${displayedCitationCount === 1 ? '' : 's'}`
+                        : `Showing all ${citationCount} citation${citationCount === 1 ? '' : 's'}`}
                   </span>
                   <button
                     type="button"
@@ -961,7 +1360,73 @@ export default function ResultsPage() {
                   </button>
                 </div>
 
-                {displayedCitationCount === 0 ? (
+                {footnoteMode ? (
+                  displayedFootnoteRowCount === 0 ? (
+                    <div className={styles.filterEmptyState}>
+                      <p className={styles.emptyState}>No unverified citations found.</p>
+                      <button
+                        type="button"
+                        className={styles.filterToggle}
+                        onClick={() => setShowUnverifiedOnly(false)}
+                      >
+                        Show all citations
+                      </button>
+                    </div>
+                  ) : (
+                    displayedFootnoteGroups.map((group) => (
+                      <div className={styles.footnoteGroup} key={group.key}>
+                        <h2 className={styles.footnoteGroupHeading}>
+                          {group.label}{' '}
+                          <span>
+                            {group.rows.length} citation{group.rows.length === 1 ? '' : 's'}
+                          </span>
+                        </h2>
+                        {group.rows.map((row) => {
+                          const vm = getEntryDetailViewModel(row.citation);
+
+                          return (
+                            <article key={row.key} className={styles.citationCard} style={vm.cardStyle}>
+                              <header className={styles.citationHeader}>
+                                <div className={styles.citationHeaderInfo}>
+                                  <span className={styles.citationIndex}>
+                                    {formatIdentifier(row.occurrence.citation_category) ?? 'Citation'}
+                                  </span>
+                                  <h3 className={styles.citationTitle}>
+                                    {row.occurrence.matched_text ?? vm.displayCitation}
+                                  </h3>
+                                </div>
+                                <div className={styles.statusGroup}>
+                                  <span className={styles.statusBadge}>{vm.formattedStatus}</span>
+                                  {vm.hasSubstatus && (
+                                    <span className={styles.statusPill}>{vm.formattedSubstatus}</span>
+                                  )}
+                                </div>
+                              </header>
+
+                              <div className={styles.citationMeta}>
+                                <span>
+                                  <strong>Type:</strong> {formatIdentifier(row.citation.type) ?? 'Unknown'}
+                                </span>
+                                {!row.isPrimary && (
+                                  <span>
+                                    <strong>Authority:</strong> {vm.displayCitation}
+                                  </span>
+                                )}
+                                {row.occurrence.span && (
+                                  <span>
+                                    <strong>Span:</strong> {row.occurrence.span[0]} – {row.occurrence.span[1]}
+                                  </span>
+                                )}
+                              </div>
+
+                              {row.isPrimary && renderDetailBlocks(vm)}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ))
+                  )
+                ) : displayedCitationCount === 0 ? (
                   <div className={styles.filterEmptyState}>
                     <p className={styles.emptyState}>No unverified citations found.</p>
                     <button
@@ -974,79 +1439,21 @@ export default function ResultsPage() {
                   </div>
                 ) : (
                   displayedCitations.map(({ citation, originalIndex }) => {
-                    const theme = getStatusTheme(citation.status);
-                    const formattedStatus = formatIdentifier(citation.status) ?? 'Unknown';
-                    const formattedSubstatus = formatIdentifier(citation.substatus);
-                    const hasSubstatus = Boolean(formattedSubstatus);
-                    const displayCitation = getDisplayCitation(citation);
+                    const vm = getEntryDetailViewModel(citation);
                     const occurrences = sortOccurrences(citation.occurrences);
-                    const isUnverifiedDetailsWarning =
-                      normalizeKey(citation.status) === 'warning' &&
-                      normalizeKey(citation.substatus) === 'unverified details';
-                    const unverifiedFields = citation.verification_details?.unverified_fields;
-                    const unverifiedFieldsDisplay = Array.isArray(unverifiedFields)
-                      ? unverifiedFields.join(', ')
-                      : unverifiedFields ?? null;
-                    const returnedValues = citation.verification_details?.returned_values;
-                    const returnedEntries =
-                      returnedValues && typeof returnedValues === 'object'
-                        ? Object.entries(returnedValues as Record<string, unknown>)
-                        : [];
-                    const detailSourceRaw = citation.verification_details?.source ?? null;
-                    const formattedLookupSource = detailSourceRaw
-                      ? formatIdentifier(detailSourceRaw) ?? detailSourceRaw
-                      : null;
-                    const hasVerificationDetailContent =
-                      Boolean(formattedLookupSource) || Boolean(unverifiedFieldsDisplay) || returnedEntries.length > 0;
-                    const showUnverifiedDetailBlock = isUnverifiedDetailsWarning && hasVerificationDetailContent;
-                    const cardStyle = {
-                      '--status-badge-bg': theme.badgeBackground,
-                      '--status-border': theme.badgeBorder,
-                      '--status-text': theme.badgeText,
-                      '--status-pill-bg': theme.pillBackground,
-                      '--status-pill-text': theme.pillText,
-                      '--status-indicator': theme.indicator,
-                    } as CSSProperties;
-                    const mismatchedFieldsRaw = citation.verification_details?.mismatched_fields ?? [];
-                    const mismatchedFields = Array.isArray(mismatchedFieldsRaw) ? mismatchedFieldsRaw : [];
-                    const extractedDetails = (citation.verification_details?.extracted ?? {}) as Record<string, unknown>;
-                    const referenceDetails = (citation.verification_details?.court_listener ?? {}) as Record<
-                      string,
-                      unknown
-                    >;
-                    const mismatchDetails = mismatchedFields.map((field) => {
-                      const label = formatIdentifier(field) ?? field;
-                      const citationValueRaw = Object.prototype.hasOwnProperty.call(extractedDetails, field)
-                        ? extractedDetails[field]
-                        : null;
-                      const lookupValueRaw = Object.prototype.hasOwnProperty.call(referenceDetails, field)
-                        ? referenceDetails[field]
-                        : null;
-                      return {
-                        field,
-                        label,
-                        citationValue: formatDetailValue(citationValueRaw ?? null),
-                        lookupValue: formatDetailValue(lookupValueRaw ?? null),
-                      };
-                    });
-                    const mismatchedFieldsDisplay =
-                      mismatchDetails.length > 0 ? mismatchDetails.map(({ label }) => label).join(', ') : null;
-                    const showMismatchDetails =
-                      normalizeKey(citation.status) === 'warning' && mismatchDetails.length > 0;
-                    const lookupResultSourceDisplay = formattedLookupSource ?? 'Unspecified source';
                     const cardNumber = originalIndex + 1;
 
                     return (
-                      <article key={citation.resource_key} className={styles.citationCard} style={cardStyle}>
+                      <article key={citation.resource_key} className={styles.citationCard} style={vm.cardStyle}>
                         <header className={styles.citationHeader}>
                           <div className={styles.citationHeaderInfo}>
-                            <span className={styles.citationIndex}>{cardNumber}. 
-                            <h3 className={styles.citationTitle}>{displayCitation}</h3>
+                            <span className={styles.citationIndex}>{cardNumber}.
+                            <h3 className={styles.citationTitle}>{vm.displayCitation}</h3>
                             </span>
                           </div>
                           <div className={styles.statusGroup}>
-                            <span className={styles.statusBadge}>{formattedStatus}</span>
-                            {hasSubstatus && <span className={styles.statusPill}>{formattedSubstatus}</span>}
+                            <span className={styles.statusBadge}>{vm.formattedStatus}</span>
+                            {vm.hasSubstatus && <span className={styles.statusPill}>{vm.formattedSubstatus}</span>}
                           </div>
                         </header>
 
@@ -1059,53 +1466,7 @@ export default function ResultsPage() {
                           </span>
                         </div>
 
-                        {showMismatchDetails && (
-                          <div className={styles.mismatchDetails}>
-                            <div className={styles.mismatchDetailsHeader}>
-                              <strong>Mismatched Fields</strong> {mismatchedFieldsDisplay}
-                              <span>compared against {lookupResultSourceDisplay}</span>
-                            </div>
-                            <div className={styles.mismatchGrid}>
-                              {mismatchDetails.map(({ field, label, citationValue, lookupValue }) => (
-                                <div key={field} className={styles.mismatchItem}>
-                                  <div className={styles.mismatchLabel}>{label}</div>
-                                  <div className={styles.mismatchValuePair}>
-                                    <span className={styles.mismatchValueKey}>Citation Value</span>
-                                    <span className={styles.mismatchValue}>{citationValue}</span>
-                                  </div>
-                                  <div className={styles.mismatchValuePair}>
-                                    <span className={styles.mismatchValueKey}>Lookup Result</span>
-                                    <span className={styles.mismatchValue}>{lookupValue}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {showUnverifiedDetailBlock && (
-                          <div className={styles.mismatchDetails}>
-                            <div className={styles.mismatchDetailsHeader}>
-                              <strong>Unverified Fields</strong> {unverifiedFieldsDisplay}
-                              <span>reported from {lookupResultSourceDisplay}</span>
-                            </div>
-                            <div className={styles.mismatchGrid}>
-                              {returnedEntries.length > 0 && (
-                                <div className={styles.mismatchItem}>
-                                  <div className={styles.mismatchLabel}>Lookup Result</div>
-                                  <div className={styles.unverifiedLookupValues}>
-                                    {returnedEntries.map(([key, value]) => (
-                                      <div key={key} className={styles.mismatchValuePair}>
-                                        <span className={styles.mismatchValueKey}>{formatIdentifier(key) ?? key}</span>
-                                        <span className={styles.mismatchValue}>{formatDetailValue(value)}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                        {renderDetailBlocks(vm)}
 
                         {occurrences.length > 0 && (
                           <ul className={styles.occurrenceList}>
@@ -1144,6 +1505,14 @@ export default function ResultsPage() {
                 {extractedText ? (
                   <div className={styles.documentScroll}>
                     {highlightedExtractSegments.map((segment) => {
+                      if (segment.marker) {
+                        return (
+                          <span key={segment.key} className={styles.footnoteMarker}>
+                            {segment.marker}
+                          </span>
+                        );
+                      }
+
                       if (!segment.highlight) {
                         return <span key={segment.key}>{segment.content}</span>;
                       }

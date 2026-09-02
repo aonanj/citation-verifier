@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Set, Tuple
 
-from eyecite import clean_text, get_citations, resolve_citations
+from eyecite import get_citations, resolve_citations
 from eyecite.models import (
     CaseCitation,
     CitationBase,
@@ -254,6 +255,58 @@ def _bind_full_citation(full_cite) -> ResourceKey | None:
         logger.info(f"Unsupported full citation type for resource binding: {full_cite}")
 
 
+# --- Exact-span cleaning helpers -------------------------------------------
+
+_CLEAN_RUN_RE = re.compile(r"[​\s]+|__+")
+
+
+def _clean_with_offset_map(text: str) -> Tuple[str, List[int]]:
+    """Apply eyecite's "all_whitespace" + "underscores" cleaners in one pass
+    while recording, for each output character, the index it came from in
+    the original `text`.
+
+    Equivalent to clean_text(text, ["all_whitespace", "underscores"]):
+      - all_whitespace: collapse a run of zero-width-space/whitespace
+        characters to a single " ".
+      - underscores: delete a run of 2+ underscores.
+    The two character classes are disjoint (whitespace is never "_") and the
+    underscore step only deletes (never re-collapses whitespace), so a single
+    left-to-right pass over the union pattern is equivalent to running the
+    two cleaners in sequence.
+
+    Returns (cleaned_text, offsets) where offsets[i] is the original-text
+    index cleaned_text[i] came from, plus a trailing sentinel
+    offsets[len(cleaned_text)] == len(text) so an end-exclusive span can be
+    mapped without a bounds special case (see _map_cleaned_span).
+    """
+    out_chunks: List[str] = []
+    offsets: List[int] = []
+    pos = 0
+    for match in _CLEAN_RUN_RE.finditer(text):
+        if match.start() > pos:
+            out_chunks.append(text[pos:match.start()])
+            offsets.extend(range(pos, match.start()))
+        run = match.group(0)
+        if run[0] != "_":
+            out_chunks.append(" ")
+            offsets.append(match.start())
+        pos = match.end()
+    if pos < len(text):
+        out_chunks.append(text[pos:])
+        offsets.extend(range(pos, len(text)))
+    offsets.append(len(text))
+    return "".join(out_chunks), offsets
+
+
+def _map_cleaned_span(span: Tuple[int, int], offsets: List[int]) -> Tuple[int, int] | None:
+    """Map a (start, end) span in _clean_with_offset_map's cleaned text back
+    to the original text, using the offsets it returned."""
+    start, end = span
+    if end <= start or start < 0 or end > len(offsets) - 1:
+        return None
+    return (offsets[start], offsets[end - 1] + 1)
+
+
 # --- String citation processing helpers -----------------------------------
 
 def _process_citation_segment(
@@ -276,7 +329,7 @@ def _process_citation_segment(
         Tuple of (citations list, segment_metadata dict).
     """
     segment_text = segment.text
-    cleaned = clean_text(segment_text, ["all_whitespace", "underscores"])
+    cleaned, offsets = _clean_with_offset_map(segment_text)
 
     try:
         citations = get_citations(cleaned)
@@ -291,17 +344,17 @@ def _process_citation_segment(
         cite_span = get_span(cite)
 
         if cite_span:
-            seg_start, seg_end = cite_span
-            # Calculate adjusted position in original document
-            adjusted_start = segment.original_span[0] + seg_start
-            adjusted_end = segment.original_span[0] + seg_end
-
-            # Store adjusted span separately (don't modify eyecite object).
-            # Keyed by object identity rather than eyecite's per-call token
-            # index: each segment's get_citations() call restarts indexing
-            # from 0, so index-keyed storage collides once more than one
-            # segment is processed.
-            adjusted_spans[id(cite)] = (adjusted_start, adjusted_end)
+            mapped = _map_cleaned_span(cite_span, offsets)
+            if mapped is not None:
+                # Store adjusted span separately (don't modify eyecite
+                # object). Keyed by object identity rather than eyecite's
+                # per-call token index: each segment's get_citations() call
+                # restarts indexing from 0, so index-keyed storage collides
+                # once more than one segment is processed.
+                adjusted_spans[id(cite)] = (
+                    segment.original_span[0] + mapped[0],
+                    segment.original_span[0] + mapped[1],
+                )
 
         # Track segment metadata for this citation (same identity keying).
         segment_metadata[id(cite)] = segment
@@ -855,7 +908,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
     if not all_segments:
         logger.info("No string citations detected; using standard eyecite processing")
-        cleaned_text = clean_text(text, ["all_whitespace", "underscores"])
+        cleaned_text, whole_doc_offsets = _clean_with_offset_map(text)
         citations = get_citations(cleaned_text)
 
         logger.info(f"Detected {len(citations)} citations in text: {citations}")
@@ -863,6 +916,13 @@ async def compile_citations(text: str) -> Dict[str, Any]:
         if not citations:
             logger.info("No citations detected in text; returning empty result set")
             return {}
+
+        for cite in citations:
+            cite_span = get_span(cite)
+            if cite_span:
+                mapped = _map_cleaned_span(cite_span, whole_doc_offsets)
+                if mapped is not None:
+                    adjusted_spans[id(cite)] = mapped
 
         all_resolutions = _resolve_all_citations(citations)
 
