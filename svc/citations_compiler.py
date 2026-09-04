@@ -681,6 +681,27 @@ def _process_secondary_citations(
             continue
         _add_secondary_to_db(cite, citation_db, is_full=False, secondary_tasks=secondary_tasks)
 
+def _append_if_existing(
+    resource_key: str,
+    citation_db: Dict[str, Dict[str, Any]],
+    occurrence: Dict[str, Any],
+    matched_text: str,
+) -> bool:
+    """Append occurrence to an existing citation_db entry if present.
+
+    Returns True if an existing entry was found and updated, False if
+    resource_key is not (yet) present in citation_db.
+    """
+    if resource_key not in citation_db:
+        return False
+    citation_db[resource_key]["occurrences"].append(occurrence)
+    logger.info(
+        "Added occurrence to existing secondary citation: %s",
+        matched_text[:50],
+    )
+    return True
+
+
 def _add_secondary_to_db(
     cite: SecondaryCitation,
     citation_db: Dict[str, Dict[str, Any]],
@@ -721,15 +742,9 @@ def _add_secondary_to_db(
     }
     
     # Check if entry already exists
-    if resource_key in citation_db:
-        # Add as additional occurrence
-        citation_db[resource_key]["occurrences"].append(occurrence)
-        logger.info(
-            "Added occurrence to existing secondary citation: %s",
-            cite.matched_text[:50],
-        )
+    if _append_if_existing(resource_key, citation_db, occurrence, cite.matched_text):
         return
-    
+
     # Create new entry (only for full citations)
     if not is_full:
         # This is a short citation but no full was found
@@ -738,8 +753,12 @@ def _add_secondary_to_db(
             cite.matched_text,
             cite.span[0],
         )
-        # Create a stub entry anyway
+        # Create a stub entry anyway, unless the fallback key happens to
+        # already name an existing entry (e.g. another sparse short-form
+        # citation) - in that case merge into it instead of clobbering it.
         resource_key = cite.to_resource_key()
+        if _append_if_existing(resource_key, citation_db, occurrence, cite.matched_text):
+            return
     
     # Verify the citation
     normalized = cite.to_normalized_citation()
