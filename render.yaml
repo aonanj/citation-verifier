@@ -1,0 +1,52 @@
+# Exported from Render on 2026-09-10T06:29:44Z
+version: "1"
+services:
+- type: web
+  name: citation-verifier
+  runtime: python
+  repo: https://github.com/aonanj/citation-verifier
+  plan: starter
+  envVars:
+  - key: PORT
+    sync: false
+  - key: LOG_TO_FILE
+    sync: false
+  - key: AUTH0_ISSUER
+    sync: false
+  - key: AUTH0_DOMAIN
+    sync: false
+  - key: AUTH0_AUDIENCE
+    sync: false
+  - key: SEMANTIC_SCHOLAR_API_KEY
+    sync: false
+  - key: STRIPE_WEBHOOK_SECRET
+    sync: false
+  - key: STRIPE_SECRET_KEY
+    sync: false
+  - key: STRIPE_PUBLISHABLE_KEY
+    sync: false
+  - key: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  - key: DB_URL
+    sync: false
+  - key: OPENALEX_MAILTO
+    sync: false
+  - key: LEGISCAN_API_KEY
+    sync: false
+  - key: OPENAI_API_KEY
+    sync: false
+  - key: GOVINFO_API_KEY
+    sync: false
+  - key: COURTLISTENER_API_TOKEN
+    sync: false
+  - key: COURT_LISTENER_API_BASE
+    sync: false
+  - key: CITATION_SVC_URL
+    sync: false
+  region: oregon
+  buildCommand: ./Dockerfile
+  startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+  healthCheckPath: /api/health
+  autoDeployTrigger: commit
