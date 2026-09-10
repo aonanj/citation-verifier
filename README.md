@@ -278,7 +278,9 @@ The backend is containerized using Docker for easy deployment:
 docker build -t citation-verifier .
 docker run -p 8000:8000 --env-file .env citation-verifier
 ```
-The Dockerfile uses Python 3.12-slim, installs Tesseract OCR, and exposes port 8000. The `PORT` environment variable can be configured for cloud deployments (e.g., Render, Railway).
+The Dockerfile uses Python 3.13-slim, installs Tesseract OCR, and exposes port 8000. The `PORT` environment variable can be configured for cloud deployments (e.g., Render, Railway).
+
+**Cloud deployment must use the Docker runtime, not a native/buildpack runtime.** OCR of scanned/image-only PDFs requires the `tesseract-ocr` system package, and Render's (and similar platforms') native Python runtime does not permit installing OS-level packages (`apt-get`) — only Docker deploys can install Tesseract. Check `/api/health`'s `ocr_available` field after any deploy to confirm.
 
 ## Usage Tips
 - **Authentication**: Sign in via Auth0 before uploading; the upload panel remains disabled until authentication is complete.

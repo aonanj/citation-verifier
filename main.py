@@ -23,7 +23,7 @@ from database.crud import (
 from database.models import Payment, UserAccount
 from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
-from svc.doc_processor import FootnoteSpan, extract_document, footnote_number_for_offset
+from svc.doc_processor import FootnoteSpan, extract_document, footnote_number_for_offset, ocr_available
 from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
 from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
@@ -66,6 +66,7 @@ class VerificationResponse(BaseModel):
     extracted_text: str | None = None
     remaining_credits: int
     footnotes: List[FootnoteRange] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
 
 
 class UserBalanceResponse(BaseModel):
@@ -138,7 +139,7 @@ async def health_check() -> Dict[str, Any]:
     
     auth0_configured = bool(auth0_domain and auth0_audience and auth0_issuer)
     stripe_configured = bool(STRIPE_SECRET_KEY)
-    
+
     return {
         "status": "ok",
         "auth0_configured": auth0_configured,
@@ -146,6 +147,7 @@ async def health_check() -> Dict[str, Any]:
         "auth0_audience_set": bool(auth0_audience),
         "auth0_issuer_set": bool(auth0_issuer),
         "stripe_configured": stripe_configured,
+        "ocr_available": ocr_available(),
     }
 
 
@@ -661,6 +663,14 @@ async def verify_document(
             file.filename,
         )
 
+    warnings: List[str] = []
+    if extracted.ocr_skipped_pages:
+        page_list = ", ".join(str(p) for p in extracted.ocr_skipped_pages)
+        warnings.append(
+            f"OCR is unavailable on this server; page(s) {page_list} contain no "
+            "text layer and were not checked."
+        )
+
     return VerificationResponse(
         citations=sanitized,
         extracted_text=extracted_text,
@@ -668,6 +678,7 @@ async def verify_document(
         footnotes=[
             FootnoteRange(number=f.number, start=f.start, end=f.end) for f in extracted.footnotes
         ],
+        warnings=warnings,
     )
 
 

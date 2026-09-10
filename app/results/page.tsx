@@ -55,6 +55,7 @@ type VerificationResponse = {
   extracted_text?: string | null;
   remaining_credits?: number | null;
   footnotes?: FootnoteRange[] | null;
+  warnings?: string[] | null;
 };
 
 type StatusTheme = {
@@ -761,6 +762,7 @@ export default function ResultsPage() {
   const [citations, setCitations] = useState<CitationEntry[]>([]);
   const [extractedText, setExtractedText] = useState<string | null>(null);
   const [footnotes, setFootnotes] = useState<FootnoteRange[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
@@ -783,6 +785,7 @@ export default function ResultsPage() {
     setCitations(payload.citations ?? []);
     setExtractedText(payload.extracted_text ?? null);
     setFootnotes(payload.footnotes ?? []);
+    setWarnings(payload.warnings ?? []);
   }, [isAuthenticated, router]);
 
   const citationCount = citations.length;
@@ -1263,6 +1266,13 @@ export default function ResultsPage() {
       </nav>
 
       <main className={styles.main}>
+        {warnings.length > 0 && (
+          <div className={styles.warningBanner} role="alert">
+            {warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        )}
         <section className={styles.summaryRow}>
           <div className={styles.summaryLead}>
             <div className={styles.summaryLeadHeader}>

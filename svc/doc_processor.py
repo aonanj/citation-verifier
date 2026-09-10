@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass
@@ -70,6 +71,48 @@ class ExtractedDocument:
 
     text: str
     footnotes: Tuple[FootnoteSpan, ...]
+    ocr_skipped_pages: Tuple[int, ...] = ()
+    """1-based PDF page numbers that had no extractable text, contained an
+    image, and were not OCR'd because Tesseract is unavailable on this host.
+    Always empty for DOCX/TXT and for any PDF page that had text, had no
+    image, or was successfully OCR'd."""
+
+
+class _OcrUnavailable(Exception):
+    """Raised internally when OCR is attempted but Tesseract can't run.
+
+    Distinguishes "no OCR available" (caller should degrade gracefully) from a
+    genuine extraction failure (caller should propagate as ValueError).
+    """
+
+
+def ocr_available() -> bool:
+    """Return True if the Tesseract binary pytesseract would invoke exists.
+
+    Checks `shutil.which` against `pytesseract.pytesseract.tesseract_cmd`
+    (default `"tesseract"`), so a custom `tesseract_cmd` override is honored.
+    Not cached: reflects the current process environment on every call.
+    """
+    return shutil.which(pytesseract.pytesseract.tesseract_cmd) is not None
+
+
+def _ocr_page(page: "pymupdf.Page") -> str:
+    """Render a PDF page to an image and OCR it with Tesseract.
+
+    Raises `_OcrUnavailable` if Tesseract isn't installed/on PATH (wraps
+    `pytesseract.TesseractNotFoundError`, a subclass of `OSError`). Any other
+    exception propagates to the caller unchanged.
+    """
+    try:
+        pix = page.get_pixmap()  # type: ignore[attr-defined]
+        img = Image.frombytes(
+            mode="RGB",
+            size=(pix.width, pix.height),
+            data=pix.samples,
+        )
+        return pytesseract.image_to_string(img)
+    except pytesseract.TesseractNotFoundError as exc:
+        raise _OcrUnavailable(str(exc)) from exc
 
 
 def _wrap_footnote(number: int, body: str) -> str:
@@ -688,11 +731,18 @@ def extract_pdf_text(file: FileStorage) -> ExtractedDocument:
     back to raw `page.get_text("text")` or OCR (no main-text blocks, or
     "rawdict" extraction failed) are not represented - those code paths never
     wrap a footnote body, matching pre-existing best-effort behavior for
-    those pages.
+    those pages. `ocr_skipped_pages` lists any image-only page (no text
+    layer) that could not be OCR'd because Tesseract is unavailable; a
+    genuinely blank page (no text and no image) is never OCR'd and never
+    appears there. If every page has no text and at least one was an OCR
+    candidate, raises ValueError instead of returning an empty document.
     """
 
     file.stream.seek(0)
     page_texts: List[str] = []
+    ocr_skipped: List[int] = []
+    any_page_has_text = False
+    ocr_ok = ocr_available()
 
     try:
         pdf_bytes = file.stream.read()
@@ -703,22 +753,47 @@ def extract_pdf_text(file: FileStorage) -> ExtractedDocument:
                     raw_text = page.get_text("text") # type: ignore[attr-defined]
                     if raw_text.strip():
                         page_text = raw_text
+                    elif page.get_image_info(): # type: ignore[attr-defined]
+                        # Page has an image but no text layer - an OCR
+                        # candidate, as opposed to a genuinely blank page.
+                        if ocr_ok:
+                            try:
+                                page_text = _ocr_page(page)
+                            except _OcrUnavailable:
+                                # `which` found a binary but it failed to
+                                # execute; degrade for the rest of this
+                                # document rather than retry every page.
+                                ocr_ok = False
+                                ocr_skipped.append(getattr(page, "number", 0) + 1)
+                                page_text = ""
+                        else:
+                            ocr_skipped.append(getattr(page, "number", 0) + 1)
+                            page_text = ""
                     else:
-                        pix = page.get_pixmap() # type: ignore[attr-defined]
-                        img = Image.frombytes(
-                            mode="RGB",
-                            size=(pix.width, pix.height),
-                            data=pix.samples,
-                        )
-                        page_text = pytesseract.image_to_string(img)
+                        page_text = ""
+                if page_text.strip():
+                    any_page_has_text = True
                 page_texts.append(page_text.strip())
     except Exception as exc:  # pragma: no cover - pass through for callers
         raise ValueError(f"Failed to extract text from PDF: {exc}") from exc
 
+    if ocr_skipped and not any_page_has_text:
+        raise ValueError(
+            "This PDF appears to be a scanned image with no text layer, and "
+            "OCR is not available on this server. Please upload a text-based "
+            "PDF or a DOCX file."
+        )
+    if ocr_skipped:
+        logger.warning(
+            "OCR unavailable; skipped %d image-only page(s) with no text layer: %s",
+            len(ocr_skipped),
+            ocr_skipped,
+        )
+
     combined = "\n\n\f\n\n".join(page_texts).strip()
     normalized = _normalize(combined)
     text, footnotes = _strip_footnote_markers(normalized)
-    return ExtractedDocument(text=text, footnotes=footnotes)
+    return ExtractedDocument(text=text, footnotes=footnotes, ocr_skipped_pages=tuple(ocr_skipped))
 
 def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
     """Return DOCX body text with footnotes inlined at their references.

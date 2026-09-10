@@ -108,6 +108,22 @@ def main() -> None:
         print(msg)
     print()
 
+    # OCR / Tesseract
+    print("OCR Configuration:")
+    print("-" * 40)
+    try:
+        from svc.doc_processor import ocr_available
+        if ocr_available():
+            print("✓ Tesseract OCR: found on PATH (scanned/image-only PDFs can be processed)")
+        else:
+            print("✗ Tesseract OCR: NOT found on PATH")
+            print("  ℹ Image-only PDF pages will fail or be skipped with a warning.")
+            print("  ℹ Install: 'brew install tesseract' (macOS) or 'apt-get install tesseract-ocr' (Debian/Ubuntu).")
+            issues.append("Tesseract OCR binary not found on PATH")
+    except ImportError as exc:
+        print(f"⚠ Could not check Tesseract OCR (svc.doc_processor import failed: {exc})")
+    print()
+
     # Frontend Configuration
     print("Frontend Configuration:")
     print("-" * 40)

@@ -270,6 +270,23 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.warningBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.warningBanner p {
+  margin: 0;
+}
+
 .summaryLead {
   padding: clamp(1.3rem, 3.4vw, 1.9rem);
   border-radius: var(--radius-lg);
