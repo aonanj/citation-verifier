@@ -113,7 +113,7 @@ app.add_middleware(
         "https://127.0.0.1:3000",
         "https://localhost:5174",
         "https://127.0.0.1:5174",
-        "https://citation-verifier.onrender.com",
+        "https://jurischeck.onrender.com",
         "https://citation-verifier.vercel.app",
         "https://www.jurischeck.com",
         "https://jurischeck.com",
