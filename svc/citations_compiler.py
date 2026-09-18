@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterator, List, Set, Tuple
+from typing import Any, Dict, Iterator, List, Sequence, Set, Tuple
 
 from eyecite import get_citations, resolve_citations
 from eyecite.models import (
@@ -1028,7 +1028,10 @@ def _add_secondary_to_db(
 
 # --- Main compilation function --------------------------------------------
 
-async def compile_citations(text: str) -> Dict[str, Any]:
+async def compile_citations(
+    text: str,
+    note_spans: Sequence[Tuple[int, int]] = (),
+) -> Dict[str, Any]:
     """Compile citations from the given text, handling string citations.
 
     This function:
@@ -1042,6 +1045,9 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
     Args:
         text: The document text to analyze.
+        note_spans: (start, end) of each footnote/endnote body inlined in
+            `text` (ExtractedDocument.footnotes); keeps secondary-source
+            citations from straddling a note boundary.
 
     Returns:
         Dict mapping resource keys to citation metadata, including:
@@ -1193,7 +1199,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     # Detect secondary citations
     secondary_detector = SecondaryCitationDetector()
     full_secondary_citations, short_secondary_citations = secondary_detector.detect_secondary_citations(
-        text, eyecite_spans
+        text, eyecite_spans, note_spans
     )
     
     if full_secondary_citations or short_secondary_citations:

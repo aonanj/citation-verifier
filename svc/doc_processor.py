@@ -31,8 +31,27 @@ _SMART_QUOTES_RE: Final = re.compile("[\u201c\u201d]")
 _SMART_APOSTROPHES_RE: Final = re.compile("[\u2018\u2019]")
 _SUPERSCRIPT_TRANSLATION: Final = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 _SUPERSCRIPT_CHARACTERS: Final = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹")
-_FOOTNOTE_LINE_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)[\.\)]?\s*(.*)")
 _FOOTNOTE_START_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)([\.\)])?\s*(.*)")
+
+# PDF footnote region / marker detection (see _footnote_region and
+# _span_marker_numbers). A footnote begins with its number followed by text
+# ("12. Text", "12 Text"); a lone digit line - e.g. a raised marker that
+# PyMuPDF put on its own line - is not a footnote start.
+_FOOTNOTE_REGION_START_RE: Final = re.compile(r"^([\d⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3})[\.\)]?\s+\S")
+# Footnote-region blocks are set in type at most this fraction of the body size
+# (law reviews run ~0.82-0.95; Word footnotes ~0.8).
+_FOOTNOTE_REGION_MAX_SIZE_RATIO: Final = 0.96
+# Blocks starting in the top/bottom band of the page are running headers and
+# footers (page numbers, repository banners) - never footnotes.
+_PAGE_HEADER_BAND: Final = 0.07
+_PAGE_FOOTER_BAND: Final = 0.94
+# A footnote reference mark is superscripted or set at most this fraction of
+# the body size.
+_MARKER_MAX_SIZE_RATIO: Final = 0.85
+_MARKER_DIGITS_RE: Final = re.compile(r"\d{1,3}(?:,\s*\d{1,3})*")
+# OCR'd text layers often glue a marker's leading digit(s) onto the preceding
+# word ("respectively).1" + small "4" for marker 14).
+_OCR_MARKER_PREFIX_RE: Final = re.compile(r"(?<!\d)(\d{1,2})$")
 
 # Private-use-area sentinels used to wrap an inlined footnote/endnote body
 # between the moment it's spliced into the running text and
@@ -835,16 +854,36 @@ def _block_top(block: Dict[str, Any]) -> float:
     return float("inf")
 
 
-def _block_average_font_size(block: Dict[str, Any]) -> float:
-    sizes: List[float] = []
+def _char_weighted_font_size(block: Dict[str, Any]) -> float:
+    """Mean font size of the block's visible characters (0.0 if none).
+
+    Weighted by character count, so a few small marker spans in a body
+    paragraph can't make it look like footnote-size type.
+    """
+    total = 0.0
+    chars = 0
     for line in block.get("lines", []):
         for span in line.get("spans", []):
-            size_val = float(span.get("size", 0.0) or 0.0)
-            if size_val > 0:
-                sizes.append(size_val)
-    if not sizes:
-        return 0.0
-    return sum(sizes) / len(sizes)
+            count = len((span.get("text") or "").strip())
+            size = float(span.get("size", 0.0) or 0.0)
+            if count and size > 0:
+                total += count * size
+                chars += count
+    return total / chars if chars else 0.0
+
+
+def _first_text_line(block: Dict[str, Any]) -> str:
+    """The block's first non-blank line (Word's PDF export starts footnote
+    blocks with a blank separator line)."""
+    for line in block.get("lines", []):
+        text = _normalize_superscripts(_line_text_from_spans(line.get("spans", []))).strip()
+        if text:
+            return text
+    return ""
+
+
+def _starts_like_footnote(block: Dict[str, Any]) -> bool:
+    return bool(_FOOTNOTE_REGION_START_RE.match(_first_text_line(block)))
 
 
 def _is_footnote_block(
@@ -852,6 +891,8 @@ def _is_footnote_block(
     page_height: float,
     primary_font_size: float,
 ) -> bool:
+    """Per-block footnote test, used only when _footnote_region finds no
+    small-type region on the page (e.g. footnotes set in body-size type)."""
     lines = block.get("lines", [])
     if not lines:
         return False
@@ -859,18 +900,57 @@ def _is_footnote_block(
         _normalize_superscripts(_line_text_from_spans(line.get("spans", []))).strip()
         for line in lines
     ]
-    footnote_starts = [line for line in normalized_lines if _FOOTNOTE_LINE_RE.match(line)]
+    footnote_starts = [line for line in normalized_lines if _FOOTNOTE_REGION_START_RE.match(line)]
     if not footnote_starts:
         return False
     block_top = _block_top(block)
-    block_avg_size = _block_average_font_size(block)
+    block_size = _char_weighted_font_size(block)
     majority_threshold = max(1, len(lines) // 2)
     if page_height > 0 and block_top > page_height * 0.7:
         return True
-    if primary_font_size > 0 and block_avg_size > 0:
-        if block_avg_size <= primary_font_size * 0.85 and len(footnote_starts) >= majority_threshold:
+    if primary_font_size > 0 and block_size > 0:
+        if block_size <= primary_font_size * 0.85 and len(footnote_starts) >= majority_threshold:
             return True
     return False
+
+
+def _footnote_region(
+    blocks: Sequence[Dict[str, Any]],
+    page_height: float,
+    primary_font_size: float,
+) -> Set[int]:
+    """Return the indices (into `blocks`) of the page's footnote blocks.
+
+    Footnotes sit at the bottom of the page in smaller type, so the region is
+    the earliest block (by top) that starts like a footnote ("12. Text") such
+    that it and every later block with text are set at most
+    _FOOTNOTE_REGION_MAX_SIZE_RATIO of the body size - which also takes in
+    unnumbered continuation blocks. Blocks in the running header/footer bands
+    are never included. If there is no such run (e.g. footnotes in body-size
+    type), falls back to the per-block _is_footnote_block test.
+    """
+
+    def in_page_body(block: Dict[str, Any]) -> bool:
+        if page_height <= 0:
+            return True
+        top = _block_top(block)
+        return page_height * _PAGE_HEADER_BAND <= top <= page_height * _PAGE_FOOTER_BAND
+
+    ordered = sorted(
+        (index for index, block in enumerate(blocks) if in_page_body(block)),
+        key=lambda index: _block_top(blocks[index]),
+    )
+    if primary_font_size > 0:
+        limit = primary_font_size * _FOOTNOTE_REGION_MAX_SIZE_RATIO
+        sizes = {index: _char_weighted_font_size(blocks[index]) for index in ordered}
+        for position, index in enumerate(ordered):
+            if not _starts_like_footnote(blocks[index]):
+                continue
+            if all(sizes[later] <= limit for later in ordered[position:] if sizes[later] > 0):
+                return set(ordered[position:])
+    return {
+        index for index in ordered if _is_footnote_block(blocks[index], page_height, primary_font_size)
+    }
 
 
 def _parse_footnote_lines(lines: Iterable[str]) -> Dict[int, str]:
@@ -942,27 +1022,21 @@ def _parse_footnote_lines(lines: Iterable[str]) -> Dict[int, str]:
     return footnotes
 
 
-def _ends_with_whitespace(parts: List[str]) -> bool:
-    for part in reversed(parts):
-        if not part:
-            continue
-        return part[-1].isspace()
-    return False
-
-
 @dataclass
 class _PdfNoteState:
     """Threaded through the PDF render helpers for one document.
 
     `used` answers "did this page already splice this printed number's body
-    inline?" and is cleared at the top of each page (see
-    _extract_pdf_page_text) - printed footnote numbers can repeat across
-    pages. `ordinal` is the document-global, never-reset 1-based order
-    footnotes are spliced into the text, matching NoteSpan.ordinal's
-    contract. Do not merge these two lifetimes.
+    inline?" and `last` is the highest number spliced so far on the page;
+    both are reset at the top of each page (see _extract_pdf_page_text) -
+    printed footnote numbers can repeat across pages. `ordinal` is the
+    document-global, never-reset 1-based order footnotes are spliced into
+    the text, matching NoteSpan.ordinal's contract. Do not merge these
+    lifetimes.
     """
 
     used: Set[int] = field(default_factory=set)
+    last: int = 0
     ordinal: int = 0
 
     def next_ordinal(self) -> int:
@@ -970,46 +1044,82 @@ class _PdfNoteState:
         return self.ordinal
 
 
-def _render_span_with_inline_footnotes(
+def _span_marker_numbers(
     span: Dict[str, Any],
-    footnotes: Dict[int, str],
     primary_font_size: float,
-    state: "_PdfNoteState",
-) -> str:
+) -> Optional[Tuple[List[int], str]]:
+    """Return (numbers, digits) if the span looks like a footnote reference
+    mark - digits only ("12", "3, 4") and superscripted or small - else None.
+
+    Digits split by a synthesized space ("3 5", see _needs_space_between_chars)
+    are rejoined. Looks only at the span itself: whether a number is really a
+    reference to a footnote on this page is decided by
+    _render_line_with_inline_footnotes.
+    """
     text = span.get("text") or ""
-    if not text:
-        return ""
-    normalized = _normalize_superscripts(text)
-    matches = list(re.finditer(r"(?<!\d)(\d{1,3})(?!\d)", normalized))
-    if not matches:
-        return text
+    normalized = _normalize_superscripts(text).strip()
+    if not normalized:
+        return None
+    digits = re.sub(r"(?<=\d) (?=\d)", "", normalized)
+    if not _MARKER_DIGITS_RE.fullmatch(digits):
+        return None
     font_size = float(span.get("size", 0.0) or 0.0)
-    has_superscript = any(ch in _SUPERSCRIPT_CHARACTERS for ch in text)
-    is_small = primary_font_size > 0 and font_size > 0 and font_size <= primary_font_size * 0.85
-    if not has_superscript and not is_small:
-        return text
-    residual = re.sub(r"(?<!\d)\d{1,3}(?!\d)", "", normalized)
-    if residual.strip():
-        return text
-    result: List[str] = []
-    last_idx = 0
-    for match in matches:
-        result.append(text[last_idx:match.start()])
-        num_val = int(normalized[match.start():match.end()])
-        footnote_text = footnotes.get(num_val)
-        if footnote_text:
-            if not _ends_with_whitespace(result):
-                result.append(" ")
-            clean_text = footnote_text.strip()
-            if clean_text:
-                result.append(_wrap_note("footnote", state.next_ordinal(), str(num_val), clean_text))
-                result.append(" ")
-                state.used.add(num_val)
-        else:
-            result.append(text[match.start():match.end()])
-        last_idx = match.end()
-    result.append(text[last_idx:])
-    return "".join(result)
+    superscript = any(ch in _SUPERSCRIPT_CHARACTERS for ch in text) or bool(
+        int(span.get("flags", 0) or 0) & pymupdf.TEXT_FONT_SUPERSCRIPT
+    )
+    small = (
+        primary_font_size > 0
+        and font_size > 0
+        and font_size <= primary_font_size * _MARKER_MAX_SIZE_RATIO
+    )
+    if not superscript and not small:
+        return None
+    return [int(number) for number in re.findall(r"\d+", digits)], digits
+
+
+def _footnote_available(number: int, footnotes: Dict[int, str], state: "_PdfNoteState") -> bool:
+    """A marker number is accepted only if it's a footnote parsed on this page,
+    not yet spliced, and above the page's last marker (markers ascend)."""
+    return number in footnotes and number not in state.used and number > state.last
+
+
+def _accept_marker(
+    marker: Tuple[List[int], str],
+    footnotes: Dict[int, str],
+    state: "_PdfNoteState",
+    parts: List[str],
+) -> Optional[List[int]]:
+    """Return the footnote numbers a marker span refers to, or None.
+
+    For a single number that fails, tries an OCR split: the whole trailing
+    digit run (1-2 digits, after a non-digit) of the last non-blank rendered
+    part is the marker's leading digits ("respectively).1" + "4" -> 14). If
+    that number is available, the prefix is removed from `parts` in place.
+    """
+    numbers, digits = marker
+    if all(_footnote_available(number, footnotes, state) for number in numbers):
+        return numbers
+    if len(numbers) != 1:
+        return None
+    index = next((i for i in range(len(parts) - 1, -1, -1) if parts[i].strip()), None)
+    if index is None:
+        return None
+    preceding = parts[index].rstrip()
+    match = _OCR_MARKER_PREFIX_RE.search(preceding)
+    if not match:
+        return None
+    number = int(match.group(1) + digits)
+    if not _footnote_available(number, footnotes, state):
+        return None
+    parts[index] = preceding[: match.start()]
+    return [number]
+
+
+def _emit_footnote(number: int, footnotes: Dict[int, str], state: "_PdfNoteState") -> str:
+    state.used.add(number)
+    state.last = number
+    body = _wrap_note("footnote", state.next_ordinal(), str(number), footnotes[number].strip())
+    return f" {body} "
 
 
 def _render_line_with_inline_footnotes(
@@ -1017,13 +1127,32 @@ def _render_line_with_inline_footnotes(
     footnotes: Dict[int, str],
     primary_font_size: float,
     state: "_PdfNoteState",
+    detect_markers: bool = True,
 ) -> str:
+    """Render a main-text line, splicing each footnote body in at its marker.
+
+    Footnote bodies always come out in numeric order: before marker n, any
+    still-unspliced page footnote numbered between the last marker and n
+    (its marker wasn't recognized) is emitted first, so "Id." in footnote n
+    follows footnote n-1 in the text.
+    """
     spans = line.get("spans", [])
     joined: List[str] = []
     last_nonempty_span: Optional[Dict[str, Any]] = None
     last_nonempty_part = ""
     for span in spans:
-        part = _render_span_with_inline_footnotes(span, footnotes, primary_font_size, state)
+        part = span.get("text") or ""
+        marker = _span_marker_numbers(span, primary_font_size) if detect_markers and part else None
+        numbers = _accept_marker(marker, footnotes, state, joined) if marker else None
+        if numbers:
+            chunks: List[str] = []
+            for number in numbers:
+                for pending in sorted(
+                    n for n in footnotes if state.last < n < number and n not in state.used
+                ):
+                    chunks.append(_emit_footnote(pending, footnotes, state))
+                chunks.append(_emit_footnote(number, footnotes, state))
+            part = "".join(chunks)
         if _needs_space_between(last_nonempty_span, last_nonempty_part, span, part):
             joined.append(" ")
         joined.append(part)
@@ -1057,23 +1186,25 @@ def _extract_pdf_page_text(page: pymupdf.Page, state: "_PdfNoteState") -> str:
     primary_font_size = _primary_font_size(text_dict)
     page_height = float(page.rect.height)
 
-    main_blocks: List[List[Dict[str, Any]]] = []
+    main_blocks: List[Dict[str, Any]] = []
     footnote_lines: List[str] = []
 
-    for block in text_dict.get("blocks", []):
-        if block.get("type") != 0:
-            continue
-        lines = block.get("lines", [])
-        if not lines:
-            continue
-        if _is_footnote_block(block, page_height, primary_font_size):
-            for line in lines:
+    text_blocks = [
+        block
+        for block in text_dict.get("blocks", [])
+        if block.get("type") == 0 and block.get("lines")
+    ]
+    footnote_region = _footnote_region(text_blocks, page_height, primary_font_size)
+    for index, block in enumerate(text_blocks):
+        if index in footnote_region:
+            for line in block["lines"]:
                 footnote_lines.append(_line_text_from_spans(line.get("spans", [])))
         else:
-            main_blocks.append(lines)
+            main_blocks.append(block)
 
     footnotes = _parse_footnote_lines(footnote_lines)
     state.used.clear()
+    state.last = 0
 
     if not main_blocks:
         if footnotes:
@@ -1083,11 +1214,20 @@ def _extract_pdf_page_text(page: pymupdf.Page, state: "_PdfNoteState") -> str:
         return page.get_text("text") # type: ignore[attr-defined]
 
     lines_out: List[str] = []
-    for block_lines in main_blocks:
+    for block in main_blocks:
+        # A footnote-looking block that still reached the main-text path is
+        # never scanned for markers: its small citation digits ("85", "54")
+        # must not be replaced by footnote bodies.
+        detect_markers = not (
+            _starts_like_footnote(block)
+            and 0 < _char_weighted_font_size(block) <= primary_font_size * _FOOTNOTE_REGION_MAX_SIZE_RATIO
+        )
         block_texts: List[str] = []
-        for line in block_lines:
+        for line in block["lines"]:
             block_texts.append(
-                _render_line_with_inline_footnotes(line, footnotes, primary_font_size, state)
+                _render_line_with_inline_footnotes(
+                    line, footnotes, primary_font_size, state, detect_markers
+                )
             )
         if block_texts:
             if lines_out and lines_out[-1] != "":

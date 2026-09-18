@@ -10,12 +10,32 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from typing import Any, Dict, Final, List, Set, Tuple
+from typing import Any, Dict, Final, List, Sequence, Set, Tuple
 
 from utils.cleaner import clean_str
 from utils.logger import get_logger
+from utils.resource_resolver import is_name_abbreviation
 
 logger = get_logger()
+
+# Treatise ("[vol] Author, Title § sec (ed. year)") building blocks. The
+# pattern is case-SENSITIVE: the head is a run of capitalized name/title
+# words (plus a few lowercase title function words), so a lowercase word like
+# "generally", "agreed." or "patents." ends it - otherwise the author reached
+# back over whole sentences, signals, and the main text before an inlined
+# footnote. _create_treatise_citation then strips signals, cuts at a sentence
+# end, and splits author from title.
+_TREATISE_NAME: Final = r"(?:[A-Z][A-Za-z'’\-]*\.?|(?:[A-Z]\.){2,}|&|de|van|von|der|du|la|le|et\s+al\.)"
+_TREATISE_TITLE_WORD: Final = (
+    r"(?:[A-Z][A-Za-z'’\-]*\.?|of|on|and|the|for|in|to|a|an|at|by|with|under|from|into|&)"
+)
+_TREATISE_SIGNAL_RE: Final = re.compile(
+    r"^(?:(?:See|Cf\.|Compare|Accord|Contra|But|E\.g\.)"
+    r"(?:\s*,?\s*(?:also|generally|e\.g\.,?|see|cf\.))*,?\s+)+"
+)
+_TREATISE_SENTENCE_END_RE: Final = re.compile(r"(\S+)\.\s+(?=[A-Z])")
+_TREATISE_YEAR_RE: Final = re.compile(r"(?<![\w:])(1[6-9]\d{2}|20\d{2})(?!\d)")
+_TREATISE_EDITION_RE: Final = re.compile(r"\b(?:\d+(?:st|nd|rd|th|d)|rev\.)\s+ed\.")
 
 # Regex patterns for common secondary sources (FULL CITATIONS)
 _SECONDARY_PATTERNS: Final = {
@@ -51,11 +71,10 @@ _SECONDARY_PATTERNS: Final = {
         re.IGNORECASE
     ),
     "treatise": re.compile(
-        r"(?P<author>[A-Z][A-Za-z\s.,'&]+?),\s+"
-        r"(?P<title>[A-Z][A-Za-z\s:]+?)\s+"
-        r"§+\s*(?P<section>[\d.:]+)"
-        r"(?:\s*\((?P<edition>\d+(?:st|nd|rd|th)\s+ed\.)?\s*(?P<year>\d{4})\))?",
-        re.IGNORECASE
+        r"(?:(?P<volume>\d+[A-Z]?)\s+)?"
+        rf"(?P<head>{_TREATISE_NAME}(?:(?:\s+|,\s+|:\s+)(?:{_TREATISE_NAME}|{_TREATISE_TITLE_WORD}))*?)"
+        r"\s+§+\s*(?P<section>\d[\w.:\-–]*(?:\[\w+\])*(?:\([a-z0-9]{1,4}\))*)"
+        r"(?:\s*\((?P<paren>[^()]*?)\))?"
     ),
 }
 
@@ -251,58 +270,48 @@ class SecondaryCitationDetector:
     """Detects citations to secondary legal sources in text."""
 
     def detect_secondary_citations(
-        self, text: str, eyecite_spans: Set[Tuple[int, int]] | None = None
+        self,
+        text: str,
+        eyecite_spans: Set[Tuple[int, int]] | None = None,
+        note_spans: Sequence[Tuple[int, int]] = (),
     ) -> Tuple[List[SecondaryCitation], List[SecondaryCitation]]:
         """Detect all secondary source citations in the given text.
-        
+
         Args:
             text: The document text to analyze.
             eyecite_spans: Set of (start, end) spans already detected by eyecite
                           to avoid duplicate detection.
-            
+            note_spans: (start, end) of each footnote/endnote body inlined in
+                        `text`. Full citations are matched within each
+                        main-text/note segment separately, so none can
+                        straddle a note boundary (e.g. absorb the main-text
+                        sentence a footnote was inlined after).
+
         Returns:
             Tuple of (full_citations, short_citations) where:
             - full_citations: List of full SecondaryCitation objects
             - short_citations: List of short form SecondaryCitation objects
         """
         eyecite_spans = eyecite_spans or set()
-        
+
         full_citations: List[SecondaryCitation] = []
         short_citations: List[SecondaryCitation] = []
-        
+
+        boundaries = sorted(
+            {0, len(text)}
+            | {offset for span in note_spans for offset in span if 0 < offset < len(text)}
+        )
+        segments = list(zip(boundaries, boundaries[1:]))
+
         # Detect full citations first
         for source_type, pattern in _SECONDARY_PATTERNS.items():
-            for match in pattern.finditer(text):
-                match_span = (match.start(), match.end())
-                
-                # Skip if overlaps with eyecite detection
-                if self._overlaps_with_eyecite(match_span, eyecite_spans):
-                    logger.info(
-                        "Skipping secondary detection at %s - already detected by eyecite",
-                        match_span,
-                    )
-                    continue
-                
-                # Check for exclusion patterns
-                if self._matches_exclusion(match.group(0)):
-                    logger.info(
-                        "Skipping false positive: %s",
-                        match.group(0)[:50],
-                    )
-                    continue
-                
+            for match in (
+                m for seg_start, seg_end in segments for m in pattern.finditer(text, seg_start, seg_end)
+            ):
                 try:
                     citation = self._create_full_citation(
                         source_type, match, text
                     )
-                    if citation:
-                        full_citations.append(citation)
-                        logger.info(
-                            "Detected full %s citation: %s at span %s",
-                            source_type,
-                            citation.matched_text[:50],
-                            citation.span,
-                        )
                 except Exception as exc:
                     logger.error(
                         "Failed to parse %s citation at position %d: %s",
@@ -310,7 +319,36 @@ class SecondaryCitationDetector:
                         match.start(),
                         exc,
                     )
-        
+                    continue
+                if citation is None:
+                    continue
+
+                # Overlap/exclusion checks use the citation's final span and
+                # text: a treatise match may include a trimmed-away prefix
+                # (e.g. an eyecite "Id.") that isn't part of the citation.
+                if self._overlaps_with_eyecite(citation.span, eyecite_spans):
+                    logger.info(
+                        "Skipping secondary detection at %s - already detected by eyecite",
+                        citation.span,
+                    )
+                    continue
+
+                # Check for exclusion patterns
+                if self._matches_exclusion(citation.matched_text):
+                    logger.info(
+                        "Skipping false positive: %s",
+                        citation.matched_text[:50],
+                    )
+                    continue
+
+                full_citations.append(citation)
+                logger.info(
+                    "Detected full %s citation: %s at span %s",
+                    source_type,
+                    citation.matched_text[:50],
+                    citation.span,
+                )
+
         # Detect short form citations
         for short_type, pattern in _SHORT_FORM_PATTERNS.items():
             for match in pattern.finditer(text):
@@ -387,8 +425,11 @@ class SecondaryCitationDetector:
         self, source_type: str, match: re.Match, text: str
     ) -> SecondaryCitation | None:
         """Create a SecondaryCitation from a full citation regex match."""
+        if source_type == "treatise":
+            return self._create_treatise_citation(match)
+
         groups = match.groupdict()
-        
+
         # Clean all extracted values
         cleaned = {
             key: clean_str(value) for key, value in groups.items()
@@ -408,6 +449,63 @@ class SecondaryCitationDetector:
             edition=cleaned.get("edition"),
             series=cleaned.get("series"),
             author=cleaned.get("author"),
+            antecedent_key=None,
+        )
+
+    def _create_treatise_citation(self, match: re.Match) -> SecondaryCitation | None:
+        """Build a treatise citation from the treatise pattern's match.
+
+        Strips leading signals ("See generally", "Cf.", "But see"), cuts at
+        the last real sentence end inside the head, and splits author from
+        title: Bluebook joins authors with "&", so the author runs through the
+        last leading comma-separated segment containing "&" (otherwise it's
+        the first segment) and the title - which may contain commas - is the
+        rest. The span starts at the volume or author, so it never covers the
+        stripped text. Returns None if there's no "Author, Title" shape.
+        """
+        head = match.group("head")
+        trimmed = _TREATISE_SIGNAL_RE.sub("", head)
+        cut = 0
+        for sentence_end in _TREATISE_SENTENCE_END_RE.finditer(trimmed):
+            if not is_name_abbreviation(sentence_end.group(1)):
+                cut = sentence_end.end()
+        trimmed = trimmed[cut:]
+
+        segments = [segment.strip() for segment in re.split(r",\s+", trimmed)]
+        if len(segments) < 2 or not segments[0]:
+            return None
+        author_end = max((i for i, segment in enumerate(segments[:-1]) if "&" in segment), default=0)
+        author = ", ".join(segments[: author_end + 1])
+        title = ", ".join(segments[author_end + 1 :])
+        if not title or not title[0].isupper():
+            return None
+
+        volume = match.group("volume")
+        if volume and len(trimmed) != len(head):
+            # A volume must directly precede the author.
+            return None
+        start = match.start() if volume else match.start("head") + len(head) - len(trimmed)
+
+        paren = match.group("paren") or ""
+        years = _TREATISE_YEAR_RE.findall(paren)
+        edition = _TREATISE_EDITION_RE.search(paren) if years else None
+        # A parenthetical without a year is explanatory, not part of the citation.
+        end = match.end() if years else match.end("section")
+
+        return SecondaryCitation(
+            source_type="treatise",
+            citation_category="full",
+            matched_text=match.string[start:end],
+            span=(start, end),
+            volume=clean_str(volume),
+            title=clean_str(title),
+            section=clean_str(match.group("section")),
+            page=None,
+            pin_cite=None,
+            year=years[-1] if years else None,
+            edition=edition.group(0) if edition else None,
+            series=None,
+            author=clean_str(author),
             antecedent_key=None,
         )
 

@@ -228,7 +228,11 @@ _HISTORY_NAME_GAP_RE = re.compile(
 )
 
 
-def _is_name_abbreviation(word: str) -> bool:
+def is_name_abbreviation(word: str) -> bool:
+    """True if `word` (without its trailing period) is an abbreviation or
+    initial rather than a sentence-ending word: Bluebook T6/T10, a single
+    capital, a dotted form, or the plural of a listed abbreviation. Also used
+    by svc/secondary_citation_handler for treatise authors."""
     word = word.lstrip("(\"'“")
     if word + "." in _NAME_ABBREVIATIONS:
         return True
@@ -248,7 +252,7 @@ def _mark_name_boundaries(text: str) -> str:
         chars[start:end] = _NAME_BOUNDARY * (end - start)
 
     for match in _SENTENCE_END_RE.finditer(text):
-        if not _is_name_abbreviation(match.group(1)):
+        if not is_name_abbreviation(match.group(1)):
             mark(match.start(2), match.end(2))
     for match in _NAME_COMMA_RE.finditer(text):
         if match.group(2).rstrip(",;:").lower() not in _PARTY_SUFFIXES:

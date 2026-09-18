@@ -641,7 +641,10 @@ async def verify_document(
     extracted_text = extracted.text
 
     try:
-        compiled = await compile_citations(extracted_text)
+        compiled = await compile_citations(
+            extracted_text,
+            [(note.start, note.end) for note in extracted.footnotes],
+        )
     except Exception as exc:  # pragma: no cover - unexpected failure
         logger.error(f"Error in compile_citations: {exc}")
         raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
