@@ -203,17 +203,31 @@ def _prepare_case_lookup_fields(
 
     return volume, reporter, page
 
+# eyecite sometimes takes neighboring non-name text as a party ("Id. 141.",
+# "7th Cir. 1910).", a glued footnote number "Reflect- 41.", a PDF page footer
+# "... Repository, 2010"); such a party is discarded rather than reported.
+# Numbered names like "Local 1199" or "One 1958 Plymouth Sedan" still pass.
+_NON_NAME_PARTY_RE = re.compile(r"^(?:id|ibid|supra)\b|[()]|\s\d+\.$|,\s*\d{4}$", re.IGNORECASE)
+
+
+def _name_party(value: Any) -> str | None:
+    party = clean_str(value)
+    if party and _NON_NAME_PARTY_RE.search(party):
+        return None
+    return party
+
+
 def get_case_name(obj) -> str | None:
     if obj is None:
         return None
     case_name = None
     metadata = getattr(obj, "metadata", None)
     if metadata is not None:
-        plaintiff = clean_str(
+        plaintiff = _name_party(
             getattr(metadata, "plaintiff", None)
             or getattr(metadata, "petitioner", None)
         )
-        defendant = clean_str(
+        defendant = _name_party(
             getattr(metadata, "defendant", None)
             or getattr(metadata, "respondent", None)
         )
@@ -298,7 +312,10 @@ def verify_case_citation(
             )
             if result is None and not case_names_equivalent(expected_name, actual_name):
                 mismatches.append("case_name")
-    elif expected_name_norm or actual_name_norm:
+    elif expected_name_norm:
+        # The document names the case but CourtListener returned no name. When
+        # the document gives no name (e.g. a bare "447 U.S. 303 (1980)"), there
+        # is nothing to compare, so the name check is skipped.
         mismatches.append("case_name")
 
     if expected_year is not None and actual_year is not None:

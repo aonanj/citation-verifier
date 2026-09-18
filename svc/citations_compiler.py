@@ -4,21 +4,27 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Iterator, List, Set, Tuple
 
 from eyecite import get_citations, resolve_citations
 from eyecite.models import (
     CaseCitation,
     CitationBase,
+    CitationToken,
+    Edition,
     FullCaseCitation,
     FullCitation,
     FullJournalCitation,
     FullLawCitation,
     IdCitation,
     ReferenceCitation,
+    Reporter,
     ShortCaseCitation,
     SupraCitation,
+    Token,
 )
+from eyecite.regexes import nonalphanum_boundaries_re
+from eyecite.tokenizers import TokenExtractor, Tokenizer, default_tokenizer
 
 from svc.secondary_citation_handler import (
     SecondaryCitation,
@@ -33,7 +39,7 @@ from svc.string_citation_handler import (
 )
 from utils.cleaner import clean_str
 from utils.logger import get_logger
-from utils.resource_resolver import get_journal_author_title
+from utils.resource_resolver import get_journal_author_title, resolve_case_year
 from utils.span_finder import get_span
 from verifiers.case_verifier import get_case_name, verify_case_citation
 from verifiers.federal_law_verifier import (
@@ -307,6 +313,104 @@ def _map_cleaned_span(span: Tuple[int, int], offsets: List[int]) -> Tuple[int, i
     return (offsets[start], offsets[end - 1] + 1)
 
 
+# --- Unlisted-journal fallback tokenizer -----------------------------------
+#
+# eyecite only recognizes journals listed in reporters_db.JOURNALS (~800
+# entries) while Bluebook T13 lists thousands, so any other law review (e.g.
+# "2 Hous. J. Health L. & Pol'y 65") produced no citation at all. This
+# fallback matches a Bluebook-style journal abbreviation -- capitalized
+# abbreviated words including at least one T13 journal marker word --
+# between a volume and a page. Tuning knobs: _JOURNAL_WORD, _JOURNAL_MARKER,
+# and the volume/page digit widths.
+
+_JOURNAL_WORD = r"(?:[A-Z][A-Za-z]*(?:['’][a-z]+)?\.?|&|[A-Z]\.(?:[A-Z]\.)+)"
+_JOURNAL_MARKER = r"(?:L\.J\.|L\.Q\.|L\.|J\.|Rev\.|Q\.|Pol['’]y|F\.)"
+_UNLISTED_JOURNAL_RE = nonalphanum_boundaries_re(
+    rf"(?P<volume>\d{{1,4}}) "
+    rf"(?P<reporter>(?:{_JOURNAL_WORD} )*?{_JOURNAL_MARKER}(?: {_JOURNAL_WORD})*?) "
+    rf"(?P<page>\d{{1,5}})"
+)
+# A real abbreviation has a multi-letter word ending in a period ("Hous.",
+# "Rev."), an apostrophe contraction ("Int'l", "Pol'y"), compact initials
+# ("L.J."), or "&" -- a bare initial plus a name ("5 J. Smith 12") has none.
+_JOURNAL_ABBREVIATION_EVIDENCE_RE = re.compile(r"[A-Za-z]{2,}\.|['’]|[A-Z]\.[A-Z]\.|&")
+
+
+def _unlisted_journal_token(m: re.Match, extra: Dict[str, Any], offset: int = 0) -> Token:
+    """Build a CitationToken for an unlisted-journal match.
+
+    source="journals" makes eyecite emit a FullJournalCitation (pin cite, year,
+    and document back-reference included). The per-match Reporter carries the
+    matched abbreviation as its name because journal_verifier sends
+    all_editions[0].reporter.name to its OpenAlex/Semantic Scholar source
+    lookups -- a placeholder name would poison those queries.
+    """
+    abbreviation = m["reporter"]
+    reporter = Reporter(
+        short_name=abbreviation,
+        name=abbreviation,
+        cite_type="journal",
+        source="journals",
+    )
+    edition = Edition(short_name=abbreviation, reporter=reporter, start=None, end=None)
+    return CitationToken.from_match(
+        m,
+        {"exact_editions": [edition], "variation_editions": [], "short": False},
+        offset,
+    )
+
+
+_UNLISTED_JOURNAL_EXTRACTOR = TokenExtractor(_UNLISTED_JOURNAL_RE, _unlisted_journal_token)
+
+
+class _JournalFallbackTokenizer(Tokenizer):
+    """eyecite's default tokenizer plus the unlisted-journal fallback.
+
+    Wraps default_tokenizer (rather than subclassing AhocorasickTokenizer) so
+    eyecite's extractor automaton isn't built a second time. Fallback matches
+    overlapping any known citation token are dropped, so reporters_db entries
+    (e.g. "F. Supp.", "L. Ed.") always win, as are matches whose reporter
+    shows no abbreviation evidence (see _JOURNAL_ABBREVIATION_EVIDENCE_RE).
+    """
+
+    def extract_tokens(self, text: str) -> Iterator[Token]:
+        known = list(default_tokenizer.extract_tokens(text))
+        yield from known
+        known_spans = [(t.start, t.end) for t in known if isinstance(t, CitationToken)]
+        for match in _UNLISTED_JOURNAL_EXTRACTOR.get_matches(text):
+            if not _JOURNAL_ABBREVIATION_EVIDENCE_RE.search(match["reporter"]):
+                continue
+            token = _UNLISTED_JOURNAL_EXTRACTOR.get_token(match)
+            if not any(token.start < end and start < token.end for start, end in known_spans):
+                yield token
+
+
+_JOURNAL_FALLBACK_TOKENIZER = _JournalFallbackTokenizer(extractors=[])
+
+
+def _repair_case_years(citations: List[CitationBase]) -> None:
+    """Replace each full case citation's eyecite year with resolve_case_year().
+
+    eyecite can assign a year taken from a *different* citation (e.g. "43 Cal.
+    4th 757 (2008); ... 134 F.4th 1205 (Fed. Cir. 2025)" gives the first cite
+    2025), which then flows into the resource key and the verifier's year
+    check. Must run before resolution (_bind_full_citation reads the year).
+    """
+    for cite in citations:
+        if not isinstance(cite, FullCaseCitation):
+            continue
+        year = resolve_case_year(cite)
+        if year != cite.metadata.year:
+            logger.info(
+                "Corrected year for %s: %s -> %s",
+                cite.matched_text(),
+                cite.metadata.year,
+                year,
+            )
+        cite.metadata.year = year
+        cite.year = int(year) if year else None
+
+
 # --- String citation processing helpers -----------------------------------
 
 def _process_citation_segment(
@@ -332,10 +436,11 @@ def _process_citation_segment(
     cleaned, offsets = _clean_with_offset_map(segment_text)
 
     try:
-        citations = get_citations(cleaned)
+        citations = get_citations(cleaned, tokenizer=_JOURNAL_FALLBACK_TOKENIZER)
     except Exception as exc:
         logger.error("eyecite.get_citations failed for segment: %s", exc)
         return [], {}
+    _repair_case_years(citations)
 
     # Adjust spans to original document coordinates
     segment_metadata: Dict[int, CitationSegment] = {}
@@ -602,6 +707,112 @@ def _make_short_lookup_key(cite: Any) -> str | None:
 
     return None
 
+
+# --- Bluebook "Id." after a string citation --------------------------------
+
+_ID_AFTER_STRING_SUBSTATUS = "id_refers_to_string_citation"
+
+
+def _flag_ids_after_string_citations(
+    citations: List[CitationBase],
+    adjusted_spans: _AdjustedSpans,
+    secondary_citations: List[SecondaryCitation],
+    string_group_ranges: Dict[str, Tuple[int, int]],
+) -> List[Tuple[str, List[IdCitation]]]:
+    """Find "Id." citations that refer back to a string citation.
+
+    Bluebook Rule 4.1 bars "id." from referring to a string citation (a
+    citation clause with more than one authority), so such an Id. has no
+    valid antecedent. eyecite would instead bind it to the string's last
+    authority or, when its pin cite doesn't fit that authority, silently
+    drop it.
+
+    An eyecite Id. is flagged when the immediately preceding citation lies
+    inside a string-citation range holding >= 2 non-Id. authorities and the
+    Id. itself lies outside that range; an Id. whose immediately preceding
+    citation is a flagged Id. inherits the error. Secondary-source citations
+    count as preceding citations (an Id. after "A; B. Restatement ... ."
+    refers to the Restatement), except their Id./Ibid. forms, which duplicate
+    eyecite's own Id. spans.
+
+    Args:
+        citations: Every eyecite citation (including ones eyecite's resolver
+            dropped), in document order.
+        adjusted_spans: Document-coordinate spans, keyed by id(cite).
+        secondary_citations: Detected secondary-source citations.
+        string_group_ranges: string_group_id -> (start, end) of the string.
+
+    Returns:
+        One (string_group_id, [Id. citations]) chain per error entry, in
+        document order.
+    """
+    if not string_group_ranges:
+        return []
+
+    # (start, citation, is_id) for every citation, in document order.
+    events: List[Tuple[int, Any, bool]] = []
+    for cite in citations:
+        span = adjusted_spans.get(id(cite))
+        if span is not None:
+            events.append((span[0], cite, isinstance(cite, IdCitation)))
+    for cite in secondary_citations:
+        if cite.citation_category not in ("id", "ibid"):
+            events.append((cite.span[0], cite, False))
+    events.sort(key=lambda event: event[0])
+
+    def group_at(position: int) -> str | None:
+        for group_id, (start, end) in string_group_ranges.items():
+            if start <= position < end:
+                return group_id
+        return None
+
+    authority_counts: Dict[str, int] = {}
+    for position, _cite, is_id in events:
+        group_id = group_at(position)
+        if group_id is not None and not is_id:
+            authority_counts[group_id] = authority_counts.get(group_id, 0) + 1
+
+    chains: List[Tuple[str, List[IdCitation]]] = []
+    chain_by_cite: Dict[int, Tuple[str, List[IdCitation]]] = {}
+    for i, (position, cite, is_id) in enumerate(events):
+        if not is_id or i == 0:
+            continue
+        preceding_position, preceding, _ = events[i - 1]
+        chain = chain_by_cite.get(id(preceding))
+        if chain is None:
+            group_id = group_at(preceding_position)
+            if (
+                group_id is None
+                or group_at(position) == group_id
+                or authority_counts.get(group_id, 0) < 2
+            ):
+                continue
+            chain = (group_id, [])
+            chains.append(chain)
+        chain[1].append(cite)
+        chain_by_cite[id(cite)] = chain
+
+    return chains
+
+
+def _eyecite_occurrence(
+    cite: Any,
+    adjusted_spans: _AdjustedSpans,
+    segment_metadata: Dict[int, CitationSegment],
+) -> Dict[str, Any]:
+    """Build the occurrence dict for an eyecite citation."""
+    segment = segment_metadata.get(id(cite))
+    return {
+        "citation_category": _citation_category(cite),
+        "matched_text": _get_citation(cite),
+        "span": _get_adjusted_span(cite, adjusted_spans),
+        "index": _get_index(cite),
+        "pin_cite": _get_pin_cite(cite),
+        "citation_obj": cite,
+        "string_group_id": segment.string_group_id if segment else None,
+        "position_in_string": segment.position_in_string if segment else None,
+    }
+
 def _process_secondary_citations(
     text: str,
     citation_db: Dict[str, Dict[str, Any]],
@@ -853,6 +1064,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
     all_segments: list[CitationSegment] = []
     covered_ranges: set[Tuple[int, int]] = set()
+    string_group_ranges: Dict[str, Tuple[int, int]] = {}
     string_group_counter = 0
 
     for start, end, is_string in string_citation_spans:
@@ -869,6 +1081,7 @@ async def compile_citations(text: str) -> Dict[str, Any]:
                 )
                 all_segments.extend(segments)
                 covered_ranges.add((start, end))
+                string_group_ranges[group_id] = (start, end)
             except ValueError as exc:
                 logger.error("Failed to split string citation: %s", exc)
                 continue
@@ -928,7 +1141,8 @@ async def compile_citations(text: str) -> Dict[str, Any]:
     if not all_segments:
         logger.info("No string citations detected; using standard eyecite processing")
         cleaned_text, whole_doc_offsets = _clean_with_offset_map(text)
-        citations = get_citations(cleaned_text)
+        citations = get_citations(cleaned_text, tokenizer=_JOURNAL_FALLBACK_TOKENIZER)
+        _repair_case_years(citations)
 
         logger.info(f"Detected {len(citations)} citations in text: {citations}")
 
@@ -1021,6 +1235,29 @@ async def compile_citations(text: str) -> Dict[str, Any]:
         full_secondary_citations = []
         resolved_short_secondary = []
 
+    # Step 6b: Bluebook Rule 4.1 -- an "Id." referring back to a string
+    # citation has no valid antecedent. Report it as an error instead of
+    # letting eyecite bind it to the string's last authority or drop it.
+    id_string_errors = _flag_ids_after_string_citations(
+        all_citations,
+        adjusted_spans,
+        full_secondary_citations + short_secondary_citations,
+        string_group_ranges,
+    )
+    if id_string_errors:
+        flagged_ids = {id(cite) for _, chain in id_string_errors for cite in chain}
+        for resolved_cites in all_resolutions.values():
+            resolved_cites[:] = [cite for cite in resolved_cites if id(cite) not in flagged_ids]
+        flagged_spans = [adjusted_spans[cite_id] for cite_id in flagged_ids]
+        resolved_short_secondary = [
+            cite for cite in resolved_short_secondary
+            if not any(cite.span[0] < end and start < cite.span[1] for start, end in flagged_spans)
+        ]
+        logger.info(
+            "Flagged %d Id. citation(s) referring back to a string citation",
+            len(flagged_ids),
+        )
+
     # Step 7: Create unified list of all citations sorted by position
     citation_entries: List[Dict[str, Any]] = []
     
@@ -1057,7 +1294,15 @@ async def compile_citations(text: str) -> Dict[str, Any]:
             'position': cite.span[0],
             'citation': cite,
         })
-    
+
+    for group_id, chain in id_string_errors:
+        citation_entries.append({
+            'type': 'id_string_error',
+            'position': adjusted_spans[id(chain[0])][0],
+            'group_id': group_id,
+            'cites': chain,
+        })
+
     # Sort by position to maintain document order
     citation_entries.sort(key=lambda x: x['position'])
     
@@ -1188,23 +1433,34 @@ async def compile_citations(text: str) -> Dict[str, Any]:
 
             # Add occurrences with string group metadata
             for cite in resolved_cites:
-                cite_idx = _get_index(cite)
-                segment = all_segment_metadata.get(id(cite))
+                citation_db[resource_key]["occurrences"].append(
+                    _eyecite_occurrence(cite, adjusted_spans, all_segment_metadata)
+                )
 
-                cite_span = _get_adjusted_span(cite, adjusted_spans)
+        elif entry['type'] == 'id_string_error':
+            # Bluebook Rule 4.1 violation (see Step 6b): no antecedent to verify.
+            chain = entry['cites']
+            error_key = ResourceKey("unknown", ("id", str(entry['position'])))
+            group_start, group_end = string_group_ranges[entry['group_id']]
+            citation_db[_resource_identifier(error_key)] = {
+                "type": "unknown",
+                "resource": asdict(error_key),
+                "status": "error",
+                "substatus": _ID_AFTER_STRING_SUBSTATUS,
+                "verification_details": {
+                    "reason": 'Bluebook Rule 4.1: "id." cannot refer to a string citation',
+                    "string_citation": text[group_start:group_end].strip(),
+                },
+                "normalized_citation": " ".join(
+                    part for part in (_get_citation(chain[0]), _get_pin_cite(chain[0])) if part
+                ),
+                "full_citation_obj": None,
+                "occurrences": [
+                    _eyecite_occurrence(cite, adjusted_spans, all_segment_metadata)
+                    for cite in chain
+                ],
+            }
 
-                occurrence = {
-                    "citation_category": _citation_category(cite),
-                    "matched_text": _get_citation(cite),
-                    "span": cite_span,
-                    "index": cite_idx,
-                    "pin_cite": _get_pin_cite(cite),
-                    "citation_obj": cite,
-                    "string_group_id": segment.string_group_id if segment else None,
-                    "position_in_string": segment.position_in_string if segment else None,
-                }
-                citation_db[resource_key]["occurrences"].append(occurrence)
-        
         elif entry['type'] in ('secondary_full', 'secondary_short'):
             # Process secondary citation
             cite = entry['citation']
