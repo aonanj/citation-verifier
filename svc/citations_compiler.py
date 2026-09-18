@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterator, List, Sequence, Set, Tuple
+from typing import Any, Coroutine, Dict, Iterator, List, Sequence, Set, Tuple
 
 from eyecite import get_citations, resolve_citations
 from eyecite.models import (
@@ -41,7 +41,12 @@ from utils.cleaner import clean_str
 from utils.logger import get_logger
 from utils.resource_resolver import get_journal_author_title, resolve_case_year
 from utils.span_finder import get_span
-from verifiers.case_verifier import get_case_name, verify_case_citation
+from verifiers.case_verifier import (
+    case_lookup_triad,
+    get_case_name,
+    lookup_case_citations_batch,
+    verify_case_citation,
+)
 from verifiers.federal_law_verifier import (
     classify_full_law_jurisdiction,
     verify_federal_law_citation,
@@ -53,6 +58,11 @@ from verifiers.state_law_verifier import verify_state_law_citation
 logger = get_logger()
 
 _AdjustedSpans = Dict[int, Tuple[int, int]]
+
+# An un-started _verify_*_async coroutine. _build_citation_db runs in a worker
+# thread with no event loop, so it collects coroutines (not asyncio.Tasks) for
+# compile_citations to gather on the loop.
+_PendingVerification = Coroutine[Any, Any, Tuple[str, str, str | None, Dict[str, Any] | None]]
 
 # Journal verification hits OpenAlex/Semantic Scholar sequentially today via
 # time.sleep-based rate limiting inside the verifier; serialize the async
@@ -877,7 +887,7 @@ def _process_secondary_citations(
     )
     
     # Process full citations first
-    secondary_tasks: List[asyncio.Task] = []
+    secondary_tasks: List[_PendingVerification] = []
     for cite in full_citations:
         _add_secondary_to_db(cite, citation_db, is_full=True, secondary_tasks=secondary_tasks)
 
@@ -917,20 +927,21 @@ def _add_secondary_to_db(
     cite: SecondaryCitation,
     citation_db: Dict[str, Dict[str, Any]],
     is_full: bool,
-    secondary_tasks: List[asyncio.Task],
+    secondary_tasks: List[_PendingVerification],
 ) -> None:
     """Add a secondary citation to the citation database.
 
     Full citations that require Library of Congress verification are inserted
-    with a "pending" status and their verification is scheduled as an async
-    task (appended to secondary_tasks) so the blocking LOC API call runs off
-    the main event loop instead of stalling the whole request.
+    with a "pending" status and their verification coroutine is appended to
+    secondary_tasks, for compile_citations to gather on the event loop so the
+    blocking LOC API call runs off the main event loop instead of stalling the
+    whole request.
 
     Args:
         cite: The SecondaryCitation to add.
         citation_db: Citation database to update (modified in place).
         is_full: Whether this is a full citation (vs short form).
-        secondary_tasks: List to append a verification asyncio.Task to, for
+        secondary_tasks: List to append a verification coroutine to, for
             full citations that need LOC verification.
     """
     # Determine resource key
@@ -1013,9 +1024,7 @@ def _add_secondary_to_db(
 
     if is_full:
         secondary_tasks.append(
-            asyncio.create_task(
-                _verify_secondary_async(resource_key, cite, normalized, resource_dict)
-            )
+            _verify_secondary_async(resource_key, cite, normalized, resource_dict)
         )
     else:
         logger.info(
@@ -1028,36 +1037,16 @@ def _add_secondary_to_db(
 
 # --- Main compilation function --------------------------------------------
 
-async def compile_citations(
+def _build_citation_db(
     text: str,
-    note_spans: Sequence[Tuple[int, int]] = (),
-) -> Dict[str, Any]:
-    """Compile citations from the given text, handling string citations.
+    note_spans: Sequence[Tuple[int, int]],
+) -> Tuple[Dict[str, Dict[str, Any]], List[_PendingVerification]]:
+    """The synchronous part of compile_citations (steps 1-8).
 
-    This function:
-    1. Detects string citations (multiple citations separated by semicolons)
-    2. Splits string citations into individual segments
-    3. Processes each segment with eyecite
-    4. Resolves short citations to local antecedents within string groups
-    5. Detects and resolves secondary source citations
-    6. Sorts all citations by document position
-    7. Verifies citations against external sources
-
-    Args:
-        text: The document text to analyze.
-        note_spans: (start, end) of each footnote/endnote body inlined in
-            `text` (ExtractedDocument.footnotes); keeps secondary-source
-            citations from straddling a note boundary.
-
-    Returns:
-        Dict mapping resource keys to citation metadata, including:
-        - type, status, substatus
-        - normalized_citation
-        - occurrences (with string_group_id and position_in_string)
-        - verification_details
-
-    Raises:
-        Exception: If critical errors occur during processing.
+    Runs in a worker thread: detection, resolution and the (blocking) batched
+    CourtListener case lookup. Returns the citation database plus the
+    un-started coroutines for the remaining verifications, whose entries are
+    left "pending" for compile_citations to patch.
     """
     logger.info("Starting citation compilation (text length: %d chars)", len(text))
 
@@ -1154,7 +1143,7 @@ async def compile_citations(
 
         if not citations:
             logger.info("No citations detected in text; returning empty result set")
-            return {}
+            return {}, []
 
         for cite in citations:
             cite_span = get_span(cite)
@@ -1167,7 +1156,7 @@ async def compile_citations(
 
     if not all_resolutions or not any(all_resolutions.values()):
         logger.info("No citations detected; returning empty result set")
-        return {}
+        return {}, []
 
     all_resolutions = _resolve_string_local_shorts(
         all_resolutions,
@@ -1319,10 +1308,13 @@ async def compile_citations(
 
     # Step 8: Build citation database in sorted order
     citation_db: Dict[str, Dict[str, Any]] = {}
-    state_tasks = []
-    secondary_tasks: List[asyncio.Task] = []
-    journal_tasks: List[asyncio.Task] = []
-    federal_tasks: List[asyncio.Task] = []
+    state_tasks: List[_PendingVerification] = []
+    secondary_tasks: List[_PendingVerification] = []
+    journal_tasks: List[_PendingVerification] = []
+    federal_tasks: List[_PendingVerification] = []
+    # (resource_key, primary_full, normalized_key, resource_dict, fallback);
+    # verified after this loop with one batched CourtListener lookup.
+    case_entries: List[Tuple[str, Any, str, Dict[str, Any], str | None]] = []
 
     for entry in citation_entries:
         if entry['type'] == 'eyecite':
@@ -1360,13 +1352,9 @@ async def compile_citations(
 
             # Verification logic
             if entry_type == "case":
-                status, substatus, verification_details = verify_case_citation(
-                    primary_full,
-                    normalized_key,
-                    resource_dict,
-                    fallback_citation=fallback_value,
+                case_entries.append(
+                    (resource_key, primary_full, normalized_key, resource_dict, fallback_value)
                 )
-                logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
 
             elif entry_type == "law":
                 jurisdiction = None
@@ -1378,14 +1366,12 @@ async def compile_citations(
                     substatus = "federal_law_verification_pending"
                     verification_details = None
                     federal_tasks.append(
-                        asyncio.create_task(
-                            _verify_federal_async(
-                                resource_key,
-                                primary_full,
-                                normalized_key,
-                                resource_dict,
-                                fallback_value,
-                            )
+                        _verify_federal_async(
+                            resource_key,
+                            primary_full,
+                            normalized_key,
+                            resource_dict,
+                            fallback_value,
                         )
                     )
                 elif jurisdiction == "state":
@@ -1393,14 +1379,12 @@ async def compile_citations(
                     substatus = "state_law_verification_pending"
                     verification_details = None
                     state_tasks.append(
-                        asyncio.create_task(
-                            _verify_state_async(
-                                resource_key,
-                                primary_full,
-                                normalized_key,
-                                resource_dict,
-                                fallback_value,
-                            )
+                        _verify_state_async(
+                            resource_key,
+                            primary_full,
+                            normalized_key,
+                            resource_dict,
+                            fallback_value,
                         )
                     )
                 else:
@@ -1416,13 +1400,11 @@ async def compile_citations(
                 substatus = "journal_verification_pending"
                 verification_details = None
                 journal_tasks.append(
-                    asyncio.create_task(
-                        _verify_journal_async(
-                            resource_key,
-                            primary_full,
-                            normalized_key,
-                            resource_dict,
-                        )
+                    _verify_journal_async(
+                        resource_key,
+                        primary_full,
+                        normalized_key,
+                        resource_dict,
                     )
                 )
 
@@ -1473,9 +1455,71 @@ async def compile_citations(
             is_full = (entry['type'] == 'secondary_full')
             _add_secondary_to_db(cite, citation_db, is_full, secondary_tasks=secondary_tasks)
 
+    # Case law: one CourtListener text lookup covers up to 250 citations,
+    # instead of one request per citation.
+    if case_entries:
+        triads = [
+            case_lookup_triad(primary_full, normalized_key, resource_dict, fallback_value)
+            for _, primary_full, normalized_key, resource_dict, fallback_value in case_entries
+        ]
+        lookups = lookup_case_citations_batch(triads)
+        for (resource_key, primary_full, normalized_key, resource_dict, fallback_value), triad in zip(
+            case_entries, triads
+        ):
+            status, substatus, verification_details = verify_case_citation(
+                primary_full,
+                normalized_key,
+                resource_dict,
+                fallback_citation=fallback_value,
+                lookup=lookups.get(triad),
+            )
+            logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
+            citation_db[resource_key]["status"] = status
+            citation_db[resource_key]["substatus"] = substatus
+            citation_db[resource_key]["verification_details"] = verification_details
+
+    return citation_db, state_tasks + secondary_tasks + journal_tasks + federal_tasks
+
+
+async def compile_citations(
+    text: str,
+    note_spans: Sequence[Tuple[int, int]] = (),
+) -> Dict[str, Any]:
+    """Compile citations from the given text, handling string citations.
+
+    This function:
+    1. Detects string citations (multiple citations separated by semicolons)
+    2. Splits string citations into individual segments
+    3. Processes each segment with eyecite
+    4. Resolves short citations to local antecedents within string groups
+    5. Detects and resolves secondary source citations
+    6. Sorts all citations by document position
+    7. Verifies citations against external sources
+
+    Steps 1-6 and case-law verification are CPU-bound or blocking, so they run
+    in a worker thread (_build_citation_db); the event loop stays free to
+    answer other requests, including the platform's health checks.
+
+    Args:
+        text: The document text to analyze.
+        note_spans: (start, end) of each footnote/endnote body inlined in
+            `text` (ExtractedDocument.footnotes); keeps secondary-source
+            citations from straddling a note boundary.
+
+    Returns:
+        Dict mapping resource keys to citation metadata, including:
+        - type, status, substatus
+        - normalized_citation
+        - occurrences (with string_group_id and position_in_string)
+        - verification_details
+
+    Raises:
+        Exception: If critical errors occur during processing.
+    """
+    citation_db, pending_tasks = await asyncio.to_thread(_build_citation_db, text, note_spans)
+
     # Complete async verifications (state law + secondary sources + journals) concurrently,
     # off the main event loop, so slow external lookups don't block the request.
-    pending_tasks = state_tasks + secondary_tasks + journal_tasks + federal_tasks
     if pending_tasks:
         for resource_key_task, status, substatus, verification_details in await asyncio.gather(*pending_tasks):
             entry = citation_db.get(resource_key_task)

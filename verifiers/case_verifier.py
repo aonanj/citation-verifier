@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import httpx
 from eyecite.models import FullCitation
@@ -20,6 +20,17 @@ logger = get_logger()
 _COURT_LISTENER_LOOKUP_URL = "https://www.courtlistener.com/api/rest/v4/citation-lookup/"
 _COURT_LISTENER_TIMEOUT = httpx.Timeout(20.0, connect=10.0, read=10.0)
 _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
+
+# The text lookup looks up at most 250 citations per request; any past that
+# come back with a per-citation status of 429. The API throttles at 60 valid
+# citations per minute, but a request sent while under that budget is served
+# in full, so one text request replaces up to 250 volume/reporter/page ones.
+_COURT_LISTENER_BATCH_LIMIT = 250
+_COURT_LISTENER_BATCH_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+_BATCH_SEPARATOR = "; "
+
+CaseTriad = Tuple[str, str, str]
+LookupResult = Tuple[str, str | None, Dict[str, Any]]
 
 def _courtlistener_headers() -> Dict[str, str]:
     headers = {"Accept": "application/json"}
@@ -79,6 +90,32 @@ def _extract_lookup_case_year(payload: Dict[str, Any]) -> str | None:
     return None
 
 
+def _lookup_response_json(response: httpx.Response, request: Any) -> Tuple[str, str | None, Any]:
+    """Return ("ok", None, parsed JSON) for a 200 lookup response, else the error triple."""
+    if response.status_code == 401:
+        return "error", "lookup_auth_failed", {}
+    if response.status_code == 403:
+        return "error", "lookup_forbidden", {}
+    if response.status_code == 400:
+        logger.error("CourtListener lookup rejected payload %s: %s", request, response.text)
+        return "error", "lookup_bad_request", {}
+    if response.status_code >= 500:
+        return "error", "lookup_service_error", {}
+    if response.status_code != 200:
+        logger.error(
+            "CourtListener lookup unexpected status %s for %s",
+            response.status_code,
+            request,
+        )
+        return "error", "lookup_unexpected_status", {}
+
+    try:
+        return "ok", None, response.json()
+    except ValueError:
+        logger.error("CourtListener lookup returned non-JSON response for %s", request)
+        return "error", "lookup_invalid_payload", {}
+
+
 def _lookup_case_citation(
     volume: str | None,
     reporter: str | None,
@@ -110,37 +147,9 @@ def _lookup_case_citation(
         )
         return "error", "lookup_failed", {}
 
-    if response.status_code == 401:
-        return "error", "lookup_auth_failed", {}
-    if response.status_code == 403:
-        return "error", "lookup_forbidden", {}
-    if response.status_code == 400:
-        logger.error(
-            "CourtListener lookup rejected payload volume=%s reporter=%s page=%s: %s",
-            volume,
-            reporter,
-            page,
-            response.text,
-        )
-        return "error", "lookup_bad_request", {}
-    if response.status_code >= 500:
-        return "error", "lookup_service_error", {}
-    if response.status_code != 200:
-        logger.error(
-            "CourtListener lookup unexpected status %s for %s",
-            response.status_code,
-            request_payload,
-        )
-        return "error", "lookup_unexpected_status", {}
-
-    try:
-        payload = response.json()
-    except ValueError:
-        logger.error(
-            "CourtListener lookup returned non-JSON response for %s",
-            request_payload,
-        )
-        return "error", "lookup_invalid_payload", {}
+    status, substatus, payload = _lookup_response_json(response, request_payload)
+    if status != "ok":
+        return status, substatus, payload
 
     if isinstance(payload, dict):
         results = payload.get("results")
@@ -160,6 +169,79 @@ def _lookup_case_citation(
         return "ok", None, first
 
     return "error", "lookup_unrecognized_payload", {}
+
+
+def _lookup_case_citation_chunk(chunk: Sequence[CaseTriad]) -> Dict[CaseTriad, LookupResult]:
+    """Look up up to _COURT_LISTENER_BATCH_LIMIT triads with one text request.
+
+    Each result is mapped back to its triad by start_index. Triads missing
+    from the result are left out of the returned dict.
+    """
+    offsets: List[Tuple[int, int, CaseTriad]] = []
+    position = 0
+    for triad in chunk:
+        citation_length = len(" ".join(triad))
+        offsets.append((position, position + citation_length, triad))
+        position += citation_length + len(_BATCH_SEPARATOR)
+    text = _BATCH_SEPARATOR.join(" ".join(triad) for triad in chunk)
+    request = f"text lookup of {len(chunk)} citations"
+
+    try:
+        response = httpx.post(
+            _COURT_LISTENER_LOOKUP_URL,
+            json={"text": text},
+            headers=_courtlistener_headers(),
+            timeout=_COURT_LISTENER_BATCH_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        logger.error("CourtListener %s failed: %s", request, exc)
+        return {triad: ("error", "lookup_failed", {}) for triad in chunk}
+
+    status, substatus, payload = _lookup_response_json(response, request)
+    if status != "ok":
+        return {triad: (status, substatus, {}) for triad in chunk}
+    if not isinstance(payload, list):
+        logger.error("CourtListener %s returned an unrecognized payload", request)
+        return {}
+
+    results: Dict[CaseTriad, LookupResult] = {}
+    for item in payload:
+        start = item.get("start_index") if isinstance(item, dict) else None
+        if not isinstance(start, int):
+            continue
+        triad = next((t for s, e, t in offsets if s <= start < e), None)
+        if triad is None or triad in results:
+            continue
+        if item.get("status") == 429:
+            # Past the per-request limit: parsed but not looked up.
+            results[triad] = ("error", "lookup_unexpected_status", {})
+        else:
+            results[triad] = ("ok", None, item)
+    return results
+
+
+def lookup_case_citations_batch(
+    triads: Iterable[Tuple[str | None, str | None, str | None]],
+) -> Dict[CaseTriad, LookupResult]:
+    """Look up volume/reporter/page triads with as few requests as possible.
+
+    Returns the same (status, substatus, payload) per triad as
+    _lookup_case_citation. A triad the text lookup doesn't return falls back to
+    its own triad request; incomplete triads are skipped (verify_case_citation
+    reports them as missing_lookup_fields without a request).
+    """
+    unique: List[CaseTriad] = list(dict.fromkeys(t for t in triads if all(t)))
+    results: Dict[CaseTriad, LookupResult] = {}
+    for chunk_start in range(0, len(unique), _COURT_LISTENER_BATCH_LIMIT):
+        results.update(
+            _lookup_case_citation_chunk(unique[chunk_start:chunk_start + _COURT_LISTENER_BATCH_LIMIT])
+        )
+    missing = [triad for triad in unique if triad not in results]
+    if missing:
+        logger.info("CourtListener text lookup missed %d citation(s); looking them up singly", len(missing))
+    for triad in missing:
+        results[triad] = _lookup_case_citation(*triad)
+    return results
 
 
 def _prepare_case_lookup_fields(
@@ -203,6 +285,17 @@ def _prepare_case_lookup_fields(
 
     return volume, reporter, page
 
+
+def case_lookup_triad(
+    primary_full: FullCitation | None,
+    normalized_key: str | None,
+    resource_dict: Dict[str, Any] | None,
+    fallback_citation: str | None = None,
+) -> Tuple[str | None, str | None, str | None]:
+    """The (volume, reporter, page) verify_case_citation looks up."""
+    citation_text = clean_str(normalized_key) or clean_str(fallback_citation)
+    return _prepare_case_lookup_fields(primary_full, resource_dict, citation_text)
+
 # eyecite sometimes takes neighboring non-name text as a party ("Id. 141.",
 # "7th Cir. 1910).", a glued footnote number "Reflect- 41.", a PDF page footer
 # "... Repository, 2010"); such a party is discarded rather than reported.
@@ -244,16 +337,23 @@ def verify_case_citation(
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
+    lookup: LookupResult | None = None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
-    citation_text = clean_str(normalized_key) or clean_str(fallback_citation)
+    """Verify a case citation against CourtListener.
 
-    volume, reporter, page = _prepare_case_lookup_fields(
+    `lookup` is this citation's result from lookup_case_citations_batch; when
+    omitted, the citation is looked up on its own.
+    """
+    volume, reporter, page = case_lookup_triad(
         primary_full,
+        normalized_key,
         resource_dict,
-        citation_text,
+        fallback_citation,
     )
 
-    lookup_status, lookup_substatus, lookup_payload = _lookup_case_citation(volume, reporter, page)
+    if lookup is None:
+        lookup = _lookup_case_citation(volume, reporter, page)
+    lookup_status, lookup_substatus, lookup_payload = lookup
 
     if lookup_status != "ok":
         if lookup_status == "no_match" or lookup_substatus == "no match":
@@ -356,6 +456,8 @@ def verify_case_citation(
 
 
 __all__ = [
+    "case_lookup_triad",
     "get_case_name",
+    "lookup_case_citations_batch",
     "verify_case_citation",
 ]

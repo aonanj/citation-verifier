@@ -1,5 +1,6 @@
 # Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
+import asyncio
 import io
 import os
 from typing import Any, Dict, List, Optional, Sequence
@@ -630,7 +631,10 @@ async def verify_document(
     )
 
     try:
-        extracted = extract_document(storage)
+        # CPU-bound (PyMuPDF/OCR); run off the event loop so /api/health keeps
+        # answering during long documents — Render restarts an instance whose
+        # health checks fail for 60 s, killing the request with a 502.
+        extracted = await asyncio.to_thread(extract_document, storage)
     except ValueError as exc:
         logger.error(f"Error in extract_document: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
