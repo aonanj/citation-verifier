@@ -663,7 +663,7 @@ def _execute_govinfo_lookup(
         logger.error(f"GovInfo lookup failed for {url}: {response.status_code}")
         return "error", "lookup_service_error", details
     elif response.status_code != 200:
-        return "no match", None, details
+        return "no_match", None, details
 
     content_type = (response.headers.get("content-type") or "").lower()
     body = response.content or b""

@@ -147,16 +147,16 @@ def _lookup_case_citation(
         if isinstance(results, list):
             first = results[0] if results else None
             if first is None:
-                return "no match", None, payload
+                return "no_match", None, payload
             return "ok", None, first
         if payload:
             return "ok", None, payload
-        return "no match", None, {}
+        return "no_match", None, {}
 
     if isinstance(payload, list):
         first = payload[0] if payload else None
         if first is None:
-            return "no match", None, {}
+            return "no_match", None, {}
         return "ok", None, first
 
     return "error", "lookup_unrecognized_payload", {}
@@ -242,8 +242,8 @@ def verify_case_citation(
     lookup_status, lookup_substatus, lookup_payload = _lookup_case_citation(volume, reporter, page)
 
     if lookup_status != "ok":
-        if lookup_status == "no match":
-            return "no match", None, None
+        if lookup_status == "no_match" or lookup_substatus == "no match":
+            return "no_match", None, None
         details = None
         if lookup_substatus == "missing_lookup_fields":
             details = {
@@ -257,7 +257,7 @@ def verify_case_citation(
         return lookup_status, lookup_substatus, details
 
     if not lookup_payload:
-        return "no match", None, None
+        return "no_match", None, None
 
     expected_name = get_case_name(primary_full)
     if expected_name is None and primary_full is not None:

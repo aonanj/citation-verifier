@@ -5,7 +5,7 @@ import re
 import shutil
 from bisect import bisect_right
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Final, Iterable, List, Optional, Sequence, Set, Tuple
 from xml.etree import ElementTree as ET
 
@@ -34,35 +34,62 @@ _SUPERSCRIPT_CHARACTERS: Final = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹")
 _FOOTNOTE_LINE_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)[\.\)]?\s*(.*)")
 _FOOTNOTE_START_RE: Final = re.compile(r"^\s*([\d⁰¹²³⁴⁵⁶⁷⁸⁹]+)([\.\)])?\s*(.*)")
 
-# Private-use-area sentinels used to wrap an inlined footnote body between the
-# moment it's spliced into the running text and _strip_footnote_markers(),
-# which runs after _normalize() and converts the wrapped bodies back into
-# plain text plus a FootnoteSpan(number, start, end) per body. Chosen from the
-# Unicode Private Use Area (U+E000-U+F8FF, general category "Co") specifically
-# because \w, \s and every regex used in this module (_HYPHEN_WRAP_RE,
-# _EXCESS_BREAKS_RE, the smart-quote/apostrophe subs, _needs_space_between's
-# isalnum() check) do not match "Co" characters, so normalization sees these
-# markers as inert punctuation and never corrupts them.
+# Private-use-area sentinels used to wrap an inlined footnote/endnote body
+# between the moment it's spliced into the running text and
+# _strip_note_markers(), which runs after _normalize() and converts the
+# wrapped bodies back into plain text plus a NoteSpan(kind, ordinal, label,
+# start, end) per body. Chosen from the Unicode Private Use Area
+# (U+E000-U+F8FF, general category "Co") specifically because \w, \s and
+# every regex used in this module (_HYPHEN_WRAP_RE, _EXCESS_BREAKS_RE, the
+# smart-quote/apostrophe subs, _needs_space_between's isalnum() check) do not
+# match "Co" characters, so normalization sees these markers as inert
+# punctuation and never corrupts them. _FN_FIELD is a fourth sentinel that
+# separates the machine-readable "<kindcode><ordinal>" header from the
+# free-text printed `label` (e.g. "5", "iv", "†") within the marker - both
+# `label` and `body` are scrubbed of all four sentinel characters before
+# wrapping (see _scrub_sentinels) so a stray sentinel already present in
+# document content can never desynchronize the parser.
 _FN_OPEN: Final = ""
 _FN_SEP: Final = ""
 _FN_CLOSE: Final = ""
+_FN_FIELD: Final = ""
+_FN_SENTINEL_RE: Final = re.compile("[\ue000-\ue003]")
+
+_KIND_CODES: Final = {"footnote": "f", "endnote": "e"}
+_KIND_BY_CODE: Final = {v: k for k, v in _KIND_CODES.items()}
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
 
 
-@dataclass(frozen=True)
-class FootnoteSpan:
-    """A footnote's location within an ExtractedDocument's `text`.
+@dataclass(frozen=True, kw_only=True)
+class NoteSpan:
+    """A footnote's or endnote's inlined body location within ExtractedDocument.text.
 
-    `start`/`end` index into the fully normalized, sentinel-stripped text
-    (i.e. they are valid offsets into ExtractedDocument.text), not into any
-    intermediate representation.
+    `kind` is "footnote" or "endnote". `label` is the mark the source document
+    itself prints ("5", "iv", "B", "†") and may be the empty string when the
+    document's numFmt is "none" or for a custom mark this module can't decode
+    - consumers must fall back to displaying `ordinal` in that case. `label`
+    is deliberately NOT guaranteed unique: a document using numRestart or a
+    cycling numFmt (upperLetter/lowerLetter/chicago) repeats labels, so `label`
+    must never be used as a key or sort field. `ordinal` is the 1-based order
+    of the reference within its own `kind`, counted across the whole document
+    - it is the stable unique identity and the correct sort key. `start`/`end`
+    index into the fully normalized, sentinel-stripped text (i.e. they are
+    valid offsets into ExtractedDocument.text), not into any intermediate
+    representation.
     """
 
-    number: int
+    kind: str
+    ordinal: int
+    label: str
     start: int
     end: int
+
+
+# Transitional alias - remove once nothing outside this module imports the
+# old name.
+FootnoteSpan = NoteSpan
 
 
 @dataclass(frozen=True)
@@ -115,28 +142,68 @@ def _ocr_page(page: "pymupdf.Page") -> str:
         raise _OcrUnavailable(str(exc)) from exc
 
 
-def _wrap_footnote(number: int, body: str) -> str:
-    """Wrap a footnote body in sentinel markers for later recovery.
+def _scrub_sentinels(s: str) -> str:
+    """Strip PUA sentinels from a value being embedded in a wrapped marker.
+
+    Applied to both `label` and `body` at wrap time so that, between a
+    matched _FN_OPEN and _FN_CLOSE, there is guaranteed to be exactly one
+    _FN_FIELD and one _FN_SEP and no other sentinel character - the parser in
+    _strip_note_markers relies on this to never have its forward find() calls
+    truncated by a sentinel that leaked in from document content. Dropping a
+    stray sentinel character is already this module's behavior for any
+    unwrapped text (see _strip_note_markers' malformed-marker handling), so
+    this introduces no new class of data loss.
+    """
+    return _FN_SENTINEL_RE.sub("", s)
+
+
+def _wrap_note(kind: str, ordinal: int, label: str, body: str) -> str:
+    """Wrap a footnote/endnote body in sentinel markers for later recovery.
+
+    Wire format: OPEN + kindcode + decimal-ordinal + FIELD + label + SEP +
+    body + CLOSE, e.g. "<OPEN>f12<FIELD>xii<SEP>body text<CLOSE>". `label` is
+    whitespace-collapsed as well as sentinel-scrubbed so the header can never
+    contain a newline or a ". "-like sequence that would let _normalize()'s
+    _HYPHEN_WRAP_RE/_EXCESS_BREAKS_RE, or _para_with_inline_notes' stray-
+    space-before-punctuation cleanup, reach into it.
 
     Must only be called with an already-stripped, non-empty `body` - an empty
     body would produce a marker with nothing between _FN_SEP and _FN_CLOSE,
-    which _strip_footnote_markers still handles correctly (a zero-length
-    FootnoteSpan) but which is never useful to a caller.
+    which _strip_note_markers still handles correctly (a zero-length
+    NoteSpan) but which is never useful to a caller.
     """
-    return f"{_FN_OPEN}{number}{_FN_SEP}{body}{_FN_CLOSE}"
+    clean_label = " ".join(_scrub_sentinels(label).split())
+    clean_body = _scrub_sentinels(body)
+    return f"{_FN_OPEN}{_KIND_CODES[kind]}{ordinal}{_FN_FIELD}{clean_label}{_FN_SEP}{clean_body}{_FN_CLOSE}"
 
 
-def _strip_footnote_markers(text: str) -> Tuple[str, Tuple[FootnoteSpan, ...]]:
-    """Remove _wrap_footnote() markers, returning plain text plus their spans.
+def _parse_note_header(head: str) -> Optional[Tuple[str, int]]:
+    """Parse a wrapped marker's "<kindcode><decimal ordinal>" header.
+
+    Returns (kind, ordinal), or None if `head` isn't a recognized kind code
+    immediately followed by a positive integer.
+    """
+    if len(head) < 2:
+        return None
+    kind = _KIND_BY_CODE.get(head[0])
+    if kind is None or not head[1:].isdigit():
+        return None
+    ordinal = int(head[1:])
+    return (kind, ordinal) if ordinal >= 1 else None
+
+
+def _strip_note_markers(text: str) -> Tuple[str, Tuple[NoteSpan, ...]]:
+    """Remove _wrap_note() markers, returning plain text plus their spans.
 
     Single left-to-right pass so offsets are always consistent with the
     output text (no double-pass drift). A malformed marker (an _FN_OPEN with
-    no matching _FN_SEP/_FN_CLOSE, or a stray _FN_SEP/_FN_CLOSE with no
-    opener - not expected from this module's own writers, but guarded against
-    defensively) has its sentinel character(s) dropped without emitting a
-    FootnoteSpan, rather than corrupting the surrounding text.
+    no matching _FN_FIELD/_FN_SEP/_FN_CLOSE, an unrecognized header, or a
+    stray _FN_SEP/_FN_CLOSE/_FN_FIELD with no opener - not expected from this
+    module's own writers, but guarded against defensively) has its sentinel
+    character(s) dropped without emitting a NoteSpan, rather than corrupting
+    the surrounding text.
     """
-    footnotes: List[FootnoteSpan] = []
+    notes: List[NoteSpan] = []
     out: List[str] = []
     out_len = 0
     i = 0
@@ -145,77 +212,352 @@ def _strip_footnote_markers(text: str) -> Tuple[str, Tuple[FootnoteSpan, ...]]:
         ch = text[i]
         if ch == _FN_OPEN:
             close_idx = text.find(_FN_CLOSE, i + 1)
-            sep_idx = text.find(_FN_SEP, i + 1, close_idx if close_idx != -1 else n)
-            number_str = text[i + 1:sep_idx] if sep_idx != -1 else ""
-            if close_idx != -1 and sep_idx != -1 and number_str.isdigit():
+            limit = close_idx if close_idx != -1 else n
+            sep_idx = text.find(_FN_SEP, i + 1, limit)
+            field_idx = text.find(_FN_FIELD, i + 1, sep_idx if sep_idx != -1 else limit)
+            parsed = (
+                _parse_note_header(text[i + 1:field_idx])
+                if close_idx != -1 and sep_idx != -1 and field_idx != -1
+                else None
+            )
+            if parsed is not None:
+                kind, ordinal = parsed
+                label = text[field_idx + 1:sep_idx]
                 body = text[sep_idx + 1:close_idx]
                 start = out_len
                 out.append(body)
                 out_len += len(body)
-                footnotes.append(FootnoteSpan(number=int(number_str), start=start, end=out_len))
+                notes.append(NoteSpan(kind=kind, ordinal=ordinal, label=label, start=start, end=out_len))
                 i = close_idx + 1
                 continue
             i += 1
             continue
-        if ch == _FN_SEP or ch == _FN_CLOSE:
+        if ch in (_FN_SEP, _FN_CLOSE, _FN_FIELD):
             i += 1
             continue
         out.append(ch)
         out_len += 1
         i += 1
-    return "".join(out), tuple(footnotes)
+    return "".join(out), tuple(notes)
 
 
-def footnote_number_for_offset(footnotes: Sequence[FootnoteSpan], offset: int) -> Optional[int]:
-    """Return the footnote number containing `offset` in ExtractedDocument.text, or None.
+def note_for_offset(notes: Sequence[NoteSpan], offset: int) -> Optional[NoteSpan]:
+    """Return the NoteSpan containing `offset` in ExtractedDocument.text, or None.
 
-    Assumes `footnotes` is sorted by `start` ascending and non-overlapping,
-    which _strip_footnote_markers guarantees (it emits spans in the order
-    encountered scanning left-to-right).
+    Assumes `notes` is sorted by `start` ascending and non-overlapping, which
+    _strip_note_markers guarantees (it emits spans in the order encountered
+    scanning left-to-right) - footnote and endnote spans are interleaved in
+    that single sequence, sorted purely by document position. Grouping
+    endnotes after footnotes for display is a presentation-layer sort done by
+    each consumer, not an extraction-order guarantee made here.
     """
-    if not footnotes:
+    if not notes:
         return None
-    starts = [f.start for f in footnotes]
+    starts = [f.start for f in notes]
     idx = bisect_right(starts, offset) - 1
     if idx < 0:
         return None
-    span = footnotes[idx]
-    return span.number if span.start <= offset < span.end else None
+    span = notes[idx]
+    return span if span.start <= offset < span.end else None
 
 
-def _load_footnotes_map(docx: DocxDocument) -> Dict[int, str]:
-    """Parse word/footnotes.xml and return {footnote_id: text}."""
-    mapping: Dict[int, str] = {}
+def _find_package_part(docx: DocxDocument, partname: str) -> Optional[Any]:
+    """Locate an OPC part by its package-relative name (e.g. "/word/settings.xml")."""
     package_part = getattr(docx, "part", None)
     if package_part is None:
-        return mapping
+        return None
     package = getattr(package_part, "package", None)
     if package is None:
-        return mapping
-    footnotes_part = None
+        return None
     for part in package.iter_parts():
-        if str(part.partname) == "/word/footnotes.xml":
-            footnotes_part = part
-            break
-    if footnotes_part is None:
+        if str(part.partname) == partname:
+            return part
+    return None
+
+
+_SKIP_NOTE_TYPES: Final = frozenset({"separator", "continuationSeparator", "continuationNotice"})
+
+
+def _load_notes_map(docx: DocxDocument, partname: str, tag: str) -> Dict[int, str]:
+    """Parse word/footnotes.xml or word/endnotes.xml and return {id: text}.
+
+    `tag` is "w:footnote" or "w:endnote". A note is skipped when its `w:type`
+    is separator/continuationSeparator/continuationNotice - verified against
+    this repo's fixtures, both `footnotes.xml` and `endnotes.xml` carry this
+    attribute explicitly on their id -1/0 entries - or, belt-and-braces, when
+    its `w:id` is negative, for a producer that omits `w:type`. Checking
+    `w:type` (rather than only `fid < 0`, the previous behavior) also closes
+    a real gap: `w:id="0"` (continuationSeparator) is not negative, so the
+    old `fid < 0` check alone let it through; it was inert only because its
+    body happens to be empty.
+    """
+    mapping: Dict[int, str] = {}
+    part = _find_package_part(docx, partname)
+    if part is None:
         return mapping
-    root = ET.fromstring(footnotes_part.blob)
-    for fn in root.findall("w:footnote", _NS):
-        fid = int(fn.get(f"{{{_W_NS}}}id", "-1"))
-        if fid < 0:
-            continue  # skip separators/continuation
+    root = ET.fromstring(part.blob)
+    for note in root.findall(tag, _NS):
+        fid = int(note.get(f"{{{_W_NS}}}id", "-1"))
+        note_type = note.get(f"{{{_W_NS}}}type")
+        if fid < 0 or note_type in _SKIP_NOTE_TYPES:
+            continue
         # Collect text paragraph-by-paragraph to preserve basic structure
         paras: List[str] = []
-        for p in fn.findall(".//w:p", _NS):
+        for p in note.findall(".//w:p", _NS):
             runs = [t.text or "" for t in p.findall(".//w:t", _NS)]
             txt = "".join(runs).strip()
             if txt:
                 paras.append(txt)
         if not paras:
             # Fallback: any text nodes
-            paras = [t.text or "" for t in fn.findall(".//w:t", _NS)]
+            paras = [t.text or "" for t in note.findall(".//w:t", _NS)]
         mapping[fid] = "\n".join([t for t in paras if t]).strip()
     return mapping
+
+
+_DEFAULT_FOOTNOTE_FMT: Final = "decimal"
+# Word's own default endnote numFmt is lowerRoman (i, ii, iii...); ECMA-376
+# states the standard default is "decimal", but since the documents this
+# module processes are Word files, matching what Word itself displays is
+# what "honoring the document's numbering" means here.
+_DEFAULT_ENDNOTE_FMT: Final = "lowerRoman"
+_DEFAULT_NUM_START: Final = 1
+_DEFAULT_NUM_RESTART: Final = "continuous"
+_CHICAGO_SYMBOLS: Final = ("*", "†", "‡", "§")
+_ROMAN_VALUES: Final = (
+    (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+    (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+    (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+)
+
+
+@dataclass(frozen=True)
+class _NoteProps:
+    """Resolved w:footnotePr/w:endnotePr numbering properties for one scope
+
+    (either the document-wide default from word/settings.xml, or a specific
+    section's override).
+    """
+
+    num_fmt: str
+    num_start: int
+    num_restart: str  # "continuous" | "eachSect" | "eachPage"
+
+
+def _to_roman(value: int) -> str:
+    result: List[str] = []
+    remaining = value
+    for amount, numeral in _ROMAN_VALUES:
+        count, remaining = divmod(remaining, amount)
+        result.append(numeral * count)
+    return "".join(result)
+
+
+def _format_note_label(value: int, fmt: str) -> str:
+    """Render an automatic footnote/endnote number in an OOXML ST_NumberFormat.
+
+    Unknown or unimplemented formats fall back to decimal, so an unusual
+    document degrades to the pre-numFmt-support behavior (a plain integer)
+    rather than to a blank or wrong mark.
+    """
+    if value < 1:
+        return str(value)
+    if fmt == "decimal":
+        return str(value)
+    if fmt == "decimalZero":
+        return f"{value:02d}"
+    if fmt in ("upperRoman", "lowerRoman"):
+        if value > 3999:
+            return str(value)
+        roman = _to_roman(value)
+        return roman if fmt == "upperRoman" else roman.lower()
+    if fmt in ("upperLetter", "lowerLetter"):
+        # Word/LibreOffice repeat the alphabet rather than counting in base
+        # 26: 1=A, ..., 26=Z, 27=AA, 28=BB, ... (verified against
+        # LibreOffice's CHARS_UPPER_LETTER_N / lcl_formatChars1, the
+        # reference reimplementation of Word's own behavior).
+        letter = chr(ord("a") + (value - 1) % 26) * ((value - 1) // 26 + 1)
+        return letter.upper() if fmt == "upperLetter" else letter
+    if fmt == "chicago":
+        # Cycles *, dagger, double-dagger, section-sign, then repeats each
+        # doubled, tripled, etc. (verified against LibreOffice's
+        # table_Chicago / lcl_formatChars1 - this is Word's own behavior,
+        # not the broader "Chicago Manual of Style" footnote convention).
+        symbol = _CHICAGO_SYMBOLS[(value - 1) % 4]
+        return symbol * ((value - 1) // 4 + 1)
+    if fmt == "none":
+        return ""
+    logger.debug("Unsupported footnote/endnote numFmt %r; falling back to decimal", fmt)
+    return str(value)
+
+
+def _parse_note_pr(pr: Optional[Any], base: "_NoteProps") -> "_NoteProps":
+    """Apply the numbering children present on a w:footnotePr/w:endnotePr over `base`.
+
+    Each child (w:numFmt, w:numStart, w:numRestart) is an independent
+    override per ECMA-376 - a w:footnotePr/w:endnotePr carrying none of them
+    (e.g. the separator-reference-only w:footnotePr/w:endnotePr present in
+    every fixture's settings.xml) resolves to `base` unchanged. Works against
+    both a stdlib ElementTree element (settings.xml, via part.blob) and a
+    live lxml element (a section's w:sectPr) - both support
+    .find(path, namespaces) and .get("{ns}attr") (verified directly against
+    this repo's fixtures).
+    """
+    if pr is None:
+        return base
+    num_fmt = base.num_fmt
+    num_start = base.num_start
+    num_restart = base.num_restart
+    fmt_el = pr.find("w:numFmt", _NS)
+    if fmt_el is not None:
+        val = fmt_el.get(f"{{{_W_NS}}}val")
+        if val:
+            num_fmt = val
+    start_el = pr.find("w:numStart", _NS)
+    if start_el is not None:
+        val = start_el.get(f"{{{_W_NS}}}val")
+        if val is not None:
+            try:
+                num_start = int(val)
+            except ValueError:
+                pass
+    restart_el = pr.find("w:numRestart", _NS)
+    if restart_el is not None:
+        val = restart_el.get(f"{{{_W_NS}}}val")
+        if val:
+            num_restart = val
+    return _NoteProps(num_fmt=num_fmt, num_start=num_start, num_restart=num_restart)
+
+
+def _load_note_defaults(docx: DocxDocument) -> Tuple["_NoteProps", "_NoteProps"]:
+    """Return (footnote_defaults, endnote_defaults) resolved from word/settings.xml."""
+    footnote_base = _NoteProps(
+        num_fmt=_DEFAULT_FOOTNOTE_FMT, num_start=_DEFAULT_NUM_START, num_restart=_DEFAULT_NUM_RESTART
+    )
+    endnote_base = _NoteProps(
+        num_fmt=_DEFAULT_ENDNOTE_FMT, num_start=_DEFAULT_NUM_START, num_restart=_DEFAULT_NUM_RESTART
+    )
+    part = _find_package_part(docx, "/word/settings.xml")
+    if part is None:
+        return footnote_base, endnote_base
+    root = ET.fromstring(part.blob)
+    footnote_pr = root.find("w:footnotePr", _NS)
+    endnote_pr = root.find("w:endnotePr", _NS)
+    return _parse_note_pr(footnote_pr, footnote_base), _parse_note_pr(endnote_pr, endnote_base)
+
+
+def _resolve_section_note_props(
+    sect_pr: Optional[Any], fn_base: "_NoteProps", en_base: "_NoteProps"
+) -> Tuple["_NoteProps", "_NoteProps"]:
+    """Apply one w:sectPr's w:footnotePr/w:endnotePr override over the document defaults."""
+    if sect_pr is None:
+        return fn_base, en_base
+    footnote_pr = sect_pr.find("w:footnotePr", _NS)
+    endnote_pr = sect_pr.find("w:endnotePr", _NS)
+    return _parse_note_pr(footnote_pr, fn_base), _parse_note_pr(endnote_pr, en_base)
+
+
+@dataclass
+class _NoteNumbering:
+    """Per-document footnote/endnote numbering state for one DOCX body walk.
+
+    `_counters` tracks the automatic-numbering counter per kind, reset to 0
+    by begin_section() when that kind's new section properties specify
+    numRestart="eachSect" - the label value is `num_start + counter - 1`, so
+    a restart lands exactly on numStart. `_ordinals` tracks the 1-based
+    document-order identity per kind and is NEVER reset; it is what
+    NoteSpan.ordinal carries, and what group keys/sorts must use instead of
+    `label` (labels repeat under numRestart or a cycling numFmt). `_seen`
+    lets a repeated reference to the same (kind, w:id) reuse its first
+    (ordinal, label) rather than advancing either counter again, mirroring
+    the pre-existing `numbering.setdefault` behavior for a repeated w:id and
+    merging both inlined bodies into one UI group.
+    """
+
+    footnote_props: "_NoteProps"
+    endnote_props: "_NoteProps"
+    _counters: Dict[str, int] = field(default_factory=lambda: {"footnote": 0, "endnote": 0})
+    _ordinals: Dict[str, int] = field(default_factory=lambda: {"footnote": 0, "endnote": 0})
+    _seen: Dict[Tuple[str, int], Tuple[int, str]] = field(default_factory=dict)
+    _warned_each_page: bool = False
+
+    def _props(self, kind: str) -> "_NoteProps":
+        return self.footnote_props if kind == "footnote" else self.endnote_props
+
+    def begin_section(self, props: Tuple["_NoteProps", "_NoteProps"]) -> None:
+        """Advance to a new section's resolved footnote/endnote properties.
+
+        Per kind independently, since footnote and endnote numbering restart
+        independently per ECMA-376.
+        """
+        new_fn, new_en = props
+        if new_fn.num_restart == "eachSect":
+            self._counters["footnote"] = 0
+        if new_en.num_restart == "eachSect":
+            self._counters["endnote"] = 0
+        self.footnote_props = new_fn
+        self.endnote_props = new_en
+
+    def next_label(self, kind: str, nid: int, custom_mark: Optional[str]) -> Tuple[int, str]:
+        """Return (ordinal, label) for a reference to (kind, nid)."""
+        key = (kind, nid)
+        if key in self._seen:
+            return self._seen[key]
+        self._ordinals[kind] += 1
+        ordinal = self._ordinals[kind]
+        if custom_mark is not None:
+            # A custom-marked note does not consume an automatic number.
+            label = custom_mark
+        else:
+            props = self._props(kind)
+            if props.num_restart == "eachPage" and not self._warned_each_page:
+                logger.info(
+                    'numRestart="eachPage" is not derivable from DOCX XML (page '
+                    "boundaries are determined at Word's layout time, not stored "
+                    "in the document); treating footnote/endnote numbering as continuous."
+                )
+                self._warned_each_page = True
+            self._counters[kind] += 1
+            value = props.num_start + self._counters[kind] - 1
+            label = _format_note_label(value, props.num_fmt)
+        result = (ordinal, label)
+        self._seen[key] = result
+        return result
+
+
+def _custom_mark_text(ref: Any, run_el: Any) -> str:
+    """Literal mark that follows a customMarkFollows footnote/endnote reference.
+
+    Word emits the mark as the next sibling of the reference inside the same
+    w:r - either a w:t (plain-text mark, decoded fully) or a w:sym (symbol-
+    font mark whose w:char is a hex code point, normally in the F020-F0FF
+    private-use range). For w:sym, only code points whose low byte is
+    printable ASCII are decoded (covers w:char="F02A" -> "*"); anything else
+    yields "" and the caller falls back to displaying the ordinal, because
+    mapping Symbol/Wingdings code points to Unicode needs a font encoding
+    table this module doesn't have and must not guess at.
+    """
+    siblings = list(run_el)
+    try:
+        ref_idx = siblings.index(ref)
+    except ValueError:
+        return ""
+    for sibling in siblings[ref_idx + 1:]:
+        if sibling.tag == qn("w:t"):
+            return (sibling.text or "").strip()
+        if sibling.tag == qn("w:sym"):
+            char_attr = sibling.get(qn("w:char"))
+            if char_attr:
+                try:
+                    code_point = int(char_attr, 16)
+                except ValueError:
+                    return ""
+                low_byte = code_point & 0xFF
+                if 0x20 <= low_byte <= 0x7E:
+                    return chr(low_byte)
+            return ""
+    return ""
+
 
 def _iter_table_paragraphs(tbl: Table) -> Iterable[Paragraph]:
     for row in tbl.rows:
@@ -244,31 +586,51 @@ def _iter_block_items(container: DocxDocument | _Cell) -> Iterable[Paragraph | T
             yield Table(child, container)  # type: ignore[arg-type]
 
 
-def _para_with_inline_footnotes(
-    p: Paragraph, footnotes: Dict[int, str], numbering: Dict[int, int]
-) -> str:
-    """Inline footnote bodies at their reference markers.
+_FOOTNOTE_REF_QN: Final = qn("w:footnoteReference")
+_ENDNOTE_REF_QN: Final = qn("w:endnoteReference")
 
-    `numbering` maps a footnote's XML `w:id` (not the displayed number - ids
-    can have gaps, e.g. separator/continuation ids are skipped in
-    _load_footnotes_map) to its 1-based display number, assigned the first
-    time that id is seen across the whole document body walk (see
-    _extract_docx_with_footnotes). It is shared and mutated across every call
-    for a given document so numbering is consistent and sequential.
+
+def _para_with_inline_notes(
+    p: Paragraph,
+    footnotes: Dict[int, str],
+    endnotes: Dict[int, str],
+    numbering: "_NoteNumbering",
+) -> str:
+    """Inline footnote/endnote bodies at their reference markers.
+
+    `numbering` is shared and mutated across every call for a given document
+    so ordinals/labels stay consistent and sequential across the whole body
+    walk (see _extract_docx_with_footnotes).
+
+    Known limitation (documented, not fixed here): this walks `p.runs`, which
+    python-docx defines as direct `w:r` children only
+    (`CT_P.r_lst = ZeroOrMore("w:r")`). A footnote/endnote reference nested
+    inside a `w:hyperlink`, `w:ins`, `w:smartTag`, `w:sdt`, or `w:fldSimple`
+    is therefore silently skipped - its body is never inlined, no NoteSpan is
+    produced, and any citations inside it are attributed to "Main text".
     """
     parts: List[str] = []
     for run in p.runs:
         r = run._r
-        refs = list(r.iter(qn("w:footnoteReference")))
+        refs = [el for el in r.iter() if el.tag in (_FOOTNOTE_REF_QN, _ENDNOTE_REF_QN)]
         if refs:
             if run.text:
                 parts.append(run.text)
             for ref in refs:
-                fid = int(ref.get(qn("w:id")))
-                ftxt = footnotes.get(fid, "").strip()
-                display_number = numbering.setdefault(fid, len(numbering) + 1)
-                if ftxt:
-                    parts.append(f" {_wrap_footnote(display_number, ftxt)} ")
+                kind = "footnote" if ref.tag == _FOOTNOTE_REF_QN else "endnote"
+                nid_raw = ref.get(qn("w:id"))
+                try:
+                    nid = int(nid_raw)
+                except (TypeError, ValueError):
+                    continue
+                body_map = footnotes if kind == "footnote" else endnotes
+                ntxt = body_map.get(nid, "").strip()
+                custom_mark = None
+                if ref.get(qn("w:customMarkFollows")) in ("1", "true", "on"):
+                    custom_mark = _custom_mark_text(ref, r)
+                ordinal, label = numbering.next_label(kind, nid, custom_mark)
+                if ntxt:
+                    parts.append(f" {_wrap_note(kind, ordinal, label, ntxt)} ")
                 else:
                     parts.append("  ")
             continue
@@ -588,11 +950,31 @@ def _ends_with_whitespace(parts: List[str]) -> bool:
     return False
 
 
+@dataclass
+class _PdfNoteState:
+    """Threaded through the PDF render helpers for one document.
+
+    `used` answers "did this page already splice this printed number's body
+    inline?" and is cleared at the top of each page (see
+    _extract_pdf_page_text) - printed footnote numbers can repeat across
+    pages. `ordinal` is the document-global, never-reset 1-based order
+    footnotes are spliced into the text, matching NoteSpan.ordinal's
+    contract. Do not merge these two lifetimes.
+    """
+
+    used: Set[int] = field(default_factory=set)
+    ordinal: int = 0
+
+    def next_ordinal(self) -> int:
+        self.ordinal += 1
+        return self.ordinal
+
+
 def _render_span_with_inline_footnotes(
     span: Dict[str, Any],
     footnotes: Dict[int, str],
     primary_font_size: float,
-    used: Set[int],
+    state: "_PdfNoteState",
 ) -> str:
     text = span.get("text") or ""
     if not text:
@@ -620,9 +1002,9 @@ def _render_span_with_inline_footnotes(
                 result.append(" ")
             clean_text = footnote_text.strip()
             if clean_text:
-                result.append(_wrap_footnote(num_val, clean_text))
+                result.append(_wrap_note("footnote", state.next_ordinal(), str(num_val), clean_text))
                 result.append(" ")
-                used.add(num_val)
+                state.used.add(num_val)
         else:
             result.append(text[match.start():match.end()])
         last_idx = match.end()
@@ -634,14 +1016,14 @@ def _render_line_with_inline_footnotes(
     line: Dict[str, Any],
     footnotes: Dict[int, str],
     primary_font_size: float,
-    used: Set[int],
+    state: "_PdfNoteState",
 ) -> str:
     spans = line.get("spans", [])
     joined: List[str] = []
     last_nonempty_span: Optional[Dict[str, Any]] = None
     last_nonempty_part = ""
     for span in spans:
-        part = _render_span_with_inline_footnotes(span, footnotes, primary_font_size, used)
+        part = _render_span_with_inline_footnotes(span, footnotes, primary_font_size, state)
         if _needs_space_between(last_nonempty_span, last_nonempty_part, span, part):
             joined.append(" ")
         joined.append(part)
@@ -653,7 +1035,7 @@ def _render_line_with_inline_footnotes(
     return line_text.rstrip()
 
 
-def _extract_pdf_page_text(page: pymupdf.Page) -> str:
+def _extract_pdf_page_text(page: pymupdf.Page, state: "_PdfNoteState") -> str:
     try:
         # "rawdict" exposes per-character bboxes (unlike "dict", which only
         # gives pre-joined span text) - needed to detect inter-word spaces
@@ -691,7 +1073,7 @@ def _extract_pdf_page_text(page: pymupdf.Page) -> str:
             main_blocks.append(lines)
 
     footnotes = _parse_footnote_lines(footnote_lines)
-    used_footnotes: Set[int] = set()
+    state.used.clear()
 
     if not main_blocks:
         if footnotes:
@@ -705,19 +1087,19 @@ def _extract_pdf_page_text(page: pymupdf.Page) -> str:
         block_texts: List[str] = []
         for line in block_lines:
             block_texts.append(
-                _render_line_with_inline_footnotes(line, footnotes, primary_font_size, used_footnotes)
+                _render_line_with_inline_footnotes(line, footnotes, primary_font_size, state)
             )
         if block_texts:
             if lines_out and lines_out[-1] != "":
                 lines_out.append("")
             lines_out.extend(block_texts)
 
-    unused = [num for num in sorted(footnotes) if num not in used_footnotes and footnotes[num]]
+    unused = [num for num in sorted(footnotes) if num not in state.used and footnotes[num]]
     if unused:
         if lines_out:
             lines_out.append("")
         for num in unused:
-            lines_out.append(_wrap_footnote(num, footnotes[num]))
+            lines_out.append(_wrap_note("footnote", state.next_ordinal(), str(num), footnotes[num]))
 
     return "\n".join(lines_out)
 
@@ -743,12 +1125,13 @@ def extract_pdf_text(file: FileStorage) -> ExtractedDocument:
     ocr_skipped: List[int] = []
     any_page_has_text = False
     ocr_ok = ocr_available()
+    note_state = _PdfNoteState()
 
     try:
         pdf_bytes = file.stream.read()
         with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
             for page in doc:
-                page_text = _extract_pdf_page_text(page)
+                page_text = _extract_pdf_page_text(page, note_state)
                 if not page_text.strip():
                     raw_text = page.get_text("text") # type: ignore[attr-defined]
                     if raw_text.strip():
@@ -792,43 +1175,57 @@ def extract_pdf_text(file: FileStorage) -> ExtractedDocument:
 
     combined = "\n\n\f\n\n".join(page_texts).strip()
     normalized = _normalize(combined)
-    text, footnotes = _strip_footnote_markers(normalized)
+    text, footnotes = _strip_note_markers(normalized)
     return ExtractedDocument(text=text, footnotes=footnotes, ocr_skipped_pages=tuple(ocr_skipped))
 
 def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
-    """Return DOCX body text with footnotes inlined at their references.
+    """Return DOCX body text with footnotes/endnotes inlined at their references.
 
-    Each footnote body is wrapped in sentinel markers (see _wrap_footnote) so
-    the caller can later recover (display_number, span) via
-    _strip_footnote_markers. The display number is the 1-based order in which
-    each footnote's `w:id` is first encountered walking the document body
-    (paragraphs and nested table paragraphs, in document order) - this
-    matches Word's own displayed numbering, which is positional rather than
-    tied to the `w:id` values in word/footnotes.xml.
+    Each note body is wrapped in sentinel markers (see _wrap_note) so the
+    caller can later recover (kind, ordinal, label, span) via
+    _strip_note_markers. Automatic numbering honors the document's
+    w:footnotePr/w:endnotePr numFmt/numStart/numRestart, resolved from
+    word/settings.xml and overridden per-section by any w:sectPr's own
+    w:footnotePr/w:endnotePr (see _NoteNumbering/_resolve_section_note_props).
+    A w:sectPr sits on the last paragraph of the section it ends (except the
+    final section's, which is a direct w:body child) - so a section's
+    resolved properties are applied via numbering.begin_section() *after*
+    processing the paragraph that carries that sectPr, not to that paragraph
+    itself, matching the spec's own section-boundary semantics.
 
     Args:
         doc: An opened python-docx Document.
 
     Returns:
-        A single string containing paragraph text with inline footnotes.
+        A single string containing paragraph text with inline footnotes/endnotes.
 
     Raises:
         FileNotFoundError: If the file does not exist.
         ValueError: If the file does not have a .docx extension.
     """
-    footnotes = _load_footnotes_map(doc)
-    numbering: Dict[int, int] = {}
+    footnotes = _load_notes_map(doc, "/word/footnotes.xml", "w:footnote")
+    endnotes = _load_notes_map(doc, "/word/endnotes.xml", "w:endnote")
+
+    fn_base, en_base = _load_note_defaults(doc)
+    sect_prs = doc.element.xpath("./w:body/w:p/w:pPr/w:sectPr | ./w:body/w:sectPr")
+    resolved = [_resolve_section_note_props(sp, fn_base, en_base) for sp in sect_prs] or [(fn_base, en_base)]
+    numbering = _NoteNumbering(*resolved[0])
+    section_idx = 0
 
     lines: List[str] = []
 
     for block in _iter_block_items(doc):
         if isinstance(block, Paragraph):
-            t = _para_with_inline_footnotes(block, footnotes, numbering)
+            t = _para_with_inline_notes(block, footnotes, endnotes, numbering)
             if t:
                 lines.append(t)
+            if block._p.xpath("./w:pPr/w:sectPr"):
+                section_idx += 1
+                if section_idx < len(resolved):
+                    numbering.begin_section(resolved[section_idx])
         else:
             for par in _iter_table_paragraphs(block):
-                t = _para_with_inline_footnotes(par, footnotes, numbering)
+                t = _para_with_inline_notes(par, footnotes, endnotes, numbering)
                 if t:
                     lines.append(t)
 
@@ -837,14 +1234,15 @@ def _extract_docx_with_footnotes(doc: DocxDocument) -> str:
 
 
 def extract_docx_text(file: FileStorage) -> ExtractedDocument:
-    """Extract text from DOCX file, including footnotes inline.
+    """Extract text from DOCX file, including footnotes/endnotes inline.
 
     Args:
         file: FileStorage object containing DOCX data.
 
     Returns:
-        ExtractedDocument with normalized text (footnotes inline, sentinel
-        markers stripped) and each footnote's number/span within that text.
+        ExtractedDocument with normalized text (footnotes/endnotes inline,
+        sentinel markers stripped) and each note's kind/label/ordinal/span
+        within that text.
 
     Raises:
         ValueError: If DOCX cannot be opened or processed.
@@ -858,7 +1256,7 @@ def extract_docx_text(file: FileStorage) -> ExtractedDocument:
 
     full_text = _extract_docx_with_footnotes(doc)
     normalized = _normalize(full_text)
-    text, footnotes = _strip_footnote_markers(normalized)
+    text, footnotes = _strip_note_markers(normalized)
     return ExtractedDocument(text=text, footnotes=footnotes)
 
 

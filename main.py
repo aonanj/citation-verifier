@@ -23,7 +23,7 @@ from database.crud import (
 from database.models import Payment, UserAccount
 from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
-from svc.doc_processor import FootnoteSpan, extract_document, footnote_number_for_offset, ocr_available
+from svc.doc_processor import NoteSpan, extract_document, note_for_offset, ocr_available
 from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
 from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
@@ -39,9 +39,16 @@ class CitationOccurrence(BaseModel):
     # New fields for string citation support
     string_group_id: str | None = None
     position_in_string: int | None = None
-    # Footnote the occurrence's span falls within, if any (None for main-text
-    # occurrences or documents with no footnotes).
-    footnote_number: int | None = None
+    # The footnote/endnote the occurrence's span falls within, if any (all
+    # three None for main-text occurrences or documents with no
+    # footnotes/endnotes). note_label is the mark the document itself prints
+    # ("5", "iv", "†") and may be "" (numFmt="none" or an undecodable custom
+    # mark) - the frontend falls back to displaying note_ordinal in that
+    # case. note_label is NOT unique (numRestart/cycling numFmt repeat it);
+    # note_ordinal (1-based order within its kind) is the stable identity.
+    note_kind: str | None = None
+    note_label: str | None = None
+    note_ordinal: int | None = None
 
 
 class CitationEntry(BaseModel):
@@ -55,8 +62,10 @@ class CitationEntry(BaseModel):
     verification_details: Dict[str, Any] | None = None
 
 
-class FootnoteRange(BaseModel):
-    number: int
+class NoteRange(BaseModel):
+    kind: str
+    label: str
+    ordinal: int
     start: int
     end: int
 
@@ -65,7 +74,10 @@ class VerificationResponse(BaseModel):
     citations: List[CitationEntry]
     extracted_text: str | None = None
     remaining_credits: int
-    footnotes: List[FootnoteRange] = Field(default_factory=list)
+    # Every footnote AND endnote body's location, interleaved in document
+    # order (sorted by `start`) - not just footnotes, despite the field name
+    # (kept as-is to avoid a wire-format break).
+    footnotes: List[NoteRange] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
 
@@ -536,7 +548,7 @@ def _process_checkout_completion(
 
 def _sanitize_citations(
     raw: Dict[str, Dict[str, Any]],
-    footnotes: Sequence[FootnoteSpan] = (),
+    notes: Sequence[NoteSpan] = (),
 ) -> List[CitationEntry]:
     sanitized: List[CitationEntry] = []
     for resource_key, payload in raw.items():
@@ -546,9 +558,7 @@ def _sanitize_citations(
         for occurrence in occurrences_payload:
             span = occurrence.get("span")
             span_list = list(span) if isinstance(span, tuple) else span
-            footnote_number = (
-                footnote_number_for_offset(footnotes, span_list[0]) if span_list else None
-            )
+            note = note_for_offset(notes, span_list[0]) if span_list else None
             occurrences.append(
                 CitationOccurrence(
                     citation_category=occurrence.get("citation_category"),
@@ -557,7 +567,9 @@ def _sanitize_citations(
                     pin_cite=occurrence.get("pin_cite"),
                     string_group_id=occurrence.get("string_group_id"),
                     position_in_string=occurrence.get("position_in_string"),
-                    footnote_number=footnote_number,
+                    note_kind=note.kind if note else None,
+                    note_label=note.label if note else None,
+                    note_ordinal=note.ordinal if note else None,
                 )
             )
 
@@ -676,7 +688,8 @@ async def verify_document(
         extracted_text=extracted_text,
         remaining_credits=user.credits,
         footnotes=[
-            FootnoteRange(number=f.number, start=f.start, end=f.end) for f in extracted.footnotes
+            NoteRange(kind=n.kind, label=n.label, ordinal=n.ordinal, start=n.start, end=n.end)
+            for n in extracted.footnotes
         ],
         warnings=warnings,
     )

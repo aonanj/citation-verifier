@@ -1,0 +1,42 @@
+# graphify corpus exclusions.
+# Applied with --no-gitignore so locally-gitignored project docs
+# (RENDER_DEPLOYMENT.md, TROUBLESHOOTING_AUTH.md, FIX_*.md, QUICK_FIX.md)
+# still reach the graph. Everything .gitignore was handling that we still
+# want excluded is restated here, since --no-gitignore makes this file
+# authoritative.
+
+# Secrets — also caught by graphify's own sensitive-file patterns; belt-and-braces
+.env
+.env.*
+*.env
+.secrets/
+dev-certs/
+*.pem
+
+# Legal test fixtures — case-law content, not codebase architecture
+*.pdf
+*.docx
+
+# Binary/image assets — each image otherwise costs its own vision subagent
+*.png
+*.ico
+*.svg
+*.woff2
+docs/screenshots/
+public/fonts/
+public/google00d8a370f41ea25b.html
+
+# Generated / vendored (most are in graphify's _SKIP_DIRS; restated for --no-gitignore)
+.next/
+node_modules/
+.venv/
+__pycache__/
+*.egg-info/
+.ruff_cache/
+tests/
+*.log
+*.csv
+.DS_Store
+
+# Agent instructions — meta, not the system being graphed
+.claude/

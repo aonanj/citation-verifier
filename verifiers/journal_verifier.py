@@ -419,7 +419,8 @@ def _verify_title_with_semantic_scholar(
     search_author_norm = normalize_case_name_for_compare(search_author)
 
     # ---- rate + retry ----
-    import time, random
+    import random
+    import time
     BASE_INTERVAL = 1.2           # keep <= 1 RPS
     MAX_RETRIES = 5
 

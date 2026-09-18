@@ -14,14 +14,19 @@ logger = get_logger()
 OPENAI_API_KEY = "OPENAI_API_KEY"
 
 PROMPT = """
-You are an expert in legal research, specifically in the context of state laws, codes, and regulations. You are tasked with
-verifying the veracity of citations in legal documents. In this context, you should take the utmost care to ensure that the
-citations you are provided currently exist and are in effect. Accordingly, you should make no assumptions. You should use
-only the information explicitly provided to you when generating a response. Because accuracy is the paramount concern,
-responses indicating you don't have sufficient information to provide an answer or you are unable to locate a source
-corresponding to the a citation are absolutely acceptable. Moreover, you should provide a confidence score between 0.0 and
-1.0 indicating how confident you are your response. You should provide your response as a JSON object,
-according to this format:
+Below is at least one citation to a U.S. state law, statute, regulation, or similar state-level legal provision. 
+You must verify that existence and accuracy of the citation. To do so, you may need to resolve the state or state abbreviation, 
+reporter or other codification source (including title and section), year, and other relevant details. 
+You should verify each citation part is accurate and corresponds to an actual, in-effect state law citation. 
+Note that different states arrange their laws in different formats; therefore, there is no single correct format for the "section" field or the "reporter"
+field. 
+Your primary goal is to verify whether the citation you are provided corresponds to an actual, in-effect state law citation.
+You should use only the information explicitly provided to you when generating a response. 
+Because accuracy is the paramount concern, responses indicating you don't have sufficient information to provide an answer or you are unable to locate a source
+corresponding to a citation are acceptable. Moreover, you should provide a confidence score between 0.0 and
+1.0 indicating confidence for a citation verification. 
+If you are unable to verify all parts of a citation, you should adjust your confidence score downward to reflect this uncertainty. 
+Provide your response as a JSON object, according to this format:
     {
         "status": "verified" if citation is verified (e.g., confidence score >= 0.85), "warning" if confidence is low (e.g., 0.5 <= confidence < 0.85),
             "no_match" if no matching citation is found (e.g., confidence score < 0.5), or "error" if an error occurred,
@@ -29,9 +34,7 @@ according to this format:
             citation; if "no_match" or "error" this should be null),
         "confidence": confidence score as a float between 0.0 and 1.0, indicating how confident you are that the citation is valid
     }
-Do not return any text or other characters apart from the JSON object. Do not include any text or other characters outside of the JSON object. Note
-that different states arrange their laws in different formats; therefore, there is no single correct format for the "section" field or the "reporter"
-field. Your primary goal is to verify whether the citation you are provided corresponds to an actual, in-effect state law citation.\n\n
+Do not return any text or other characters apart from the JSON object. Do not include any text or other characters outside of the JSON object.\n\n
 """
 
 ALLOWED_DOMAINS = [
@@ -135,7 +138,7 @@ def verify_state_law_citation(
         if client is None:
             return "error", "openai_client_init_failed", None
 
-        input = PROMPT + f"Citation to verify: {bluebook_citation}"
+        input = PROMPT + f"**Citation to verify**: `{bluebook_citation}`"
         model: ResponsesModel = "gpt-5.6-luna"
 
         response = client.responses.create(

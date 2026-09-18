@@ -7,16 +7,22 @@ import { jsPDF } from 'jspdf';
 import { useAuth0 } from "@auth0/auth0-react";
 import styles from './page.module.css';
 
+type NoteKind = 'footnote' | 'endnote';
+
 type CitationOccurrence = {
   citation_category: string | null;
   matched_text: string | null;
   span: number[] | null;
   pin_cite: string | null;
-  footnote_number?: number | null;
+  note_kind?: NoteKind | null;
+  note_label?: string | null;
+  note_ordinal?: number | null;
 };
 
-type FootnoteRange = {
-  number: number;
+type NoteRange = {
+  kind: NoteKind;
+  label: string;
+  ordinal: number;
   start: number;
   end: number;
 };
@@ -54,7 +60,7 @@ type VerificationResponse = {
   citations: CitationEntry[];
   extracted_text?: string | null;
   remaining_credits?: number | null;
-  footnotes?: FootnoteRange[] | null;
+  footnotes?: NoteRange[] | null;
   warnings?: string[] | null;
 };
 
@@ -85,8 +91,25 @@ type HighlightRange = {
   end: number;
   theme: StatusTheme;
   citationOrder: number;
-  footnoteNumber: number | null;
+  note: { kind: NoteKind; label: string; ordinal: number } | null;
 };
+
+// Shared display helpers - the single place that decides how a footnote/
+// endnote mark is shown, so the Citation Status List, the Highlighted
+// Document tab, and the PDF export can never drift from one another (see
+// CLAUDE.md's "Footnote grouping" note). `noteMark`'s empty-label fallback is
+// load-bearing: numFmt="none" and an undecodable custom w:sym mark both
+// produce an empty `label`, and every caller must fall back to `ordinal`
+// rather than showing a blank badge.
+const noteMark = (label: string, ordinal: number): string => (label.trim().length > 0 ? label : String(ordinal));
+
+const noteBadge = (note: { kind: NoteKind; label: string; ordinal: number }): string =>
+  `${note.kind === 'endnote' ? 'e' : 'n'}.${noteMark(note.label, note.ordinal)}`;
+
+const noteGroupKey = (kind: NoteKind, ordinal: number): string => `${kind}:${ordinal}`;
+
+const noteGroupLabel = (kind: NoteKind, label: string, ordinal: number): string =>
+  `${kind === 'endnote' ? 'Endnote' : 'Footnote'} ${noteMark(label, ordinal)}`;
 
 const STATUS_THEMES: Record<string, StatusTheme> = {
   verified: {
@@ -381,7 +404,10 @@ const calculateHighlightRanges = (text: string, citations: CitationEntry[]): Hig
       end: match.end,
       theme,
       citationOrder: citationIndex + 1,
-      footnoteNumber: occurrence.footnote_number ?? null,
+      note:
+        occurrence.note_kind != null && occurrence.note_ordinal != null
+          ? { kind: occurrence.note_kind, label: occurrence.note_label ?? '', ordinal: occurrence.note_ordinal }
+          : null,
     });
 
     searchCursor = Math.max(searchCursor, match.end);
@@ -400,7 +426,7 @@ const calculateHighlightRanges = (text: string, citations: CitationEntry[]): Hig
 const buildHighlightSegments = (
   extractedText: string | null,
   citations: CitationEntry[],
-  footnotes: FootnoteRange[],
+  footnotes: NoteRange[],
   footnoteMode: boolean,
 ): HighlightSegment[] => {
   if (!extractedText || extractedText.length === 0) {
@@ -435,15 +461,15 @@ const buildHighlightSegments = (
       const markerPos = Math.max(footnote.start, cursor);
       if (markerPos > cursor) {
         segments.push({
-          key: `plain-${cursor}-${markerPos}-fn${footnote.number}`,
+          key: `plain-${cursor}-${markerPos}-${footnote.kind}${footnote.ordinal}`,
           content: extractedText.slice(cursor, markerPos),
         });
         cursor = markerPos;
       }
       segments.push({
-        key: `marker-${footnote.number}-${footnote.start}`,
+        key: `marker-${footnote.kind}-${footnote.ordinal}-${footnote.start}`,
         content: '',
-        marker: `n.${footnote.number}`,
+        marker: noteBadge(footnote),
       });
       markerIdx += 1;
     }
@@ -466,11 +492,7 @@ const buildHighlightSegments = (
       return;
     }
 
-    const indicator = footnoteMode
-      ? range.footnoteNumber != null
-        ? `n.${range.footnoteNumber}`
-        : 'text'
-      : `#${range.citationOrder}`;
+    const indicator = footnoteMode ? (range.note ? noteBadge(range.note) : 'text') : `#${range.citationOrder}`;
 
     segments.push({
       key: `highlight-${range.key}-${index}`,
@@ -497,11 +519,11 @@ const buildHighlightSegments = (
   return segments;
 };
 
-// Splices a "[n.N] " marker into `text` right where each footnote body
-// begins, for the PDF export's plain-text "Extracted document text" section
-// (which has no highlight spans to snap markers against, unlike
-// buildHighlightSegments).
-const buildTextWithFootnoteMarkers = (text: string, footnotes: FootnoteRange[]): string => {
+// Splices a "[n.N] "/"[e.N] " marker into `text` right where each footnote/
+// endnote body begins, for the PDF export's plain-text "Extracted document
+// text" section (which has no highlight spans to snap markers against,
+// unlike buildHighlightSegments).
+const buildTextWithFootnoteMarkers = (text: string, footnotes: NoteRange[]): string => {
   if (footnotes.length === 0) {
     return text;
   }
@@ -511,7 +533,7 @@ const buildTextWithFootnoteMarkers = (text: string, footnotes: FootnoteRange[]):
   sorted.forEach((footnote) => {
     const pos = Math.max(footnote.start, cursor);
     parts.push(text.slice(cursor, pos));
-    parts.push(`[n.${footnote.number}] `);
+    parts.push(`[${noteBadge(footnote)}] `);
     cursor = pos;
   });
   parts.push(text.slice(cursor));
@@ -671,22 +693,25 @@ type FootnoteRow = {
   occurrence: CitationOccurrence;
   occurrenceIndex: number;
   isPrimary: boolean;
-  footnoteNumber: number | null;
+  noteKind: NoteKind | null;
+  noteLabel: string | null;
+  noteOrdinal: number | null;
 };
 
 type FootnoteGroup = {
   key: string;
   label: string;
-  footnoteNumber: number | null;
+  noteKind: NoteKind | null;
+  noteOrdinal: number | null;
   rows: FootnoteRow[];
 };
 
-// Groups every citation's occurrences by the footnote they were found in
-// (a "Main text" group, key null, holds occurrences with no footnote_number).
-// Used only when at least one occurrence actually carries a footnote_number
-// (see footnoteMode in the component) - for documents with no footnotes this
-// still runs but produces a single "Main text" group that the component
-// ignores in favor of the original 1..N card list.
+// Groups every citation's occurrences by the footnote/endnote they were
+// found in (a "Main text" group, key "main", holds occurrences with no
+// note_kind). Used only when at least one occurrence actually carries a
+// note_kind (see footnoteMode in the component) - for documents with no
+// footnotes/endnotes this still runs but produces a single "Main text" group
+// that the component ignores in favor of the original 1..N card list.
 const buildFootnoteGroups = (citations: CitationEntry[]): FootnoteGroup[] => {
   const rows: FootnoteRow[] = [];
 
@@ -704,20 +729,26 @@ const buildFootnoteGroups = (citations: CitationEntry[]): FootnoteGroup[] => {
         occurrence,
         occurrenceIndex,
         isPrimary: occurrenceIndex === primaryIndex,
-        footnoteNumber: occurrence.footnote_number ?? null,
+        noteKind: occurrence.note_kind ?? null,
+        noteLabel: occurrence.note_label ?? null,
+        noteOrdinal: occurrence.note_ordinal ?? null,
       });
     });
   });
 
   const groupMap = new Map<string, FootnoteGroup>();
   rows.forEach((row) => {
-    const groupKey = row.footnoteNumber === null ? 'main' : `footnote-${row.footnoteNumber}`;
+    const groupKey = row.noteKind === null || row.noteOrdinal === null ? 'main' : noteGroupKey(row.noteKind, row.noteOrdinal);
     let group = groupMap.get(groupKey);
     if (!group) {
       group = {
         key: groupKey,
-        label: row.footnoteNumber === null ? 'Main text' : `Footnote ${row.footnoteNumber}`,
-        footnoteNumber: row.footnoteNumber,
+        label:
+          row.noteKind === null || row.noteOrdinal === null
+            ? 'Main text'
+            : noteGroupLabel(row.noteKind, row.noteLabel ?? '', row.noteOrdinal),
+        noteKind: row.noteKind,
+        noteOrdinal: row.noteOrdinal,
         rows: [],
       };
       groupMap.set(groupKey, group);
@@ -744,14 +775,16 @@ const buildFootnoteGroups = (citations: CitationEntry[]): FootnoteGroup[] => {
     });
   });
 
+  // Main text first, then footnote groups, then endnote groups - each block
+  // ordered by `ordinal` (document-order identity), NEVER by `label`, since
+  // numRestart or a cycling numFmt make labels repeat across groups.
+  const kindRank = (kind: NoteKind | null): number => (kind === null ? 0 : kind === 'footnote' ? 1 : 2);
   groups.sort((a, b) => {
-    if (a.footnoteNumber === null) {
-      return b.footnoteNumber === null ? 0 : -1;
+    const rankDiff = kindRank(a.noteKind) - kindRank(b.noteKind);
+    if (rankDiff !== 0) {
+      return rankDiff;
     }
-    if (b.footnoteNumber === null) {
-      return 1;
-    }
-    return a.footnoteNumber - b.footnoteNumber;
+    return (a.noteOrdinal ?? 0) - (b.noteOrdinal ?? 0);
   });
 
   return groups;
@@ -761,7 +794,7 @@ export default function ResultsPage() {
   const router = useRouter();
   const [citations, setCitations] = useState<CitationEntry[]>([]);
   const [extractedText, setExtractedText] = useState<string | null>(null);
-  const [footnotes, setFootnotes] = useState<FootnoteRange[]>([]);
+  const [footnotes, setFootnotes] = useState<NoteRange[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'document'>('list');
   const [isExporting, setIsExporting] = useState(false);
@@ -803,7 +836,7 @@ export default function ResultsPage() {
 
   const footnoteGroups = useMemo(() => buildFootnoteGroups(citations), [citations]);
   const footnoteMode = useMemo(
-    () => footnoteGroups.some((group) => group.footnoteNumber !== null),
+    () => footnoteGroups.some((group) => group.noteKind !== null),
     [footnoteGroups],
   );
   const displayedFootnoteGroups = useMemo(() => {

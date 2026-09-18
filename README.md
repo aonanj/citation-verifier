@@ -34,7 +34,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
   - **State law**: OpenAI `gpt-5.6-luna` Responses API with built-in web search tool access (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
   - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries on title and author, with fallback to query on volume, journal, page, and year.
   - **Secondary Sources**: Library of Congress Search API query with fuzzy matching for legal encyclopedias (C.J.S., Am. Jur.), restatements, ALR annotations, and treatises.   
-- **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences (each carrying its footnote number, if any), extracted text, footnote location ranges, and reference citation grouping information for the UI.
+- **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences (each carrying the footnote or endnote mark it falls within, if any), extracted text, footnote/endnote location ranges, and reference citation grouping information for the UI.
 
 Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
@@ -48,7 +48,7 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 - **FastAPI** (`main.py`): Exposes async `POST /api/verify` endpoint, enforces file-type and size validation, orchestrates extraction and verification, and returns a typed Pydantic response model with CORS support for multiple origins.
 - **Document processing** (`svc/doc_processor.py`):
   - PDF parsing via PyMuPDF with heuristics to merge wrapped lines and pull footnotes into context.
-  - DOCX traversal that walks paragraphs, nested tables, and footnote XML, inlining references next to their markers.
+  - DOCX traversal that walks paragraphs, nested tables, and footnote/endnote XML, inlining references next to their markers and honoring the document's own numbering format, start value, and per-section restarts.
   - OCR fallback for image-only PDFs using Pillow + Tesseract.
   - Normalization routines that standardize whitespace, smart quotes, and superscripts.
 - **Citation compiler** (`svc/citations_compiler.py`): Cleans text, resolves eyecite clusters to stable `ResourceKey`s, records occurrences, processes string citations and secondary sources, and calls the appropriate verifier based on citation type and jurisdiction classification. Performs async verification for improved performance.
@@ -148,27 +148,28 @@ Create `.env` in the project root for backend configuration:
 ```bash
 # API Keys for verification services
 COURTLISTENER_API_TOKEN=...   # CourtListener API (case verifications)
+COURT_LISTENER_API_BASE=https://www.courtlistener.com/api/rest/v4
 GOVINFO_API_KEY=...           # GovInfo API (federal law verifications)
 OPENAI_API_KEY=...            # OpenAI API (state law verifications, gpt-5.6-luna model)
 SEMANTIC_SCHOLAR_API_KEY=...  # Semantic Scholar API (journal verifications)
 OPENALEX_MAILTO=...           # OpenAlex polite pool (journal verifications, optional)
+LEGISCAN_API_KEY=...          # Legiscan API 
 
 # Logging configuration
-LOG_TO_FILE=true              # Optional: write logs to disk
-LOG_FILE_PATH=./citeverify.log
+LOG_TO_FILE=false              # Optional: write logs to disk
 
 # Authentication & payments
 AUTH0_DOMAIN=<tenant>.auth0.com
-AUTH0_AUDIENCE=...
-# Optional override; defaults to https://<tenant>.auth0.com/
-AUTH0_ISSUER=https://<tenant>.auth0.com/
+AUTH0_AUDIENCE=https://<audience> # Note no trailing `/` 
+AUTH0_ISSUER=https://<tenant>.auth0.com/ # Optional override; defaults to https://<tenant>.auth0.com/
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-FRONTEND_BASE_URL=http://localhost:3000  # Stripe success/cancel redirect base
-DATABASE_URL=sqlite:///./citation_verifier.db  # Optional: override default SQLite path
+DB_URL=postgresql://<neon.tech_db>?sslmode=require&channel_binding=require 
+DATABASE_URL=postgresql://<neon.tech_db>?sslmode=require&channel_binding=require 
 
 # CORS / backend routing
-BACKEND_URL=http://localhost:8000  # Or production URL
+BACKEND_URL=http://jurischeck.onrender.com/  # Or production URL
+PORT=8000             # Should correspond to Dockerfile port
 ```
 
 ### Database Setup (Neon)
@@ -287,7 +288,7 @@ The Dockerfile uses Python 3.13-slim, installs Tesseract OCR, and exposes port 8
 - **Payments**: Each verification consumes one credit ($4.50 per document, with 5/10/20-document bundles available). Purchase credits via the Stripe checkout buttons in the UI.
 - **File limits**: Uploaded files must be PDF, DOCX, or TXT format. Files are validated before processing.
 - **Results visualization**: The frontend highlights every matched occurrence in context; hover or scan the numbered badges to correlate citation cards with text spans.
-- **Citation sequence**: The sequential order of citations in the document is maintained. For documents with footnote citations, the Citation Status List is grouped by footnote ("Main text", "Footnote 1", "Footnote 2", …) instead of a flat 1..N list, and the Highlighted Document tab and PDF export mark each footnote's location with an `n.N` badge, so the report's numbering matches the document's own footnote numbering. DOCX footnote numbers follow the order footnotes first appear in the body (matching Word's own display numbering); custom numbering restarts and endnotes are not honored.
+- **Citation sequence**: The sequential order of citations in the document is maintained. For documents with footnotes or endnotes, the Citation Status List is grouped by note ("Main text", "Footnote 1", "Footnote 2", …, "Endnote i", "Endnote ii", …) instead of a flat 1..N list, and the Highlighted Document tab and PDF export mark each note's location with an `n.<mark>`/`e.<mark>` badge, so the report's numbering matches the mark the document itself prints — including a document's own starting number, numbering format (roman numerals, letters, or symbols), and per-section restarts. The one DOCX numbering feature not derivable from the file at all is a restart on every page (`numRestart="eachPage"`), since page breaks are computed by Word at layout time and aren't stored in the document; such documents are treated as continuously numbered.
 - **String citations**: Citations separated by semicolons are individually verified. The sequential order of citations in the document is maintained.
 - **Status interpretation**: `substatus` provides detailed explanations for warnings and errors (e.g., `case name mismatch`, `closest_match: …`, `confidence: 0.75`).
 

@@ -10,7 +10,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from database import models  # noqa: F401
 from database.session import Base, engine
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from typing import Any, Dict, Generator, Tuple
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine, URL, make_url
+from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
