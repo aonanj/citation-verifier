@@ -559,6 +559,8 @@ async def _structured_call(
             for content in getattr(item, "content", None) or []:
                 if getattr(content, "type", None) == "refusal":
                     raise CitationExtractionError(f"{schema_name} request refused")
+        logger.info(f"LLM Response: {response}")
+        logger.info(f"LLM Response output_text: {response.output_text}")
         try:
             return json.loads(response.output_text)
         except (TypeError, ValueError) as exc:
