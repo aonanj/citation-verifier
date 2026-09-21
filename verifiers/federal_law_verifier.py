@@ -7,7 +7,7 @@ import os
 import re
 from typing import Any, Dict, Final, List, Literal, Tuple
 
-import httpx
+import httpx2
 
 from svc.citation_record import CitationRecord
 from utils.cleaner import clean_str
@@ -17,7 +17,7 @@ logger = get_logger()
 
 GOVINFO_BASE_URL = "https://www.govinfo.gov/link/"
 GOVINFO_API_KEY = "GOVINFO_API_KEY"
-GOVINFO_TIMEOUT = httpx.Timeout(180.0, connect=100.0, read=100.0)
+GOVINFO_TIMEOUT = httpx2.Timeout(180.0, connect=100.0, read=100.0)
 
 GOVINFO_REPORTER_MAP = {
     "U.S.C.": "uscode", # /uscode/{title}/{section}
@@ -570,15 +570,15 @@ def _execute_govinfo_lookup(
     logger.info(f"federal_law_verifier.verify_federal_law_citation: Built GovInfo URL: {url}")
 
     try:
-        response = httpx.get(
+        response = httpx2.get(
             url,
             params=params,
-            auth=httpx.BasicAuth(api_key, ""),
+            auth=httpx2.BasicAuth(api_key, ""),
             headers={"accept": "*/*"},
             follow_redirects=True,
             timeout=GOVINFO_TIMEOUT,
         )
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         logger.error("GovInfo lookup failed for %s: %s", url, exc)
         return "error", "lookup_failed", {
             "source": "govinfo",

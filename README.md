@@ -121,7 +121,7 @@ Major libraries are pinned in `requirements.txt` (compiled with Python 3.13):
 - `fastapi`, `uvicorn` – API framework and ASGI server
 - `eyecite` – legal citation parsing and clustering
 - `pymupdf`, `pytesseract`, `python-docx`, `Pillow` – document ingestion and OCR
-- `httpx`, `rapidfuzz`, `openai` – HTTP client, fuzzy matching, and AI verification
+- `httpx2`, `rapidfuzz`, `openai` – HTTP client, fuzzy matching, and AI verification
 - `pydantic` – data validation and serialization
 - `python-dotenv`, `werkzeug`, `regex`, `psycopg[binary]` – supporting utilities
 

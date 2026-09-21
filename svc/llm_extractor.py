@@ -316,7 +316,8 @@ citation), give them all the same number (1, 2, 3, ... per string in this chunk)
 NOTES: footnote and endnote text appears inline, wrapped in <footnote n="..."> and <endnote n="..."> tags. \
 The tags are not part of the document: never include them in matched_text or any field.
 
-Return the citations in the order they appear, or an empty list if there are none."""
+Return the citations in the order they appear, or an empty list if there are none. Produce exactly \
+one message: the final JSON object. Never emit a preliminary, placeholder or empty answer before it."""
 
 _RESOLVE_INSTRUCTIONS = """\
 Use the bluebook-citation-extraction skill in `resolutions` mode.\n\n \
@@ -338,7 +339,9 @@ reporter; the name may be shortened).
 "supra note N" means that full citation appears in footnote N.
 - A reference ("Roe at 115") refers to the earlier full citation of that case.
 Return null when no earlier full citation fits; do not guess. Only the id of a full citation that comes \
-earlier is a valid answer. Return one entry for every short, id, ibid, supra and reference citation."""
+earlier is a valid answer. Return one entry for every short, id, ibid, supra and reference citation. \
+Produce exactly one message: the final JSON object. Never emit a preliminary, placeholder or empty \
+answer before it."""
 
 
 # --- chunking -------------------------------------------------------------------------
@@ -493,6 +496,64 @@ def _add_stat(key: str, count: int = 1) -> None:
         usage[key] = usage.get(key, 0) + count
 
 
+def _response_json_objects(response: Any) -> List[Dict[str, Any]]:
+    """Every top-level JSON object the response's assistant messages contain, in order.
+
+    `response.output_text` is not the answer: the SDK concatenates the text of *every*
+    `message` item in `response.output`. A hosted tool (the skill's container) makes the
+    model emit more than one message, and `text.format` is strict, so each message is its
+    own complete schema instance - the aggregate is several JSON objects glued together
+    and `json.loads` rejects it. Decode each message separately, and tolerate several
+    objects inside one message as well.
+    """
+    decoder = json.JSONDecoder()
+    objects: List[Dict[str, Any]] = []
+    for item in response.output or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        text = "".join(
+            content.text
+            for content in (getattr(item, "content", None) or [])
+            if getattr(content, "type", None) == "output_text"
+        )
+        position = 0
+        while position < len(text):
+            while position < len(text) and text[position].isspace():
+                position += 1
+            if position >= len(text):
+                break
+            try:
+                value, position = decoder.raw_decode(text, position)
+            except ValueError:
+                break
+            if isinstance(value, dict):
+                objects.append(value)
+    return objects
+
+
+def _select_payload(objects: List[Dict[str, Any]], key: str, schema_name: str) -> Dict[str, Any]:
+    """The model's answer among the objects it returned.
+
+    Under a strict JSON schema every message is a complete schema instance, so an extra
+    message is a placeholder ({"citations": []} before the real answer), never half of a
+    split answer: take the last object with a non-empty payload. The objects are never
+    merged - a document may legitimately cite the same authority twice, so a merge would
+    double-count rather than dedupe.
+    """
+    if not objects:
+        raise CitationExtractionError(f"{schema_name} response is not valid JSON")
+    if len(objects) > 1:
+        _add_stat("multi_message_response")
+        logger.warning(
+            "%s response held %d JSON objects (payload lengths %s); using the last non-empty one",
+            schema_name, len(objects), [len(o.get(key) or []) for o in objects],
+        )
+    for candidate in reversed(objects):
+        if candidate.get(key):
+            return candidate
+    return objects[-1]
+
+
 async def _structured_call(
     client: Any,
     config: _Config,
@@ -559,12 +620,8 @@ async def _structured_call(
             for content in getattr(item, "content", None) or []:
                 if getattr(content, "type", None) == "refusal":
                     raise CitationExtractionError(f"{schema_name} request refused")
-        logger.info(f"LLM Response: {response}")
-        logger.info(f"LLM Response output_text: {response.output_text}")
-        try:
-            return json.loads(response.output_text)
-        except (TypeError, ValueError) as exc:
-            raise CitationExtractionError(f"{schema_name} response is not valid JSON") from exc
+        # schema_name is the schema's single payload key ("citations", "resolutions").
+        return _select_payload(_response_json_objects(response), schema_name, schema_name)
 
 
 async def _extract_chunk(

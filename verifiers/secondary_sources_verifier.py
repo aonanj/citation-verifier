@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Tuple
 
-import httpx
+import httpx2
 from rapidfuzz import fuzz
 
 from svc.citation_record import CitationRecord
@@ -23,7 +23,7 @@ logger = get_logger()
 
 # Library of Congress Search API configuration
 _LOC_SEARCH_URL = "https://www.loc.gov/search/"
-_LOC_TIMEOUT = httpx.Timeout(15.0, connect=10.0, read=10.0)
+_LOC_TIMEOUT = httpx2.Timeout(15.0, connect=10.0, read=10.0)
 _LOC_MAX_RETRIES = 1
 _LOC_BACKOFF_FACTOR = 2.0
 # Overall wall-clock budget for verifying a single citation across all query
@@ -242,7 +242,7 @@ def _execute_loc_search(
     }
     
     try:
-        with httpx.Client(timeout=_LOC_TIMEOUT) as client:
+        with httpx2.Client(timeout=_LOC_TIMEOUT) as client:
             response = client.get(_LOC_SEARCH_URL, params=params)
             response.raise_for_status()
             
@@ -259,7 +259,7 @@ def _execute_loc_search(
         logger.info("LOC API returned %d results for query: %s", len(results), query)
         return results, None
         
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         if exc.response.status_code == 429 and attempt < _LOC_MAX_RETRIES:
             # Rate limited - retry with exponential backoff
             backoff = _LOC_BACKOFF_FACTOR ** attempt
@@ -275,7 +275,7 @@ def _execute_loc_search(
         logger.error("LOC API HTTP error for query '%s': %s", query, exc)
         return [], f"http_error_{exc.response.status_code}"
         
-    except httpx.RequestError as exc:
+    except httpx2.RequestError as exc:
         if attempt < _LOC_MAX_RETRIES:
             backoff = _LOC_BACKOFF_FACTOR ** attempt
             logger.error(

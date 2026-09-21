@@ -6,7 +6,7 @@ import os
 import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
-import httpx
+import httpx2
 from rapidfuzz import fuzz, process
 
 from svc.citation_record import CitationRecord
@@ -17,7 +17,7 @@ from utils.logger import get_logger
 logger = get_logger()
 
 _COURT_LISTENER_LOOKUP_URL = "https://www.courtlistener.com/api/rest/v4/citation-lookup/"
-_COURT_LISTENER_TIMEOUT = httpx.Timeout(20.0, connect=10.0, read=10.0)
+_COURT_LISTENER_TIMEOUT = httpx2.Timeout(20.0, connect=10.0, read=10.0)
 _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
 
 # The text lookup looks up at most 250 citations per request; any past that
@@ -25,7 +25,7 @@ _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
 # citations per minute, but a request sent while under that budget is served
 # in full, so one text request replaces up to 250 volume/reporter/page ones.
 _COURT_LISTENER_BATCH_LIMIT = 250
-_COURT_LISTENER_BATCH_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+_COURT_LISTENER_BATCH_TIMEOUT = httpx2.Timeout(60.0, connect=10.0)
 _BATCH_SEPARATOR = "; "
 
 CaseTriad = Tuple[str, str, str]
@@ -89,7 +89,7 @@ def _extract_lookup_case_year(payload: Dict[str, Any]) -> str | None:
     return None
 
 
-def _lookup_response_json(response: httpx.Response, request: Any) -> Tuple[str, str | None, Any]:
+def _lookup_response_json(response: httpx2.Response, request: Any) -> Tuple[str, str | None, Any]:
     """Return ("ok", None, parsed JSON) for a 200 lookup response, else the error triple."""
     if response.status_code == 401:
         return "error", "lookup_auth_failed", {}
@@ -130,13 +130,13 @@ def _lookup_case_citation(
     }
 
     try:
-        response = httpx.post(
+        response = httpx2.post(
             _COURT_LISTENER_LOOKUP_URL,
             json=request_payload,
             headers=_courtlistener_headers(),
             timeout=_COURT_LISTENER_TIMEOUT,
         )
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         logger.error(
             "CourtListener lookup failed for volume=%s reporter=%s page=%s: %s",
             volume,
@@ -186,13 +186,13 @@ def _lookup_case_citation_chunk(chunk: Sequence[CaseTriad]) -> Dict[CaseTriad, L
     request = f"text lookup of {len(chunk)} citations"
 
     try:
-        response = httpx.post(
+        response = httpx2.post(
             _COURT_LISTENER_LOOKUP_URL,
             json={"text": text},
             headers=_courtlistener_headers(),
             timeout=_COURT_LISTENER_BATCH_TIMEOUT,
         )
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         logger.error("CourtListener %s failed: %s", request, exc)
         return {triad: ("error", "lookup_failed", {}) for triad in chunk}
 

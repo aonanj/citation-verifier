@@ -6,7 +6,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import httpx
+import httpx2
 from rapidfuzz import fuzz, process
 
 from svc.citation_record import CitationRecord
@@ -17,11 +17,11 @@ logger = get_logger()
 
 _OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 _OPENALEX_SOURCE_URL = "https://api.openalex.org/sources"
-_OPENALEX_TIMEOUT = httpx.Timeout(15.0, connect=10.0, read=10.0)
+_OPENALEX_TIMEOUT = httpx2.Timeout(15.0, connect=10.0, read=10.0)
 _OPENALEX_MAILTO_ENV = "OPENALEX_MAILTO"
 
 _SEMANTIC_SCHOLAR_BASE_URL = "https://api.semanticscholar.org/graph/v1"
-_SEMANTIC_SCHOLAR_TIMEOUT = httpx.Timeout(10.0, connect=10.0, read=10.0)
+_SEMANTIC_SCHOLAR_TIMEOUT = httpx2.Timeout(10.0, connect=10.0, read=10.0)
 _SEMANTIC_SCHOLAR_API_KEY = "SEMANTIC_SCHOLAR_API_KEY"
 _SEMANTIC_SCHOLAR_MAX_SEARCH = 50
 _DEFAULT_FIELDS_BASE = [
@@ -198,11 +198,11 @@ def _verify_author_title_with_openalex(
     logger.info(f"Querying OpenAlex with params: {params}")
 
     try:
-        with httpx.Client(timeout=_OPENALEX_TIMEOUT) as client:
+        with httpx2.Client(timeout=_OPENALEX_TIMEOUT) as client:
             response = client.get(_OPENALEX_WORKS_URL, params=params)
             response.raise_for_status()
         data = response.json()
-    except httpx.HTTPError as e:
+    except httpx2.HTTPError as e:
         logger.error(f"OpenAlex HTTP error: {e} for filter: {filter_str}")
         return "error", f"openalex http error: {e}", None
     except Exception as e:
@@ -267,7 +267,7 @@ def _verify_journal_citation_with_openalex(
         name = clean_str(str(name))
         params["filter"] = f"display_name.search:{name}"
         try:
-            with httpx.Client(timeout=_OPENALEX_TIMEOUT) as client:
+            with httpx2.Client(timeout=_OPENALEX_TIMEOUT) as client:
                 response = client.get(_OPENALEX_SOURCE_URL, params=params)
                 response.raise_for_status()
             data = response.json()
@@ -284,7 +284,7 @@ def _verify_journal_citation_with_openalex(
                         break
 
 
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             logger.error(f"OpenAlex HTTP error: {e} for filter: {name}")
             return "error", f"openalex http error: {e}", None
         except Exception as e:
@@ -311,12 +311,12 @@ def _verify_journal_citation_with_openalex(
 
     params_works: Dict[str, Any] = {"filter": filter, "per-page": 100, "cursor": "*", "mailto": mailto}
     try:
-        with httpx.Client(timeout=_OPENALEX_TIMEOUT) as client:
+        with httpx2.Client(timeout=_OPENALEX_TIMEOUT) as client:
             response = client.get(_OPENALEX_WORKS_URL, params=params_works)
             response.raise_for_status()
         data_works = response.json()
         logger.info(f"OpenAlex works search response data: {data_works}")
-    except httpx.HTTPError as e:
+    except httpx2.HTTPError as e:
         logger.error(f"OpenAlex HTTP error: {e} for filter search on {source_id}")
         return "error", f"openalex http error: {e}", None
     except Exception as e:
@@ -402,10 +402,10 @@ def _verify_title_with_semantic_scholar(
     last_call = 0.0
     last_client_error: Optional[str] = None
 
-    with httpx.Client(
+    with httpx2.Client(
         timeout=_SEMANTIC_SCHOLAR_TIMEOUT,
         headers=headers,
-        limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
+        limits=httpx2.Limits(max_connections=1, max_keepalive_connections=1),
     ) as client:
         attempt = 0
         while True:
@@ -413,7 +413,7 @@ def _verify_title_with_semantic_scholar(
 
             try:
                 resp = client.get(f"{_SEMANTIC_SCHOLAR_BASE_URL}/paper/search", params=params_search)
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 logger.error("Semantic Scholar HTTP error for title '%s': %s", search_title, e)
                 return "error", f"semantic scholar http error: {e}", None
 
@@ -446,7 +446,7 @@ def _verify_title_with_semantic_scholar(
 
             try:
                 resp.raise_for_status()
-            except httpx.HTTPStatusError as e:
+            except httpx2.HTTPStatusError as e:
                 logger.error("Semantic Scholar server error for title '%s': %s", search_title, e)
                 return "error", f"semantic scholar http error: {e}", None
 
@@ -624,7 +624,7 @@ def _verify_citation_with_semantic_scholar(
     last_client_error: Optional[str] = None
     last_call = 0.0
 
-    with httpx.Client(timeout=_SEMANTIC_SCHOLAR_TIMEOUT, headers=headers, limits=httpx.Limits(max_connections=1, max_keepalive_connections=1)) as client:
+    with httpx2.Client(timeout=_SEMANTIC_SCHOLAR_TIMEOUT, headers=headers, limits=httpx2.Limits(max_connections=1, max_keepalive_connections=1)) as client:
         for q in queries:
             params = {
                 "query": q,

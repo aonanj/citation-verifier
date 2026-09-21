@@ -10,13 +10,13 @@ annotated-types>=0.7.0
     #   pydantic
 anyio>=4.11.0
     # via
-    #   httpx
+    #   httpx2
     #   openai
     #   starlette
 certifi>=2025.8.3
     # via
-    #   httpcore
-    #   httpx
+    #   httpcore2
+    #   httpx2
 click>=8.3.0
     # via uvicorn
 courts-db>=0.10.26
@@ -31,18 +31,18 @@ fastapi>=0.117.1
     # via -r requirements.in
 h11>=0.16.0
     # via
-    #   httpcore
+    #   httpcore2
     #   uvicorn
-httpcore>=1.0.9
-    # via httpx
-httpx>=0.28.1
+httpcore2>=2.12.0
+    # via httpx2
+http2x>=2.12.0
     # via
     #   -r requirements.in
     #   openai
 idna>=3.10
     # via
     #   anyio
-    #   httpx
+    #   httpx2  
 jiter>=0.11.0
     # via openai
 lxml>=6.0.2

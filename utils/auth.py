@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-import httpx
+import httpx2
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -67,9 +67,9 @@ def _fetch_jwks() -> Dict[str, Any]:
     _require_auth0_configuration()
     jwks_url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
     try:
-        response = httpx.get(jwks_url, timeout=10.0)
+        response = httpx2.get(jwks_url, timeout=10.0)
         response.raise_for_status()
-    except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+    except httpx2.HTTPError as exc:  # pragma: no cover - network failure path
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to fetch Auth0 public keys.",
