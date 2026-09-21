@@ -232,7 +232,7 @@ _RESOLUTIONS_SCHEMA = {
 }
 
 _EXTRACT_INSTRUCTIONS = """\
-Use the bluebook-citation-extraction skill in `citations` mode. \
+Use the bluebook-citation-extraction skill in `citations` mode.\n\n \
 You extract legal citations from one chunk of a legal document (a brief, memo, opinion or article). \
 A separate system verifies each citation against legal databases, so your output must be a faithful \
 transcription of what the document says.
@@ -319,7 +319,7 @@ The tags are not part of the document: never include them in matched_text or any
 Return the citations in the order they appear, or an empty list if there are none."""
 
 _RESOLVE_INSTRUCTIONS = """\
-Use the bluebook-citation-extraction skill in `resolutions` mode. \
+Use the bluebook-citation-extraction skill in `resolutions` mode.\n\n \
 You resolve short-form legal citations. The input lists every citation found in a document, in document \
 order, one per line:
 [id] location | category | type | citation text
@@ -513,8 +513,6 @@ async def _structured_call(
 
         request: Dict[str, Any] = {
             "model": config.model,
-            "organization": config.organization,
-            "project_id": config.project_id,
             "instructions": instructions,
             "input": input_text,
             "text": {"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}},

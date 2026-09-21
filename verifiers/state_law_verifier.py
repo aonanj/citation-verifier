@@ -70,7 +70,7 @@ def _get_ai_client(model: dict) -> Any:
     """An OpenAI client; only called for an OpenAI AI_MODEL."""
     if model.get("provider") == "openai":
         from openai import OpenAI
-        client = OpenAI(api_key=model.get("ai_api_key"), organization=model.get("organization"), project=model.get("project"))
+        client = OpenAI(api_key=model.get("ai_api_key"), organization=model.get("organization"), project=model.get("project_id"))
         return client
     else:
         logger.error("Error initializing OpenAI client")

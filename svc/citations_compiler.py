@@ -1691,7 +1691,7 @@ def _citation_db_from_llm(
 
 def _extractor_name() -> str:
     """CITATION_EXTRACTOR ("rules" by default, or "llm"), read at call time."""
-    name = (os.getenv("CITATION_EXTRACTOR") or "rules").strip().lower()
+    name = (os.getenv("CITATION_EXTRACTOR") or "llm").strip().lower()
     if name not in ("rules", "llm"):
         logger.warning("Unknown CITATION_EXTRACTOR %r; using the rules extractor", name)
         return "rules"
