@@ -17,7 +17,7 @@ logger = get_logger()
 
 GOVINFO_BASE_URL = "https://www.govinfo.gov/link/"
 GOVINFO_API_KEY = "GOVINFO_API_KEY"
-GOVINFO_TIMEOUT = httpx2.Timeout(180.0, connect=100.0, read=100.0)
+GOVINFO_TIMEOUT = httpx2.Timeout(60.0, connect=45.0, read=60.0)
 
 GOVINFO_REPORTER_MAP = {
     "U.S.C.": "uscode", # /uscode/{title}/{section}
