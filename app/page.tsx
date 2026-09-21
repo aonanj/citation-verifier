@@ -796,7 +796,7 @@ function HomePageContent() {
 
         <section className={styles.noticeCard}>
           <p>
-            <strong>Note:</strong> Uploading confidential or privileged information is not recommended. JurisCheck does not store or retain any uploaded data, but does not warrant data security or privacy not directly controlled. JurisCheck can be securely used as a Word
+            <strong>Note:</strong> JurisCheck uses a third-party AI service. Uploading confidential or privileged information is not recommended. JurisCheck can be securely used as a Word
             Add-In. Contact{' '}
             <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
           </p>
