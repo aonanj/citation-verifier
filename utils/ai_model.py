@@ -11,6 +11,7 @@ loaded after project modules are imported (see CLAUDE.md, env import-order trap)
 from __future__ import annotations
 
 import os
+
 from utils.logger import get_logger
 
 logger = get_logger()
@@ -37,9 +38,9 @@ def ai_model() -> dict:
     }
     if model["model"].startswith("gpt"):
         model.update(_openai_model_params(model["model"]))
-        logger.info(f"Using OpenAI model: {model}")
+        logger.info(f"Using OpenAI model: {model.get('model')}")
     else:
         logger.error(f"Unsupported model: {model}")
-        raise ValueError(f"Unsupported model: {model}")
+        raise ValueError(f"Unsupported model: {model.get('model')}")
 
     return model

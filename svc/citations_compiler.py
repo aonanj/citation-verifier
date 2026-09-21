@@ -23,9 +23,10 @@ from eyecite.models import (
     ShortCaseCitation,
     SupraCitation,
     Token,
+    TokenExtractor,
 )
 from eyecite.regexes import nonalphanum_boundaries_re
-from eyecite.tokenizers import TokenExtractor, Tokenizer, default_tokenizer
+from eyecite.tokenizers import Tokenizer, default_tokenizer
 
 from svc.eyecite_adapter import get_case_name, record_from_eyecite, record_from_secondary
 from svc.llm_extractor import GroundedCitation, extract_citations

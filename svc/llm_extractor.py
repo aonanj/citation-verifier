@@ -527,6 +527,7 @@ async def _structured_call(
             skill_ref = {
                 "type": "skill_reference",
                 "skill_id": config.skill_id,
+                "version": "latest",
             }
 
             request["tools"] = [{
@@ -1082,6 +1083,8 @@ async def extract_citations(
     tagged text or PDF instead of chunks of `text`, and validates its answers against the document's blocks
     (svc/llm_normalized.py); `text` is still what the citations' spans index into. Pass 2 is unchanged.
     """
+    logger.info("LLM extractor: extracting citations from %d characters of text%s",
+        len(text), " with %d note(s)" % len(note_spans) if note_spans else "")
     config = _config()
     index = _NoteIndex(_normalize_notes(note_spans, notes))
     chunks = [] if normalized is not None else _chunk_document(text, index)
@@ -1093,6 +1096,7 @@ async def extract_citations(
         from openai import AsyncOpenAI
 
         async with AsyncOpenAI(api_key=config.api_key, organization=config.organization, project=config.project_id, timeout=_REQUEST_TIMEOUT, max_retries=1) as client:
+            logger.info("LLM extractor: using OpenAI %s model", config.model)
             if normalized is not None:
                 from svc.llm_normalized import extract_pass_one
 
@@ -1104,6 +1108,7 @@ async def extract_citations(
                     # be highlighted or attributed, so it is left out - and the user is told.
                     normalized.telemetry["grounding_unplaced"] = unplaced[0]
                     normalized.warnings.append(f"citations_unplaced:{unplaced[0]}")
+                    logger.warning("LLM extractor: %d citations were unplaced in the normalized document", unplaced[0])
             else:
                 chunk_answers = await asyncio.gather(
                     *(_extract_chunk(client, config, semaphore, text, index, chunk) for chunk in chunks)
@@ -1112,7 +1117,7 @@ async def extract_citations(
             await _resolve_short_forms(client, config, semaphore, citations, index)
     else:
         raise CitationExtractionError(
-            f"{config.model!r} is not supported: only OpenAI (\"gpt...\") models are implemented"
+            f"{config.model} is not supported: only OpenAI (\"gpt...\") models are implemented"
         )
     _flag_ids_after_strings(citations)
 

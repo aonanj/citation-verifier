@@ -125,7 +125,7 @@ def verify_state_law_citation(
         return "error", "ai_model_not_configured", None
     if model.get("provider") == "openai":
         return _verify_with_openai(model, bluebook_citation)
-    logger.error(f"{model} is not supported: only OpenAI (\"gpt...\") models are implemented.")
+    logger.error(f"{model.get('model')} is not supported: only OpenAI (\"gpt...\") models are implemented.")
     return "error", "unsupported_ai_model", None
 
 
@@ -139,7 +139,7 @@ def _verify_with_openai(model: dict, bluebook_citation: str) -> Tuple[str, str |
         input = PROMPT + f"**Citation to verify**: `{bluebook_citation}`"
 
         response = client.responses.create(
-            model = model,
+            model = model.get("model"),
             input = input,
             tools = [{
                 "type": "web_search",
