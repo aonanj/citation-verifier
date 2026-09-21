@@ -1,15 +1,12 @@
 import json
-import os
 from typing import Any, Dict, Tuple
 
 from svc.citation_record import CitationRecord
-from utils.ai_model import AI_API_KEY_ENV, AI_MODEL_ENV, ai_model, is_openai_model
+from utils.ai_model import ai_model
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 
 logger = get_logger()
-
-AI_API_KEY = AI_API_KEY_ENV
 
 PROMPT = """
 Below is at least one citation to a U.S. state law, statute, regulation, or similar state-level legal provision. 
@@ -69,22 +66,15 @@ def _get_law_group(
 
     return None
 
-def _get_openai_client() -> Any:
+def _get_ai_client(model: dict) -> Any:
     """An OpenAI client; only called for an OpenAI AI_MODEL."""
-    from openai import OpenAI
-
-    if AI_API_KEY is None or AI_API_KEY == "":
-        logger.error("AI_API_KEY is not set.")
-        return None
-    try:
-        open_api_key = os.getenv(AI_API_KEY, "")
-        openai_org = os.getenv("OPENAI_ORG", "")
-        openai_project = os.getenv("OPENAI_PROJECT", "")
-        client = OpenAI(api_key=open_api_key, organization=openai_org, project=openai_project)
+    if model.get("provider") == "openai":
+        from openai import OpenAI
+        client = OpenAI(api_key=model.get("ai_api_key"), organization=model.get("organization"), project=model.get("project"))
         return client
-    except Exception as e:
-        logger.error(f"Error initializing OpenAI client: {e}")
-        return None
+    else:
+        logger.error("Error initializing OpenAI client")
+        raise Exception(f"Unsupported AI model provider: {model.get('provider')}")
 
 def _clean_json_response(response_text: str) -> str:
     start_idx = response_text.find("{")
@@ -131,18 +121,18 @@ def verify_state_law_citation(
 
     model = ai_model()
     if not model:
-        logger.error(f"{AI_MODEL_ENV} is not set.")
+        logger.error("AI_MODEL is not set.")
         return "error", "ai_model_not_configured", None
-    if is_openai_model(model):
+    if model.get("provider") == "openai":
         return _verify_with_openai(model, bluebook_citation)
-    logger.error(f"{AI_MODEL_ENV} {model!r} is not supported: only OpenAI (\"gpt...\") models are implemented.")
+    logger.error(f"{model} is not supported: only OpenAI (\"gpt...\") models are implemented.")
     return "error", "unsupported_ai_model", None
 
 
-def _verify_with_openai(model: str, bluebook_citation: str) -> Tuple[str, str | None, Dict[str, Any] | None]:
+def _verify_with_openai(model: dict, bluebook_citation: str) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Ask an OpenAI model (with web search) whether the citation exists."""
     try:
-        client = _get_openai_client()
+        client = _get_ai_client(model)
         if client is None:
             return "error", "openai_client_init_failed", None
 

@@ -215,7 +215,7 @@ Create `.env` in the project root for backend configuration:
 # API Keys for verification services
 COURTLISTENER_API_TOKEN=...   # CourtListener API (case verifications)
 GOVINFO_API_KEY=...           # GovInfo API (federal law verifications)
-OPENAI_API_KEY=...            # OpenAI API (state law verifications, gpt-5.6-terra model)
+AI_API_KEY=...            # OpenAI API (state law verifications, gpt-5.6-terra model)
 SEMANTIC_SCHOLAR_API_KEY=...  # Semantic Scholar API (journal verifications)
 OPENALEX_MAILTO=...           # OpenAlex polite pool (journal verifications, optional)
 

@@ -64,7 +64,7 @@ import httpx2
 import reporters_db
 
 from svc.citation_record import CitationRecord
-from utils.ai_model import AI_API_KEY_ENV, AI_MODEL_ENV, ai_api_key, ai_model, is_openai_model
+from utils.ai_model import ai_model
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 
@@ -97,9 +97,12 @@ class CitationExtractionError(RuntimeError):
 
 @dataclass(frozen=True)
 class _Config:
+    provider: str
     api_key: str
     model: str
-    reasoning_effort: str
+    organization: str | None = None
+    project_id: str | None = None
+    reasoning: str | None = None
     skill_id: str | None = None
     skill_version: int | str | None = None
 
@@ -108,14 +111,20 @@ def _config() -> _Config:
     """Read at call time: .env is loaded after this module is imported."""
     model = ai_model()
     if not model:
-        raise CitationExtractionError(f"{AI_MODEL_ENV} is not set")
-    api_key = ai_api_key()
+        logger.error("AI_MODEL_ENV is not set.")
+        raise CitationExtractionError("AI_MODEL_ENV is not set")
+    api_key = model.get("ai_api_key")
     if not api_key:
-        raise CitationExtractionError(f"{AI_API_KEY_ENV} is not set")
+        logger.error("AI_API_KEY_ENV is not set.")
+        raise CitationExtractionError("AI_API_KEY_ENV is not set")
     return _Config(
+        provider=model.get("provider") or "",
         api_key=api_key,
-        model=model,
-        reasoning_effort=(os.getenv("LLM_EXTRACTOR_REASONING_EFFORT") or DEFAULT_REASONING_EFFORT).strip(),
+        model=model.get("model") or "",
+        reasoning=(os.getenv("AI_EXTRACT_REASONING") or DEFAULT_REASONING_EFFORT).strip(),
+        organization=model.get("organization"),
+        project_id=model.get("project_id"),
+        skill_id=model.get("skill_id"),
     )
 
 
@@ -499,23 +508,25 @@ async def _structured_call(
     
     Only reached for an OpenAI AI_MODEL (see extract_citations).
     """
-    if is_openai_model(config.model):
+    if config.provider == "openai":
         import openai
 
         request: Dict[str, Any] = {
             "model": config.model,
+            "organization": config.organization,
+            "project_id": config.project_id,
             "instructions": instructions,
             "input": input_text,
             "text": {"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}},
-            "reasoning": {"effort": config.reasoning_effort},
+            "reasoning": {"effort": config.reasoning},
             "max_output_tokens": max_output_tokens,
             "store": False,
         }
 
-        if os.getenv("OPENAI_SKILL_ID"):
+        if config.skill_id:
             skill_ref = {
                 "type": "skill_reference",
-                "skill_id": "skill_6aaf69cd52388191b5808d2a2140bfe10b43bf1c1afe9ad1",
+                "skill_id": config.skill_id,
             }
 
             request["tools"] = [{
@@ -1078,10 +1089,10 @@ async def extract_citations(
         return []
     started = time.monotonic()
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
-    if is_openai_model(config.model):
+    if config.provider == "openai":
         from openai import AsyncOpenAI
 
-        async with AsyncOpenAI(api_key=config.api_key, timeout=_REQUEST_TIMEOUT, max_retries=1) as client:
+        async with AsyncOpenAI(api_key=config.api_key, organization=config.organization, project=config.project_id, timeout=_REQUEST_TIMEOUT, max_retries=1) as client:
             if normalized is not None:
                 from svc.llm_normalized import extract_pass_one
 
@@ -1101,7 +1112,7 @@ async def extract_citations(
             await _resolve_short_forms(client, config, semaphore, citations, index)
     else:
         raise CitationExtractionError(
-            f"{AI_MODEL_ENV} {config.model!r} is not supported: only OpenAI (\"gpt...\") models are implemented"
+            f"{config.model!r} is not supported: only OpenAI (\"gpt...\") models are implemented"
         )
     _flag_ids_after_strings(citations)
 

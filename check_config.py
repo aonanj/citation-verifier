@@ -112,7 +112,7 @@ def main() -> None:
     # Citation extraction
     print("Citation Extraction:")
     print("-" * 40)
-    extractor = (os.getenv("CITATION_EXTRACTOR") or "rules").strip().lower()
+    extractor = (os.getenv("CITATION_EXTRACTOR") or "llm").strip().lower()
     model = (os.getenv("AI_MODEL") or "").strip()
     if not model:
         print("○ AI_MODEL: NOT SET (state-law verification and the LLM extractor return errors)")
