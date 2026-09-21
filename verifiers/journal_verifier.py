@@ -17,11 +17,11 @@ logger = get_logger()
 
 _OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 _OPENALEX_SOURCE_URL = "https://api.openalex.org/sources"
-_OPENALEX_TIMEOUT = httpx2.Timeout(15.0, connect=10.0, read=10.0)
+_OPENALEX_TIMEOUT = httpx2.Timeout(30.0, connect=20.0, read=30.0)
 _OPENALEX_MAILTO_ENV = "OPENALEX_MAILTO"
 
 _SEMANTIC_SCHOLAR_BASE_URL = "https://api.semanticscholar.org/graph/v1"
-_SEMANTIC_SCHOLAR_TIMEOUT = httpx2.Timeout(10.0, connect=10.0, read=10.0)
+_SEMANTIC_SCHOLAR_TIMEOUT = httpx2.Timeout(30.0, connect=20.0, read=30.0)
 _SEMANTIC_SCHOLAR_API_KEY = "SEMANTIC_SCHOLAR_API_KEY"
 _SEMANTIC_SCHOLAR_MAX_SEARCH = 50
 _DEFAULT_FIELDS_BASE = [

@@ -23,7 +23,7 @@ logger = get_logger()
 
 # Library of Congress Search API configuration
 _LOC_SEARCH_URL = "https://www.loc.gov/search/"
-_LOC_TIMEOUT = httpx2.Timeout(15.0, connect=10.0, read=10.0)
+_LOC_TIMEOUT = httpx2.Timeout(30.0, connect=20.0, read=30.0)
 _LOC_MAX_RETRIES = 1
 _LOC_BACKOFF_FACTOR = 2.0
 # Overall wall-clock budget for verifying a single citation across all query

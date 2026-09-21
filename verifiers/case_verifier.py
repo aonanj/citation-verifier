@@ -17,7 +17,7 @@ from utils.logger import get_logger
 logger = get_logger()
 
 _COURT_LISTENER_LOOKUP_URL = "https://www.courtlistener.com/api/rest/v4/citation-lookup/"
-_COURT_LISTENER_TIMEOUT = httpx2.Timeout(20.0, connect=10.0, read=10.0)
+_COURT_LISTENER_TIMEOUT = httpx2.Timeout(40.0, connect=20.0, read=30.0)
 _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
 
 # The text lookup looks up at most 250 citations per request; any past that
@@ -25,7 +25,7 @@ _COURT_LISTENER_TOKEN_ENV = "COURTLISTENER_API_TOKEN"
 # citations per minute, but a request sent while under that budget is served
 # in full, so one text request replaces up to 250 volume/reporter/page ones.
 _COURT_LISTENER_BATCH_LIMIT = 250
-_COURT_LISTENER_BATCH_TIMEOUT = httpx2.Timeout(60.0, connect=10.0)
+_COURT_LISTENER_BATCH_TIMEOUT = httpx2.Timeout(90.0, connect=20.0)
 _BATCH_SEPARATOR = "; "
 
 CaseTriad = Tuple[str, str, str]
