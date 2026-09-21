@@ -7,12 +7,11 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from eyecite.models import FullCitation, FullJournalCitation
 from rapidfuzz import fuzz, process
 
+from svc.citation_record import CitationRecord
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
-from utils.resource_resolver import get_journal_author_title
 
 logger = get_logger()
 
@@ -154,7 +153,7 @@ def _result_matches_citation(
     return "warning", "Unverified details", details
 
 def _verify_author_title_with_openalex(
-    citation: FullCitation | None, resource_dict: Dict[str, Any] | None
+    citation: CitationRecord | None, resource_dict: Dict[str, Any] | None
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Verify a citation using the OpenAlex API with targeted, quoted field filters.
 
@@ -164,18 +163,14 @@ def _verify_author_title_with_openalex(
       - Example: `filter=title.search:"mapping the landscape",author.search:"smith"`
       - Then, post-filter results with `_result_matches_citation` to confirm.
     """
-    if not isinstance(citation, FullJournalCitation):
+    if citation is None or citation.type != "journal":
         return "no_match", "Not a journal citation", None
 
     # Choose search fields: prefer provided values; fall back to parsed citation.
     search_author = clean_str(resource_dict.get("author")) if resource_dict else None
     search_title = clean_str(resource_dict.get("title")) if resource_dict else None
-    if not search_author or not search_title:
-        ji = get_journal_author_title(citation)
-        if not search_author and ji:
-            search_author = clean_str(ji.get("author"))
-        if not search_title and ji:
-            search_title = clean_str(ji.get("title"))
+    search_author = search_author or clean_str(citation.get("author"))
+    search_title = search_title or clean_str(citation.get("title"))
 
     if not search_author and not search_title:
         return _verify_journal_citation_with_openalex(citation, resource_dict)
@@ -220,14 +215,8 @@ def _verify_author_title_with_openalex(
         return "no_match", "Not found in OpenAlex", {"not found": "title", "source": "openalex"}
 
     # The rest of the function remains the same, as post-filtering is still valuable
-    citation_author = search_author
-    citation_title  = search_title
-    if not (citation_author and citation_title):
-        ji = get_journal_author_title(citation)
-        if not citation_author and ji:
-            citation_author = clean_str(ji.get("author"))
-        if not citation_title and ji:
-            citation_title = clean_str(ji.get("title"))
+    citation_author = search_author or clean_str(citation.get("author"))
+    citation_title = search_title or clean_str(citation.get("title"))
 
     best_warning: Optional[Tuple[str, str | None, Dict[str, Any] | None]] = None
     for idx, result in enumerate(results):
@@ -246,7 +235,7 @@ def _verify_author_title_with_openalex(
     return "no_match", "Not found in OpenAlex", {"source": "openalex"}
 
 def _verify_journal_citation_with_openalex(
-  primary_full: FullCitation | None, resource_dict: Dict[str, Any] | None
+  primary_full: CitationRecord | None, resource_dict: Dict[str, Any] | None
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Verify a citation using the OpenAlex API with targeted, quoted field filters.
 
@@ -259,29 +248,16 @@ def _verify_journal_citation_with_openalex(
         - error_message is None on success or an error description on failure
         - data is the OpenAlex work data if verified, otherwise None
     """
-    if not isinstance(primary_full, FullJournalCitation):
+    if primary_full is None or primary_full.type != "journal":
         return "no_match", "Not a journal citation", None
     
-    reporter_full_name = []
     data = {}
     logger.info(f"Verifying journal citation with OpenAlex: {primary_full}")
-    groups = getattr(primary_full, 'groups', None)
-    logger.info(f"Primary full groups: {groups}")
-    volume = groups.get('volume') if groups else None
+    volume = primary_full.get("volume")
     logger.info(f"Primary full volume: {volume}")
-    page = groups.get('page') if groups else None
+    page = primary_full.get("page")
     logger.info(f"Primary full page: {page}")
-
-    reporter_editions = getattr(primary_full, 'all_editions', None)
-    if reporter_editions and len(reporter_editions) > 0:
-        reporter_name = getattr(reporter_editions[0], 'reporter', None)
-        reporter_full_name = [getattr(reporter_name, 'name', None)] if reporter_name else None
-
-    if reporter_full_name == []:
-        edition_guess = getattr(primary_full, 'edition_guess', None)
-        if edition_guess:
-            guess_names = getattr(edition_guess, 'name', None)
-            reporter_full_name = guess_names.split(";") if guess_names else []
+    reporter_full_name = primary_full.get("journal_names")
 
     logger.info(f"OpenAlex source search for reporter_full_name={reporter_full_name},volume={str(volume)},page={str(page)}")
     source_id = None
@@ -328,12 +304,8 @@ def _verify_journal_citation_with_openalex(
     # Extracted title/author, used to confirm a volume+page hit when available.
     extracted_author = clean_str(resource_dict.get("author")) if resource_dict else None
     extracted_title = clean_str(resource_dict.get("title")) if resource_dict else None
-    if not extracted_author or not extracted_title:
-        ji = get_journal_author_title(primary_full)
-        if not extracted_author and ji:
-            extracted_author = clean_str(ji.get("author"))
-        if not extracted_title and ji:
-            extracted_title = clean_str(ji.get("title"))
+    extracted_author = extracted_author or clean_str(primary_full.get("author"))
+    extracted_title = extracted_title or clean_str(primary_full.get("title"))
 
     filter = f"primary_location.source.id:{source_id},biblio.volume:{str(volume)},biblio.first_page:{str(page)}"
 
@@ -381,22 +353,18 @@ def _verify_journal_citation_with_openalex(
     return "no_match", "Not found in OpenAlex", None
 
 def _verify_title_with_semantic_scholar(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """Verify a citation via Semantic Scholar by exact/near title match with optional author check."""
-    if not isinstance(primary_full, FullJournalCitation):
+    if primary_full is None or primary_full.type != "journal":
         return "no_match", "Not a journal citation", None
 
     # ---- inputs ----
     search_author = clean_str(resource_dict.get("author")) if resource_dict else None
     search_title = clean_str(resource_dict.get("title")) if resource_dict else None
-    if not (search_author and search_title):
-        ji = get_journal_author_title(primary_full)
-        if not search_author and ji:
-            search_author = clean_str(ji.get("author"))
-        if not search_title and ji:
-            search_title = clean_str(ji.get("title"))
+    search_author = search_author or clean_str(primary_full.get("author"))
+    search_title = search_title or clean_str(primary_full.get("title"))
     if search_author is None and search_title is None:
         return _verify_citation_with_semantic_scholar(primary_full, resource_dict)
 
@@ -572,7 +540,7 @@ def _escape_semantic_scholar_term(term: str) -> str:
     return re.sub(r"([+\-=&|!(){}\[\]^\"~*?:\\\/])", r"\\\1", term)
 
 def _verify_citation_with_semantic_scholar(
-    primary_full: FullCitation | None, 
+    primary_full: CitationRecord | None, 
     resource_dict: Dict[str, Any] | None
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
     """
@@ -585,19 +553,16 @@ def _verify_citation_with_semantic_scholar(
 
     Results are sorted with exact journal equality first, then year proximity if provided.
     """
-    if not isinstance(primary_full, FullJournalCitation):
+    if primary_full is None or primary_full.type != "journal":
         return "no_match", "not a journal citation", None
     
-    reporter_full_name = []
     data = {}
-    logger.info(f"Verifying journal citation with OpenAlex: {primary_full}")
-    groups = getattr(primary_full, 'groups', None)
-    logger.info(f"Primary full groups: {groups}")
-    volume = groups.get('volume') if groups else None
+    logger.info(f"Verifying journal citation with Semantic Scholar: {primary_full}")
+    volume = primary_full.get("volume")
     logger.info(f"Primary full volume: {volume}")
-    page = groups.get('page') if groups else None
+    page = primary_full.get("page")
     logger.info(f"Primary full page: {page}")
-    year = getattr(primary_full, 'year', None)
+    year = primary_full.get("year")
     if year is None:
         year = resource_dict.get('year') if resource_dict else None
     logger.info(f"Primary full year: {year}")
@@ -605,25 +570,11 @@ def _verify_citation_with_semantic_scholar(
     # Extracted title/author, used to confirm a volume+page hit when available.
     extracted_author = clean_str(resource_dict.get("author")) if resource_dict else None
     extracted_title = clean_str(resource_dict.get("title")) if resource_dict else None
-    if not extracted_author or not extracted_title:
-        ji = get_journal_author_title(primary_full)
-        if not extracted_author and ji:
-            extracted_author = clean_str(ji.get("author"))
-        if not extracted_title and ji:
-            extracted_title = clean_str(ji.get("title"))
+    extracted_author = extracted_author or clean_str(primary_full.get("author"))
+    extracted_title = extracted_title or clean_str(primary_full.get("title"))
     extracted_title_norm = normalize_case_name_for_compare(extracted_title)
     extracted_author_norm = normalize_case_name_for_compare(extracted_author)
-
-    reporter_editions = getattr(primary_full, 'all_editions', None)
-    if reporter_editions and len(reporter_editions) > 0:
-        reporter_name = getattr(reporter_editions[0], 'reporter', None)
-        reporter_full_name = [getattr(reporter_name, 'name', None)] if reporter_name else None
-
-    if reporter_full_name == []:
-        edition_guess = getattr(primary_full, 'edition_guess', None)
-        if edition_guess:
-            guess_names = getattr(edition_guess, 'name', None)
-            reporter_full_name = guess_names.split(";") if guess_names else []
+    reporter_full_name = primary_full.get("journal_names")
 
     headers = {"Accept": "application/json"}
     api_key = os.environ.get(_SEMANTIC_SCHOLAR_API_KEY)
@@ -781,7 +732,7 @@ def _verify_citation_with_semantic_scholar(
 
 
 def verify_journal_citation(
-  primary_full: FullCitation | None,
+  primary_full: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,

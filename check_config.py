@@ -100,12 +100,38 @@ def main() -> None:
     for var in [
         "COURTLISTENER_API_TOKEN",
         "GOVINFO_API_KEY",
-        "OPENAI_API_KEY",
+        "AI_API_KEY",
+        "AI_MODEL",
         "SEMANTIC_SCHOLAR_API_KEY",
         "OPENALEX_MAILTO",
     ]:
         ok, msg = check_env_var(var, required=False)
         print(msg)
+    print()
+
+    # Citation extraction
+    print("Citation Extraction:")
+    print("-" * 40)
+    extractor = (os.getenv("CITATION_EXTRACTOR") or "rules").strip().lower()
+    model = (os.getenv("AI_MODEL") or "").strip()
+    if not model:
+        print("○ AI_MODEL: NOT SET (state-law verification and the LLM extractor return errors)")
+    elif not model.startswith("gpt"):
+        print(f"✗ AI_MODEL: {model!r} is not an OpenAI \"gpt...\" model, the only kind implemented")
+        issues.append(f"AI_MODEL {model!r} is not supported (state-law verification and the LLM extractor return errors)")
+    if extractor == "llm":
+        print(f"✓ CITATION_EXTRACTOR: llm (model {model or 'NOT SET'}, "
+              f"reasoning effort {os.getenv('LLM_EXTRACTOR_REASONING_EFFORT') or 'none'})")
+        if not model:
+            issues.append("CITATION_EXTRACTOR=llm but AI_MODEL is not set")
+        if not os.getenv("AI_API_KEY"):
+            print("✗ AI_API_KEY: NOT SET (required by the LLM extractor)")
+            issues.append("CITATION_EXTRACTOR=llm but AI_API_KEY is not set")
+    elif extractor == "rules":
+        print("✓ CITATION_EXTRACTOR: rules (eyecite + regex; set to 'llm' for the LLM extractor)")
+    else:
+        print(f"✗ CITATION_EXTRACTOR: {extractor!r} is not 'rules' or 'llm' (falls back to rules)")
+        issues.append(f"CITATION_EXTRACTOR has an unknown value: {extractor!r}")
     print()
 
     # OCR / Tesseract
@@ -122,6 +148,47 @@ def main() -> None:
             issues.append("Tesseract OCR binary not found on PATH")
     except ImportError as exc:
         print(f"⚠ Could not check Tesseract OCR (svc.doc_processor import failed: {exc})")
+    print()
+
+    # Document normalization (what the LLM extractor reads)
+    print("Document Normalization:")
+    print("-" * 40)
+    try:
+        import importlib.util
+
+        from svc.normalization.config import NormalizationConfig, normalization_enabled
+        from svc.normalization.office import LibreOfficeFallbackRenderer
+        from svc.normalization.pdf_ocr import ocr_available as normalization_ocr_available
+
+        norm_config = NormalizationConfig.from_env()
+        norm_on = normalization_enabled()
+        missing = [m for m in ("docx2python", "pdfplumber", "pypdf", "pypdfium2", "ocrmypdf") if importlib.util.find_spec(m) is None]
+        if not norm_on:
+            print("○ DOCUMENT_NORMALIZATION: off (the LLM extractor reads the text svc.doc_processor extracts)")
+        elif extractor != "llm":
+            print("○ DOCUMENT_NORMALIZATION: on, but CITATION_EXTRACTOR is not 'llm', so it has no effect")
+        else:
+            print("✓ DOCUMENT_NORMALIZATION: on (DOCX as tagged text, PDF as pages; answers validated against the document)")
+        if missing and norm_on:
+            print(f"✗ Missing packages: {', '.join(missing)} (pip install -r requirements.txt)")
+            issues.append(f"DOCUMENT_NORMALIZATION=on but these packages are not installed: {', '.join(missing)}")
+        elif missing:
+            print(f"○ Packages not installed (needed only when it is on): {', '.join(missing)}")
+        if norm_on:
+            if normalization_ocr_available():
+                print("✓ OCR (OCRmyPDF + Tesseract): available for scanned pages")
+            else:
+                print("⚠ OCR (OCRmyPDF + Tesseract): not available; scanned pages are passed through unread, with a warning")
+            print("✓ LibreOffice: found (DOCX files the parser can't read reliably are rendered to PDF)"
+                  if LibreOfficeFallbackRenderer(norm_config).available()
+                  else "○ LibreOffice: not found (optional: the DOCX fallback renderer; such files keep their tagged text and a warning)")
+            if norm_config.cache_mode == "disk":
+                print(f"⚠ NORMALIZATION_CACHE=disk: text of uploaded documents is kept on this server for {norm_config.cache_ttl_s:.0f} s "
+                      "(the Terms say documents are not retained: a product decision, see CLAUDE.md item 35)")
+            print(f"  limits: {norm_config.max_source_bytes // (1024 * 1024)} MB per file, {norm_config.max_pdf_pages} PDF pages, "
+                  f"OCR timeout {norm_config.ocr_timeout_s:.0f} s, total timeout {norm_config.total_timeout_s:.0f} s")
+    except ImportError as exc:
+        print(f"⚠ Could not check document normalization (import failed: {exc})")
     print()
 
     # Frontend Configuration

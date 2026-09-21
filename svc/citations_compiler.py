@@ -1,9 +1,10 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Coroutine, Dict, Iterator, List, Sequence, Set, Tuple
 
 from eyecite import get_citations, resolve_citations
@@ -26,6 +27,8 @@ from eyecite.models import (
 from eyecite.regexes import nonalphanum_boundaries_re
 from eyecite.tokenizers import TokenExtractor, Tokenizer, default_tokenizer
 
+from svc.eyecite_adapter import get_case_name, record_from_eyecite, record_from_secondary
+from svc.llm_extractor import GroundedCitation, extract_citations
 from svc.secondary_citation_handler import (
     SecondaryCitation,
     SecondaryCitationDetector,
@@ -43,14 +46,10 @@ from utils.resource_resolver import get_journal_author_title, resolve_case_year
 from utils.span_finder import get_span
 from verifiers.case_verifier import (
     case_lookup_triad,
-    get_case_name,
     lookup_case_citations_batch,
     verify_case_citation,
 )
-from verifiers.federal_law_verifier import (
-    classify_full_law_jurisdiction,
-    verify_federal_law_citation,
-)
+from verifiers.federal_law_verifier import verify_federal_law_citation
 from verifiers.journal_verifier import verify_journal_citation
 from verifiers.secondary_sources_verifier import verify_secondary_citation
 from verifiers.state_law_verifier import verify_state_law_citation
@@ -984,6 +983,7 @@ def _add_secondary_to_db(
     
     # Verify the citation
     normalized = cite.to_normalized_citation()
+    record = record_from_secondary(cite)
     resource_dict = {
         "kind": "secondary",
         "source_type": cite.source_type,
@@ -1019,12 +1019,13 @@ def _add_secondary_to_db(
         "verification_details": verification_details,
         "normalized_citation": normalized,
         "full_citation_obj": cite,
+        "record": record,
         "occurrences": [occurrence],
     }
 
     if is_full:
         secondary_tasks.append(
-            _verify_secondary_async(resource_key, cite, normalized, resource_dict)
+            _verify_secondary_async(resource_key, record, normalized, resource_dict)
         )
     else:
         logger.info(
@@ -1033,6 +1034,108 @@ def _add_secondary_to_db(
             status,
         )
 
+
+
+# --- Verification dispatch (both extractors) ------------------------------
+
+@dataclass
+class _Verifications:
+    """Verifications queued while the citation database is built."""
+
+    state: List[_PendingVerification] = field(default_factory=list)
+    secondary: List[_PendingVerification] = field(default_factory=list)
+    journal: List[_PendingVerification] = field(default_factory=list)
+    federal: List[_PendingVerification] = field(default_factory=list)
+    # (resource_key, record, normalized_key, resource_dict, fallback);
+    # verified together with one batched CourtListener lookup.
+    cases: List[Tuple[str, Any, str, Dict[str, Any], str | None]] = field(default_factory=list)
+
+    def pending(self) -> List[_PendingVerification]:
+        return self.state + self.secondary + self.journal + self.federal
+
+
+def _queue_verification(
+    entry_type: str,
+    resource_key: str,
+    record: Any,
+    normalized_key: str,
+    resource_dict: Dict[str, Any],
+    fallback_value: str | None,
+    queue: _Verifications,
+) -> Tuple[str, str | None, Dict[str, Any] | None]:
+    """Queue a new case/law/journal entry's verification.
+
+    Returns the entry's initial (status, substatus, verification_details):
+    "pending" for queued async verifications, a placeholder for case law
+    (overwritten by _verify_case_entries), or an error when the entry can't
+    be verified.
+    """
+    status = "error"
+    substatus = f"{entry_type}_verification_unsupported"
+    verification_details = None
+
+    if entry_type == "case":
+        queue.cases.append((resource_key, record, normalized_key, resource_dict, fallback_value))
+
+    elif entry_type == "law":
+        jurisdiction = None
+        if record is not None and record.type == "law":
+            jurisdiction = record.get("jurisdiction")
+
+        if jurisdiction == "federal":
+            status = "pending"
+            substatus = "federal_law_verification_pending"
+            queue.federal.append(
+                _verify_federal_async(resource_key, record, normalized_key, resource_dict, fallback_value)
+            )
+        elif jurisdiction == "state":
+            status = "pending"
+            substatus = "state_law_verification_pending"
+            queue.state.append(
+                _verify_state_async(resource_key, record, normalized_key, resource_dict, fallback_value)
+            )
+        else:
+            logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
+            status = "error"
+            substatus = "unsupported_jurisdiction"
+            verification_details = {
+                "jurisdiction": jurisdiction or "unknown",
+            }
+
+    elif entry_type == "journal":
+        status = "pending"
+        substatus = "journal_verification_pending"
+        queue.journal.append(_verify_journal_async(resource_key, record, normalized_key, resource_dict))
+
+    return status, substatus, verification_details
+
+
+def _verify_case_entries(
+    citation_db: Dict[str, Dict[str, Any]],
+    cases: List[Tuple[str, Any, str, Dict[str, Any], str | None]],
+) -> None:
+    """Verify the queued case entries (blocking: one batched CourtListener lookup)."""
+    if not cases:
+        return
+    # One CourtListener text lookup covers up to 250 citations, instead of one
+    # request per citation.
+    triads = [
+        case_lookup_triad(record, normalized_key, resource_dict, fallback_value)
+        for _, record, normalized_key, resource_dict, fallback_value in cases
+    ]
+    lookups = lookup_case_citations_batch(triads)
+    for (resource_key, record, normalized_key, resource_dict, fallback_value), triad in zip(cases, triads):
+        status, substatus, verification_details = verify_case_citation(
+            record,
+            normalized_key,
+            resource_dict,
+            fallback_citation=fallback_value,
+            lookup=lookups.get(triad),
+        )
+        logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
+        citation_db[resource_key]["status"] = status
+        citation_db[resource_key]["substatus"] = substatus
+        citation_db[resource_key]["verification_details"] = verification_details
 
 
 # --- Main compilation function --------------------------------------------
@@ -1308,13 +1411,7 @@ def _build_citation_db(
 
     # Step 8: Build citation database in sorted order
     citation_db: Dict[str, Dict[str, Any]] = {}
-    state_tasks: List[_PendingVerification] = []
-    secondary_tasks: List[_PendingVerification] = []
-    journal_tasks: List[_PendingVerification] = []
-    federal_tasks: List[_PendingVerification] = []
-    # (resource_key, primary_full, normalized_key, resource_dict, fallback);
-    # verified after this loop with one batched CourtListener lookup.
-    case_entries: List[Tuple[str, Any, str, Dict[str, Any], str | None]] = []
+    queue = _Verifications()
 
     for entry in citation_entries:
         if entry['type'] == 'eyecite':
@@ -1337,6 +1434,7 @@ def _build_citation_db(
                 (cite for cite in resolved_cites if isinstance(cite, FullCitation)),
                 None,
             )
+            record = record_from_eyecite(primary_full)
 
             representative = primary_full or resolved_cites[0]
             normalized_key = _normalized_key(representative) or resource_key
@@ -1344,69 +1442,10 @@ def _build_citation_db(
             entry_type = _get_citation_type(primary_full) if primary_full else resource_kind
             logger.info("Entry type: %s", entry_type)
 
-            status = "error"
-            substatus = f"{entry_type}_verification_unsupported"
-            verification_details = None
-
             fallback_value = _get_citation(primary_full)
-
-            # Verification logic
-            if entry_type == "case":
-                case_entries.append(
-                    (resource_key, primary_full, normalized_key, resource_dict, fallback_value)
-                )
-
-            elif entry_type == "law":
-                jurisdiction = None
-                if isinstance(primary_full, FullLawCitation):
-                    jurisdiction = classify_full_law_jurisdiction(primary_full)
-
-                if jurisdiction == "federal":
-                    status = "pending"
-                    substatus = "federal_law_verification_pending"
-                    verification_details = None
-                    federal_tasks.append(
-                        _verify_federal_async(
-                            resource_key,
-                            primary_full,
-                            normalized_key,
-                            resource_dict,
-                            fallback_value,
-                        )
-                    )
-                elif jurisdiction == "state":
-                    status = "pending"
-                    substatus = "state_law_verification_pending"
-                    verification_details = None
-                    state_tasks.append(
-                        _verify_state_async(
-                            resource_key,
-                            primary_full,
-                            normalized_key,
-                            resource_dict,
-                            fallback_value,
-                        )
-                    )
-                else:
-                    logger.info(f"Unsupported jurisdiction for resource_key: {resource_key}")
-                    status = "error"
-                    substatus = "unsupported_jurisdiction"
-                    verification_details = {
-                        "jurisdiction": jurisdiction or "unknown",
-                    }
-
-            elif entry_type == "journal":
-                status = "pending"
-                substatus = "journal_verification_pending"
-                verification_details = None
-                journal_tasks.append(
-                    _verify_journal_async(
-                        resource_key,
-                        primary_full,
-                        normalized_key,
-                        resource_dict,
-                    )
-                )
+            status, substatus, verification_details = _queue_verification(
+                entry_type, resource_key, record, normalized_key, resource_dict, fallback_value, queue
+            )
 
             citation_db[resource_key] = {
                 "type": entry_type,
@@ -1416,6 +1455,7 @@ def _build_citation_db(
                 "verification_details": verification_details,
                 "normalized_citation": normalized_key,
                 "full_citation_obj": primary_full,
+                "record": record,
                 "occurrences": [],
             }
 
@@ -1443,6 +1483,7 @@ def _build_citation_db(
                     part for part in (_get_citation(chain[0]), _get_pin_cite(chain[0])) if part
                 ),
                 "full_citation_obj": None,
+                "record": None,
                 "occurrences": [
                     _eyecite_occurrence(cite, adjusted_spans, all_segment_metadata)
                     for cite in chain
@@ -1453,41 +1494,218 @@ def _build_citation_db(
             # Process secondary citation
             cite = entry['citation']
             is_full = (entry['type'] == 'secondary_full')
-            _add_secondary_to_db(cite, citation_db, is_full, secondary_tasks=secondary_tasks)
+            _add_secondary_to_db(cite, citation_db, is_full, secondary_tasks=queue.secondary)
 
-    # Case law: one CourtListener text lookup covers up to 250 citations,
-    # instead of one request per citation.
-    if case_entries:
-        triads = [
-            case_lookup_triad(primary_full, normalized_key, resource_dict, fallback_value)
-            for _, primary_full, normalized_key, resource_dict, fallback_value in case_entries
-        ]
-        lookups = lookup_case_citations_batch(triads)
-        for (resource_key, primary_full, normalized_key, resource_dict, fallback_value), triad in zip(
-            case_entries, triads
-        ):
-            status, substatus, verification_details = verify_case_citation(
-                primary_full,
-                normalized_key,
-                resource_dict,
-                fallback_citation=fallback_value,
-                lookup=lookups.get(triad),
-            )
-            logger.info(f"Verifying case citation: {normalized_key}: status={status}, substatus={substatus}")
-            citation_db[resource_key]["status"] = status
-            citation_db[resource_key]["substatus"] = substatus
-            citation_db[resource_key]["verification_details"] = verification_details
+    _verify_case_entries(citation_db, queue.cases)
+    return citation_db, queue.pending()
 
-    return citation_db, state_tasks + secondary_tasks + journal_tasks + federal_tasks
+
+# --- LLM extractor path ------------------------------------------------------
+
+_UNRESOLVED_SUBSTATUS = "short_form_unresolved"
+
+
+def _llm_resource(citation: GroundedCitation) -> Tuple[str, Dict[str, Any], str, str]:
+    """(resource_key, resource_dict, normalized_citation, fallback) for a full citation.
+
+    Keys use the rules extractor's formats so both group citations alike.
+    """
+    fields, record = citation.fields, citation.record
+    fallback = fields.get("core_text") or citation.matched_text
+
+    def value(key: str) -> str:
+        return clean_str(record.get(key)) or ""
+
+    if citation.kind == "case":
+        key = ResourceKey("case", (value("case_name"), value("reporter"), value("volume"), value("page"), value("year")))
+        normalized = fields.get("core_text") or " ".join(
+            part for part in (value("volume"), value("reporter"), value("page")) if part
+        ) or citation.matched_text
+        return _resource_identifier(key), asdict(key), normalized, fallback
+    if citation.kind == "law":
+        key = ResourceKey("law", (
+            value("title") or value("volume"), value("reporter"), value("section") or value("page"), value("year"),
+        ))
+        return _resource_identifier(key), asdict(key), fields.get("core_text") or citation.matched_text, fallback
+    if citation.kind == "journal":
+        key = ResourceKey("journal", (
+            value("author"), value("title"), value("volume"), value("journal"), value("page"), value("year"),
+        ))
+        normalized = f"{value('volume')} {value('journal')} {value('page')}"
+        if value("year"):
+            normalized += f" ({value('year')})"
+        return _resource_identifier(key), asdict(key), normalized, fallback
+
+    secondary = SecondaryCitation(
+        source_type=record.get("source_type") or "treatise",
+        citation_category="full",
+        matched_text=citation.matched_text,
+        span=citation.span,
+        volume=record.get("volume"),
+        title=record.get("title"),
+        section=record.get("section"),
+        page=record.get("page"),
+        pin_cite=citation.pin_cite,
+        year=record.get("year"),
+        edition=record.get("edition"),
+        series=record.get("series"),
+        author=record.get("author"),
+    )
+    resource_dict = {
+        "kind": "secondary",
+        "source_type": secondary.source_type,
+        "id_tuple": (
+            secondary.volume or "",
+            secondary.title or "",
+            secondary.section or secondary.page or "",
+            secondary.year or "",
+        ),
+    }
+    return secondary.to_resource_key(), resource_dict, secondary.to_normalized_citation(), fallback
+
+
+def _string_positions(citations: Sequence[GroundedCitation]) -> Dict[int, Tuple[str, int]]:
+    """citation index -> (string_group_id, 0-based position within its string)."""
+    positions: Dict[int, Tuple[str, int]] = {}
+    counts: Dict[int, int] = {}
+    for citation in citations:
+        if citation.string_group is None:
+            continue
+        position = counts.get(citation.string_group, 0)
+        counts[citation.string_group] = position + 1
+        positions[citation.index] = (f"string_group_{citation.string_group}", position)
+    return positions
+
+
+def _citation_db_from_llm(
+    text: str,
+    citations: List[GroundedCitation],
+) -> Tuple[Dict[str, Dict[str, Any]], List[_PendingVerification]]:
+    """The citation database for the LLM extractor's grounded citations.
+
+    Same entry shape and verification dispatch as the rules path. A short form
+    the extractor couldn't resolve gets its own "short_form_unresolved"
+    warning entry (eyecite silently drops such citations); an Id. referring
+    back to a string citation gets an "id_refers_to_string_citation" error
+    entry, as in the rules path. Blocking (the batched CourtListener lookup),
+    so it runs in a worker thread.
+    """
+    citation_db: Dict[str, Dict[str, Any]] = {}
+    queue = _Verifications()
+    key_by_index: Dict[int, str] = {}
+    positions = _string_positions(citations)
+
+    def occurrence(citation: GroundedCitation) -> Dict[str, Any]:
+        group = positions.get(citation.index)
+        return {
+            "citation_category": citation.category,
+            "matched_text": citation.matched_text,
+            "span": citation.span,
+            "index": None,
+            "pin_cite": citation.pin_cite,
+            "citation_obj": citation.record,
+            "string_group_id": group[0] if group else None,
+            "position_in_string": group[1] if group else None,
+        }
+
+    for citation in citations:
+        if citation.is_full:
+            resource_key, resource_dict, normalized, fallback = _llm_resource(citation)
+            key_by_index[citation.index] = resource_key
+            if resource_key in citation_db:
+                citation_db[resource_key]["occurrences"].append(occurrence(citation))
+                continue
+            if citation.kind == "secondary":
+                status, substatus, details = "pending", "secondary_verification_pending", None
+                queue.secondary.append(
+                    _verify_secondary_async(resource_key, citation.record, normalized, resource_dict)
+                )
+            else:
+                status, substatus, details = _queue_verification(
+                    citation.kind, resource_key, citation.record, normalized, resource_dict, fallback, queue
+                )
+            citation_db[resource_key] = {
+                "type": citation.kind,
+                "resource": resource_dict,
+                "status": status,
+                "substatus": substatus,
+                "verification_details": details,
+                "normalized_citation": normalized,
+                "full_citation_obj": citation.record,
+                "record": citation.record,
+                "occurrences": [occurrence(citation)],
+            }
+
+        elif citation.id_error_group is not None:
+            previous = citations[citation.index - 1]
+            if previous.id_error_group == citation.id_error_group and previous.index in key_by_index:
+                resource_key = key_by_index[previous.index]
+                key_by_index[citation.index] = resource_key
+                citation_db[resource_key]["occurrences"].append(occurrence(citation))
+                continue
+            members = [c for c in citations if c.string_group == citation.id_error_group]
+            error_key = ResourceKey("unknown", ("id", str(citation.span[0])))
+            resource_key = _resource_identifier(error_key)
+            key_by_index[citation.index] = resource_key
+            citation_db[resource_key] = {
+                "type": "unknown",
+                "resource": asdict(error_key),
+                "status": "error",
+                "substatus": _ID_AFTER_STRING_SUBSTATUS,
+                "verification_details": {
+                    "reason": 'Bluebook Rule 4.1: "id." cannot refer to a string citation',
+                    "string_citation": text[members[0].span[0]:members[-1].span[1]].strip(),
+                },
+                "normalized_citation": citation.matched_text,
+                "full_citation_obj": None,
+                "record": None,
+                "occurrences": [occurrence(citation)],
+            }
+
+        elif citation.refers_to is not None and citation.refers_to in key_by_index:
+            resource_key = key_by_index[citation.refers_to]
+            key_by_index[citation.index] = resource_key
+            citation_db[resource_key]["occurrences"].append(occurrence(citation))
+
+        else:
+            entry_type = citation.type_hint if citation.type_hint != "unknown" else "unknown"
+            unresolved_key = ResourceKey(entry_type, ("unresolved", str(citation.span[0])))
+            resource_key = _resource_identifier(unresolved_key)
+            key_by_index[citation.index] = resource_key
+            citation_db[resource_key] = {
+                "type": entry_type,
+                "resource": asdict(unresolved_key),
+                "status": "warning",
+                "substatus": _UNRESOLVED_SUBSTATUS,
+                "verification_details": {"note": "Short form citation without resolved antecedent"},
+                "normalized_citation": citation.matched_text,
+                "full_citation_obj": None,
+                "record": None,
+                "occurrences": [occurrence(citation)],
+            }
+
+    _verify_case_entries(citation_db, queue.cases)
+    return citation_db, queue.pending()
+
+
+def _extractor_name() -> str:
+    """CITATION_EXTRACTOR ("rules" by default, or "llm"), read at call time."""
+    name = (os.getenv("CITATION_EXTRACTOR") or "rules").strip().lower()
+    if name not in ("rules", "llm"):
+        logger.warning("Unknown CITATION_EXTRACTOR %r; using the rules extractor", name)
+        return "rules"
+    return name
 
 
 async def compile_citations(
     text: str,
     note_spans: Sequence[Tuple[int, int]] = (),
+    notes: Sequence[Any] | None = None,
+    normalized: Any | None = None,
 ) -> Dict[str, Any]:
     """Compile citations from the given text, handling string citations.
 
-    This function:
+    CITATION_EXTRACTOR picks the extractor. The rules extractor (default):
     1. Detects string citations (multiple citations separated by semicolons)
     2. Splits string citations into individual segments
     3. Processes each segment with eyecite
@@ -1500,11 +1718,21 @@ async def compile_citations(
     in a worker thread (_build_citation_db); the event loop stays free to
     answer other requests, including the platform's health checks.
 
+    The LLM extractor (svc.llm_extractor) replaces steps 1-6 with async model
+    calls plus grounding against the text, then builds the same database
+    (_citation_db_from_llm, in a worker thread) and verifies the same way.
+
     Args:
         text: The document text to analyze.
         note_spans: (start, end) of each footnote/endnote body inlined in
             `text` (ExtractedDocument.footnotes); keeps secondary-source
             citations from straddling a note boundary.
+        notes: The NoteSpans themselves (kind and label), which the LLM
+            extractor shows the model; optional.
+        normalized: A svc.normalization NormalizedDocument of the same upload
+            (DOCUMENT_NORMALIZATION=on). Only the LLM extractor uses it: it
+            reads the tagged text or PDF instead of chunks of `text` and
+            validates its answers against the document's blocks.
 
     Returns:
         Dict mapping resource keys to citation metadata, including:
@@ -1514,9 +1742,14 @@ async def compile_citations(
         - verification_details
 
     Raises:
+        CitationExtractionError: The LLM extractor failed (no partial result).
         Exception: If critical errors occur during processing.
     """
-    citation_db, pending_tasks = await asyncio.to_thread(_build_citation_db, text, note_spans)
+    if _extractor_name() == "llm":
+        citations = await extract_citations(text, note_spans, notes, normalized=normalized)
+        citation_db, pending_tasks = await asyncio.to_thread(_citation_db_from_llm, text, citations)
+    else:
+        citation_db, pending_tasks = await asyncio.to_thread(_build_citation_db, text, note_spans)
 
     # Complete async verifications (state law + secondary sources + journals) concurrently,
     # off the main event loop, so slow external lookups don't block the request.

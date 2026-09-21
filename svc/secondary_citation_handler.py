@@ -1,4 +1,4 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 """Handler for secondary source citations (treatises, encyclopedias, restatements, etc.).
 

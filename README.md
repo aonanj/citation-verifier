@@ -31,7 +31,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 - **Verification**:
   - **Case law**: CourtListener citation lookup with fuzzy matching (RapidFuzz) to flag name/year discrepancies.
   - **Federal law**: GovInfo link service with reporter-aware URL building for U.S.C., C.F.R., Stat., Pub. L., Fed. Reg., and related materials.
-  - **State law**: OpenAI `gpt-5.6-luna` Responses API with built-in web search tool access (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
+  - **State law**: The model in `AI_MODEL` (an OpenAI `gpt…` model, e.g. `gpt-5.6-terra`, via the Responses API) with built-in web search tool access (Justia, Cornell LII, FindLaw) to score validity and return a matching or nearly matching citation, as well as a confidence score corresponding to verification status. 
   - **Journals**: OpenAlex API query with fallback to Semantic Scholar API query. Queries on title and author, with fallback to query on volume, journal, page, and year.
   - **Secondary Sources**: Library of Congress Search API query with fuzzy matching for legal encyclopedias (C.J.S., Am. Jur.), restatements, ALR annotations, and treatises.   
 - **Results delivery**: FastAPI serializes a single payload containing citation metadata, status/substatus, occurrences (each carrying the footnote or endnote mark it falls within, if any), extracted text, footnote/endnote location ranges, and reference citation grouping information for the UI.
@@ -52,6 +52,11 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
   - OCR fallback for image-only PDFs using Pillow + Tesseract.
   - Normalization routines that standardize whitespace, smart quotes, and superscripts.
 - **Citation compiler** (`svc/citations_compiler.py`): Cleans text, resolves eyecite clusters to stable `ResourceKey`s, records occurrences, processes string citations and secondary sources, and calls the appropriate verifier based on citation type and jurisdiction classification. Performs async verification for improved performance.
+- **LLM extractor** (`svc/llm_extractor.py`, opt-in with `CITATION_EXTRACTOR=llm`): The model in `AI_MODEL` (OpenAI `gpt…` models only for now, e.g. `gpt-5.6-terra`) extracts citations from the document in parallel chunks and resolves short forms, `Id.` and `supra`; deterministic code locates every citation in the text itself, drops any value the document doesn't state (so a wrong volume or year is reported as written, never corrected), and feeds the same verifiers. Verifiers read a neutral `CitationRecord` (`svc/citation_record.py`), built by `svc/eyecite_adapter.py` on the rules path.
+- **Document normalization** (`svc/normalization/` and `svc/llm_normalized.py`, opt-in with `DOCUMENT_NORMALIZATION=on`, LLM extractor only): prepares the upload for the model instead of handing it chunks of extracted text.
+  - A `.docx` becomes tagged text in which every paragraph, table cell, footnote, endnote and text box is an individually addressable block (docx2python plus an lxml pass; a note follows the paragraph it is attached to; headers and footers are kept out of the model's input). Documents the parser can't read reliably (text boxes, note references with no body, ...) can be rendered to PDF by LibreOffice, if installed.
+  - A `.pdf` is inspected page by page (pypdf, pdfplumber). Good born-digital PDFs go to the model **byte for byte**; scanned pages get an OCR text layer (OCRmyPDF, only those pages, least destructive mode); a defective OCR layer is replaced; a digitally signed PDF is never modified; an encrypted one is rejected. The model reads the pages themselves (text and images), in windows of a few pages with one page of lookahead.
+  - The model returns every citation with the `source_id` of the block it found it in. Each answer is validated locally against that block (verbatim, or after conservative normalization; never repaired), then located in the extracted text and verified as usual. A citation that can't be matched is left out and the user is told how many.
 - **Verification modules** (`verifiers/`):
   - `case_verifier.py`: CourtListener integration with credential support, year extraction, and fuzzy name comparisons.
   - `federal_law_verifier.py`: Jurisdiction heuristics, GovInfo request builder, and reporter-specific parsing (e.g., CFR parts vs. sections).
@@ -83,6 +88,11 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 ├── svc/
 │   ├── doc_processor.py              # Text extraction and normalization
 │   ├── citations_compiler.py         # Eyecite integration and verifier dispatch
+│   ├── citation_record.py            # Parsed citation fields the verifiers read
+│   ├── eyecite_adapter.py            # CitationRecords from eyecite citations
+│   ├── llm_extractor.py              # AI-model citation extraction + grounding (CITATION_EXTRACTOR=llm)
+│   ├── llm_normalized.py             # The LLM extractor reading a NormalizedDocument (DOCUMENT_NORMALIZATION=on)
+│   ├── normalization/                # Document normalization: DOCX blocks, PDF inspection/OCR, validation, cache
 │   ├── secondary_citation_handler.py # Extracts secondary legal sources (supplement eyecite)
 │   └── string_citation_handler.py    # Formats string citations
 ├── verifiers/                        # Citation verification services
@@ -96,6 +106,8 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 │   ├── logger.py                     # Environment-aware logging setup
 │   ├── resource_resolver.py          # Citation metadata extraction
 │   └── span_finder.py                # Span calculation for eyecite tokens
+├── eval/                             # Extractor + normalization eval: run_eval.py, norm_*.py, fake_openai.py, snippets.json;
+│                                     # gold/, results/, normalization/ are generated
 ├── resources/                        # Sample documents and reference material
 ├── Dockerfile                        # Container build
 ├── requirements.txt                  # Python dependency pins
@@ -123,7 +135,7 @@ Key dependencies in `package.json`:
 ### External services
 - **CourtListener** citation lookup API (optional token for rate limit increase)
 - **GovInfo** link service (API key recommended for higher rate limits)
-- **OpenAI** Responses API (`gpt-5.6-luna` model) with built-in web-search tool access
+- **OpenAI** Responses API (the `gpt…` model named in `AI_MODEL`, e.g. `gpt-5.6-terra`) with built-in web-search tool access
 - **OpenAlex** API (optional mailto parameter for polite pool)
 - **Semantic Scholar** API (optional API key for expanded access)
 - **Library of Congress** Search API
@@ -134,6 +146,7 @@ Key dependencies in `package.json`:
    - Python 3.12 or 3.13 (requirements compiled with 3.13)
    - Node.js 18+ with npm
    - Tesseract OCR (`brew install tesseract` on macOS, `sudo apt-get install tesseract-ocr` on Debian/Ubuntu)
+   - Optional, for `DOCUMENT_NORMALIZATION=on`: LibreOffice (`soffice`) if you want the DOCX-to-PDF fallback renderer. OCRmyPDF, which runs Tesseract, is installed by `requirements.txt`; Ghostscript is **not** needed (OCRmyPDF is run with `--output-type pdf`).
 2. **Install backend packages**
    ```bash
    pip install -r requirements.txt
@@ -150,10 +163,18 @@ Create `.env` in the project root for backend configuration:
 COURTLISTENER_API_TOKEN=...   # CourtListener API (case verifications)
 COURT_LISTENER_API_BASE=https://www.courtlistener.com/api/rest/v4
 GOVINFO_API_KEY=...           # GovInfo API (federal law verifications)
-OPENAI_API_KEY=...            # OpenAI API (state law verifications, gpt-5.6-luna model)
+AI_API_KEY=...                # API key for AI_MODEL's provider (state law verifications; also the LLM extractor)
+AI_MODEL=gpt-5.6-terra         # Model for state law verification and the LLM extractor; OpenAI and its SDK are used
+                              # only when it starts with "gpt" (other providers aren't implemented yet)
 SEMANTIC_SCHOLAR_API_KEY=...  # Semantic Scholar API (journal verifications)
 OPENALEX_MAILTO=...           # OpenAlex polite pool (journal verifications, optional)
 LEGISCAN_API_KEY=...          # Legiscan API 
+
+# Citation extraction
+CITATION_EXTRACTOR=rules              # "rules" (eyecite + regex, default) or "llm" (AI_MODEL, see below)
+LLM_EXTRACTOR_REASONING_EFFORT=medium   # Optional: reasoning effort for OpenAI models (default "medium")
+DOCUMENT_NORMALIZATION=off            # "on": the LLM extractor reads tagged text (DOCX) or the PDF itself and its answers are
+                                      # validated against the document (only with CITATION_EXTRACTOR=llm; see below)
 
 # Logging configuration
 LOG_TO_FILE=false              # Optional: write logs to disk
@@ -171,6 +192,27 @@ DATABASE_URL=postgresql://<neon.tech_db>?sslmode=require&channel_binding=require
 BACKEND_URL=http://jurischeck.onrender.com/  # Or production URL
 PORT=8000             # Should correspond to Dockerfile port
 ```
+
+### Document normalization
+Off by default and read at call time. It has an effect only with `CITATION_EXTRACTOR=llm`; the rules extractor never uses it, and `.txt` uploads always take the text path. Nothing of it (or of its dependencies) is imported unless it is on. Every setting below is optional:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DOCUMENT_NORMALIZATION` | `off` | `on` turns the layer on |
+| `LLM_PDF_PAGES_PER_REQUEST` | `8` | PDF pages per model request (plus one page of lookahead) |
+| `NORMALIZATION_MAX_SOURCE_MB` / `_MAX_PDF_PAGES` | `50` / `300` | Upload size and PDF page limits (a violation is HTTP 400) |
+| `NORMALIZATION_MAX_DOCX_UNCOMPRESSED_MB` / `_MAX_DOCX_ENTRIES` / `_MAX_COMPRESSION_RATIO` | `200` / `5000` / `100` | Zip-bomb guards, checked before anything is decompressed |
+| `NORMALIZATION_OCR_TIMEOUT_S` / `_OFFICE_TIMEOUT_S` / `_TIMEOUT_S` | `300` / `120` / `420` | OCR, LibreOffice and total time limits (the child process tree is killed) |
+| `NORMALIZATION_OCR_LANGUAGE`, `_OCR_JOBS`, `_OCR_DESKEW`, `_OCR_ROTATE`, `_OCR_OPTIMIZE` | `eng`, all cores, on, on, `0` | OCRmyPDF settings (`_MAX_CONCURRENT_OCR`, default `1`, bounds concurrent OCR jobs per process) |
+| `NORMALIZATION_INSPECT_WORKERS` / `_PARALLEL_MIN_PAGES` | `0` (sequential) / `40` | Worker processes for inspecting PDFs of at least that many pages (about 50-100 ms per page sequentially; each worker costs tens of MB, so it is opt-in) |
+| `NORMALIZATION_FORCE_OCR_SUSPECT_NATIVE` | off | Rasterize and OCR pages whose native text layer is damaged (last resort: it rewrites those pages) |
+| `NORMALIZATION_INCLUDE_HEADERS_FOOTERS` / `_REQUIRE_PAGE_NUMBERS` | off / off | Send headers and footers to the model / render every DOCX to PDF so page numbers exist |
+| `NORMALIZATION_LIBREOFFICE_BIN`, `_OFFICE_BACKEND` (`soffice` or `unoserver`), `_UNOCONVERT_BIN` | auto | The optional DOCX-to-PDF fallback renderer |
+| `NORMALIZATION_CACHE` (`off` or `disk`), `_CACHE_DIR`, `_CACHE_TTL_S`, `_CACHE_MAX_MB` | `off`, temp dir, `900`, `512` | Cache of normalized derivatives keyed by SHA-256 + pipeline version + OCR settings |
+
+- **Privacy.** The original upload is never modified; everything derived lives in a per-request `0700` scratch directory that is removed when the request ends (success or failure), and OCR/LibreOffice run as subprocesses with a scrubbed environment (no API keys). PDFs travel to the model as inline base64 (`store=false`, nothing is uploaded to a file store). The cache is **off** because a cached derivative contains the document's text, which the Terms say is not retained; turning it on is a product decision.
+- **Isolation.** Run OCR and conversion in a container with a restricted filesystem and no network access where you can; the code does not (and cannot) enforce that itself.
+- **Failure modes.** Rejected (400): encrypted PDFs, malformed or oversized files. Otherwise degraded, never failed: no OCR available, an OCR error or a LibreOffice error leaves the pages or content unread and adds a warning to the response.
 
 ### Database Setup (Neon)
 Neon issues a Postgres connection string in the form `postgresql://<user>:<password>@<host>/<database>?sslmode=require`.  
@@ -194,7 +236,7 @@ NEXT_PUBLIC_AUTH0_AUDIENCE=...
 # Backend URL
 BACKEND_URL=http://localhost:8000  # Or production URL
 ```
-Environment variables fall back to sane defaults when omitted; state-law verification returns errors if no OpenAI key is present.
+Environment variables fall back to sane defaults when omitted; state-law verification returns errors if `AI_MODEL`/`AI_API_KEY` are not set or `AI_MODEL` isn't an OpenAI `gpt…` model.
 
 **Auth0 Setup** (required for frontend):
 - Create a "Regular Web Application" in Auth0
@@ -273,6 +315,22 @@ npm run dev
 - **Response**: `{ "session_id": "cs_test_...", "checkout_url": "https://checkout.stripe.com/...", "package_key": "...", "credits": 5, "amount_cents": 1950 }`
 - Redirect the browser to `checkout_url` to complete payment. Register the Stripe webhook at `/api/payments/webhook` to credit purchases.
 
+## Evaluating the citation extractors
+`eval/run_eval.py` scores the rules and LLM extractors against hand-reviewed gold citations, with the verifiers' HTTP stubbed:
+```bash
+python -m eval.run_eval bootstrap --fixture test_docx_footnotes.docx   # draft eval/gold/<fixture>.json for review
+python -m eval.run_eval score --extractor rules
+python -m eval.run_eval score --extractor llm --runs 3                  # needs AI_MODEL + AI_API_KEY
+```
+The scorecard covers full-citation recall/precision, field accuracy, short-form/`Id.`/`supra` resolution, note attribution, span exactness, seeded-error preservation (`eval/snippets.json`), run-to-run stability, latency and cost. A gold file counts only after review (`"reviewed": true`).
+
+The document-normalization layer has its own unit tests and golden fixtures inside this harness (there is no separate test framework):
+```bash
+python -m eval.run_eval normalize [--rebuild] [--only SUBSTRING ...] [--list]   # offline, deterministic, no API key
+python -m eval.run_eval normalize-extract [--runs N] [--fixture NAME ...]       # the live model reading the fixtures; costs money
+```
+`normalize` builds twelve fixture classes from code (`eval/norm_fixtures.py`: DOCX footnotes/endnotes/tables/text boxes, born-digital single- and two-column PDFs, 300 DPI and skewed scans, mixed and defective-OCR PDFs, signed, encrypted, citations split across lines and pages), each with expectations known by construction, and checks the normalizer against them, plus unit checks of every part (text, validator, classifier, reading order, security limits, OCR mechanics, cache, telemetry) and the real extractor reading a normalized document, answered by a fake model (`eval/fake_openai.py`) that reads the actual request and can misbehave in each way a model can. `/api/verify` itself is exercised in a subprocess with a scratch database. Checks that need Tesseract/OCRmyPDF are skipped where they are missing. `normalize-extract` reports recall, precision, exact-span F1, citation-type accuracy, source-location accuracy and schema success, with normalization, model and validation latency kept apart.
+
 ## Deployment
 The backend is containerized using Docker for easy deployment:
 ```bash
@@ -298,7 +356,7 @@ The Dockerfile uses Python 3.13-slim, installs Tesseract OCR, and exposes port 8
 ## License
 
 This repository is publicly viewable for portfolio purposes only. The code is proprietary.
-Copyright © 2025 Phaethon Order LLC. All rights reserved.
+Copyright © 2026 Phaethon Order LLC. All rights reserved.
 Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reuse requests.
 
 *See* [LICENSE](LICENSE.md) for terms.

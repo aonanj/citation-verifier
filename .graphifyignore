@@ -40,3 +40,5 @@ tests/
 
 # Agent instructions — meta, not the system being graphed
 .claude/
+handoff/
+HANDOFF.md

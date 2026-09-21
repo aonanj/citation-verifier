@@ -1,4 +1,4 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import re
 from typing import Any, Dict, Final, List, Literal, Tuple
 
 import httpx
-from eyecite.models import FullCitation, FullLawCitation
 
+from svc.citation_record import CitationRecord
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 
@@ -80,57 +80,17 @@ _USC_RANGE_RE: Final[re.Pattern[str]] = re.compile(r"^(\d+)-(\d+)$")
 _CFR_PART_SECTION_RE: Final[re.Pattern[str]] = re.compile(r"^(\d+)\.(\d+)$")
 _PURE_DIGITS_RE: Final[re.Pattern[str]] = re.compile(r"^\d+$")
 
-def _text_from_eyecite(cite) -> str:
-    """
-    Defensive extraction. Works across eyecite versions.
-    Tries fields commonly present on Law citations.
-    """
-    parts = []
-    cite_str = None
-
-    val = getattr(cite, "full_cite", None) or getattr(cite.groups, "full_cite", None) or getattr(cite.token, "data", None)
-    if val is not None:
-        cite_str = _sanitize_section(val)
-    else:
-        for attr in ("title", "volume", "chapter"):
-            part_one = getattr(cite, attr, None) or getattr(cite.groups, attr, None)
-            if part_one is not None:
-                s = _sanitize_section(str(part_one))
-                if s:
-                    parts.append(s)
-                    break
-        for attr in ("code", "reporter"):
-            part_two = getattr(cite, attr, None) or getattr(cite.groups, attr, None)
-            if part_two is not None:
-                s = _sanitize_section(part_two)
-                if s:
-                    parts.append(s)
-                    break
-        for attr in ("section", "page"):
-            part_three = getattr(cite, attr, None) or getattr(cite.groups, attr, None)
-            if part_three is not None:
-                s = _sanitize_section(str(part_three))
-                if s:
-                    parts.append(s)
-                    break
-
-        cite_str = " ".join(parts)
-    if cite_str is None or cite_str == "":
-        cite_str = str(cite)
-    return cite_str
-
-def classify_full_law_jurisdiction(
-    cite  # eyecite.citations.FullLawCitation
+def classify_law_jurisdiction(
+    text: str,
 ) -> Literal["federal", "state", "unknown"]:
     """
-    Heuristic classifier for an eyecite FullLawCitation:
+    Heuristic classifier for a law citation's text:
       - 'federal' if it matches federal code/reg/constitution/statutes-at-large markers
       - 'state' if it contains a state name/abbreviation + code/reg words
       - 'unknown' if neither is detected
 
     Returns: 'federal' | 'state' | 'unknown'
     """
-    text = _text_from_eyecite(cite)
 
     # Federal first: strong signals
     for pat in FEDERAL_PATTERNS:
@@ -150,21 +110,14 @@ def _clean_value(value: Any) -> str | None:
 
 
 def _get_law_group(
-    cite: FullCitation | None,
+    cite: CitationRecord | None,
     resource_dict: Dict[str, Any] | None,
     key: str,
 ) -> str | None:
-    if isinstance(cite, FullCitation):
-        groups = getattr(cite, "groups", {}) or {}
-        if key in groups:
-            value = _clean_value(groups.get(key))
-            if value:
-                return value
-
-    if isinstance(cite, FullCitation):
-        direct_value = _clean_value(getattr(cite, key, None))
-        if direct_value is not None:
-            return direct_value
+    if cite is not None:
+        value = _clean_value(cite.get(key))
+        if value:
+            return value
 
     resource_dict = resource_dict or {}
     id_tuple = resource_dict.get("id_tuple")
@@ -231,7 +184,7 @@ def _extract_cfr_range_literal(section: str) -> Dict[str, str | None] | None:
 
 
 def _build_uscode_endpoint(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
     title = _get_law_group(cite, resource_dict, "title")
@@ -252,7 +205,7 @@ def _build_uscode_endpoint(
 
 
 def _build_cfr_endpoint(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
     title = (_get_law_group(cite, resource_dict, "title") or _get_law_group(cite, resource_dict, "volume")
@@ -289,7 +242,7 @@ def _build_cfr_endpoint(
 
 
 def _build_stat_endpoint(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
     volume = _get_law_group(cite, resource_dict, "volume") or _get_law_group(cite, resource_dict, "title")
@@ -313,7 +266,7 @@ def _build_stat_endpoint(
 
 
 def _build_fr_endpoint(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
     volume = _get_law_group(cite, resource_dict, "volume") or _get_law_group(cite, resource_dict, "title")
@@ -337,7 +290,7 @@ def _build_fr_endpoint(
 
 
 def _build_plaw_endpoint(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
     citation_text: str | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
@@ -390,7 +343,7 @@ _REPORTER_BUILDERS = {
 
 
 def _build_govinfo_request(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
     citation_text: str | None,
 ) -> Tuple[str | None, Dict[str, str] | None, Tuple[str, Dict[str, Any]] | None]:
@@ -462,7 +415,7 @@ def _expand_bluebook_range(start_str: str, end_str: str) -> Tuple[List[str], int
 
 
 def _plan_uscode_range(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Dict[str, Any] | None:
     title = _get_law_group(cite, resource_dict, "title")
@@ -492,7 +445,7 @@ def _plan_uscode_range(
 
 
 def _plan_cfr_range(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Dict[str, Any] | None:
     title = (_get_law_group(cite, resource_dict, "title") or _get_law_group(cite, resource_dict, "volume")
@@ -586,7 +539,7 @@ def _plan_cfr_range(
 
 
 def _plan_range_requests(
-    cite: FullLawCitation,
+    cite: CitationRecord,
     resource_dict: Dict[str, Any] | None,
 ) -> Dict[str, Any] | None:
     """Plan per-section GovInfo requests for a multi-section range citation.
@@ -737,16 +690,16 @@ def _verify_section_range(
 
 
 def verify_federal_law_citation(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
-    if not isinstance(primary_full, FullLawCitation):
-        logger.error("Primary full citation is not a FullLawCitation.")
+    if primary_full is None or primary_full.type != "law":
+        logger.error("Primary full citation is not a law citation.")
         return "error", "unsupported_citation_type", None
 
-    jurisdiction = classify_full_law_jurisdiction(primary_full)
+    jurisdiction = primary_full.get("jurisdiction")
     if jurisdiction != "federal":
         logger.error(f"Unsupported jurisdiction: {jurisdiction}")
         return "error", "unsupported_jurisdiction", None
@@ -783,6 +736,6 @@ def verify_federal_law_citation(
 
 
 __all__ = [
-    "classify_full_law_jurisdiction",
+    "classify_law_jurisdiction",
     "verify_federal_law_citation",
 ]

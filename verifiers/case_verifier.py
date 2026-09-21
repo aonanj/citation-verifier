@@ -1,4 +1,4 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import httpx
-from eyecite.models import FullCitation
 from rapidfuzz import fuzz, process
 
+from svc.citation_record import CitationRecord
 from utils.case_name_normalizer import case_names_equivalent
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
-from utils.resource_resolver import resolve_case_name
 
 logger = get_logger()
 
@@ -245,7 +244,7 @@ def lookup_case_citations_batch(
 
 
 def _prepare_case_lookup_fields(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     resource_dict: Dict[str, Any] | None,
     normalized_key: str | None,
 ) -> Tuple[str | None, str | None, str | None]:
@@ -256,14 +255,9 @@ def _prepare_case_lookup_fields(
     resource_dict = resource_dict or {}
 
     if primary_full is not None:
-        groups = getattr(primary_full, "groups", {}) or {}
-        volume = volume or clean_str(groups.get("volume"))
-        reporter = reporter or clean_str(groups.get("reporter"))
-        page = page or clean_str(groups.get("page"))
-
-    if (not volume or not reporter or not page) and isinstance(primary_full, FullCitation):
-        volume = volume or clean_str(getattr(primary_full, "volume", None))
-        page = page or clean_str(getattr(primary_full, "page", None))
+        volume = clean_str(primary_full.get("volume"))
+        reporter = clean_str(primary_full.get("reporter"))
+        page = clean_str(primary_full.get("page"))
 
     id_tuple = resource_dict.get("id_tuple")
     if isinstance(id_tuple, tuple):
@@ -287,7 +281,7 @@ def _prepare_case_lookup_fields(
 
 
 def case_lookup_triad(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
@@ -296,44 +290,8 @@ def case_lookup_triad(
     citation_text = clean_str(normalized_key) or clean_str(fallback_citation)
     return _prepare_case_lookup_fields(primary_full, resource_dict, citation_text)
 
-# eyecite sometimes takes neighboring non-name text as a party ("Id. 141.",
-# "7th Cir. 1910).", a glued footnote number "Reflect- 41.", a PDF page footer
-# "... Repository, 2010"); such a party is discarded rather than reported.
-# Numbered names like "Local 1199" or "One 1958 Plymouth Sedan" still pass.
-_NON_NAME_PARTY_RE = re.compile(r"^(?:id|ibid|supra)\b|[()]|\s\d+\.$|,\s*\d{4}$", re.IGNORECASE)
-
-
-def _name_party(value: Any) -> str | None:
-    party = clean_str(value)
-    if party and _NON_NAME_PARTY_RE.search(party):
-        return None
-    return party
-
-
-def get_case_name(obj) -> str | None:
-    if obj is None:
-        return None
-    case_name = None
-    metadata = getattr(obj, "metadata", None)
-    if metadata is not None:
-        plaintiff = _name_party(
-            getattr(metadata, "plaintiff", None)
-            or getattr(metadata, "petitioner", None)
-        )
-        defendant = _name_party(
-            getattr(metadata, "defendant", None)
-            or getattr(metadata, "respondent", None)
-        )
-        if plaintiff and defendant:
-            case_name = clean_str(f"{plaintiff} v. {defendant}")
-
-        if plaintiff is None and defendant is not None:
-            case_name = f"In re {defendant}"
-
-    return resolve_case_name(case_name, obj)
-
 def verify_case_citation(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
@@ -373,21 +331,8 @@ def verify_case_citation(
     if not lookup_payload:
         return "no_match", None, None
 
-    expected_name = get_case_name(primary_full)
-    if expected_name is None and primary_full is not None:
-        metadata = getattr(primary_full, "metadata", None)
-        if metadata is not None:
-            expected_name = clean_str(getattr(metadata, "resolved_case_name", None))
-            if not expected_name:
-                expected_name = clean_str(getattr(metadata, "resolved_case_name_short", None))
-
-    expected_year = None
-    if primary_full is not None:
-        expected_year = getattr(primary_full, "year", None)
-        if not expected_year:
-            metadata = getattr(primary_full, "metadata", None)
-            if metadata is not None:
-                expected_year = getattr(metadata, "year", None)
+    expected_name = primary_full.get("case_name") if primary_full is not None else None
+    expected_year = primary_full.get("year") if primary_full is not None else None
     if not expected_year:
         resource_dict = resource_dict or {}
         id_tuple = resource_dict.get("id_tuple")
@@ -457,7 +402,6 @@ def verify_case_citation(
 
 __all__ = [
     "case_lookup_triad",
-    "get_case_name",
     "lookup_case_citations_batch",
     "verify_case_citation",
 ]

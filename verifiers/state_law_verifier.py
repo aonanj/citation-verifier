@@ -2,16 +2,14 @@ import json
 import os
 from typing import Any, Dict, Tuple
 
-from eyecite.models import FullCitation, FullLawCitation
-from openai import OpenAI
-from openai.types import ResponsesModel
-
+from svc.citation_record import CitationRecord
+from utils.ai_model import AI_API_KEY_ENV, AI_MODEL_ENV, ai_model, is_openai_model
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 
 logger = get_logger()
 
-OPENAI_API_KEY = "OPENAI_API_KEY"
+AI_API_KEY = AI_API_KEY_ENV
 
 PROMPT = """
 Below is at least one citation to a U.S. state law, statute, regulation, or similar state-level legal provision. 
@@ -44,21 +42,14 @@ ALLOWED_DOMAINS = [
 ]
 
 def _get_law_group(
-    cite: FullCitation | None,
+    cite: CitationRecord | None,
     resource_dict: Dict[str, Any] | None,
     key: str,
 ) -> str | None:
-    if isinstance(cite, FullCitation):
-        groups = getattr(cite, "groups", {}) or {}
-        if key in groups:
-            value = (groups.get(key))
-            if value:
-                return value
-
-    if isinstance(cite, FullCitation):
-        direct_value = clean_str(getattr(cite, key, None))
-        if direct_value is not None:
-            return direct_value
+    if cite is not None:
+        value = clean_str(cite.get(key))
+        if value:
+            return value
 
     resource_dict = resource_dict or {}
     id_tuple = resource_dict.get("id_tuple")
@@ -78,13 +69,18 @@ def _get_law_group(
 
     return None
 
-def _get_openai_client() -> OpenAI | None:
-    if OPENAI_API_KEY is None or OPENAI_API_KEY == "":
-        logger.error("OPENAI_API_KEY is not set.")
+def _get_openai_client() -> Any:
+    """An OpenAI client; only called for an OpenAI AI_MODEL."""
+    from openai import OpenAI
+
+    if AI_API_KEY is None or AI_API_KEY == "":
+        logger.error("AI_API_KEY is not set.")
         return None
     try:
-        open_api_key = os.getenv(OPENAI_API_KEY, "")
-        client = OpenAI(api_key=open_api_key)
+        open_api_key = os.getenv(AI_API_KEY, "")
+        openai_org = os.getenv("OPENAI_ORG", "")
+        openai_project = os.getenv("OPENAI_PROJECT", "")
+        client = OpenAI(api_key=open_api_key, organization=openai_org, project=openai_project)
         return client
     except Exception as e:
         logger.error(f"Error initializing OpenAI client: {e}")
@@ -98,14 +94,14 @@ def _clean_json_response(response_text: str) -> str:
     return response_text
 
 def verify_state_law_citation(
-    primary_full: FullCitation | None,
+    primary_full: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
     fallback_citation: str | None = None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
 
-    if not isinstance(primary_full, FullLawCitation):
-        logger.error("Primary full citation is not a FullLawCitation.")
+    if primary_full is None or primary_full.type != "law":
+        logger.error("Primary full citation is not a law citation.")
         return "error", "unsupported_citation_type", None
 
     reporter = _get_law_group(primary_full, resource_dict, "reporter")
@@ -133,13 +129,24 @@ def verify_state_law_citation(
     if year:
         bluebook_citation += f" ({year})"
 
+    model = ai_model()
+    if not model:
+        logger.error(f"{AI_MODEL_ENV} is not set.")
+        return "error", "ai_model_not_configured", None
+    if is_openai_model(model):
+        return _verify_with_openai(model, bluebook_citation)
+    logger.error(f"{AI_MODEL_ENV} {model!r} is not supported: only OpenAI (\"gpt...\") models are implemented.")
+    return "error", "unsupported_ai_model", None
+
+
+def _verify_with_openai(model: str, bluebook_citation: str) -> Tuple[str, str | None, Dict[str, Any] | None]:
+    """Ask an OpenAI model (with web search) whether the citation exists."""
     try:
         client = _get_openai_client()
         if client is None:
             return "error", "openai_client_init_failed", None
 
         input = PROMPT + f"**Citation to verify**: `{bluebook_citation}`"
-        model: ResponsesModel = "gpt-5.6-luna"
 
         response = client.responses.create(
             model = model,

@@ -1,4 +1,4 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 import asyncio
 import io
@@ -25,6 +25,7 @@ from database.models import Payment, UserAccount
 from database.session import Base, engine, get_db
 from svc.citations_compiler import compile_citations
 from svc.doc_processor import NoteSpan, extract_document, note_for_offset, ocr_available
+from svc.llm_extractor import CitationExtractionError
 from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
 from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
@@ -590,11 +591,56 @@ def _sanitize_citations(
     return sanitized
 
 
+def _read_file(path: str) -> bytes:
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+async def _normalize_upload(contents: bytes, filename: str) -> Any:
+    """The upload's NormalizedDocument when DOCUMENT_NORMALIZATION is on and the LLM extractor is selected, else None.
+
+    Imported here, not at the top, so nothing of the normalization layer (or its heavy dependencies) loads unless it
+    is switched on. A file that must be rejected (encrypted, oversized, malformed) is a 400; any other failure
+    leaves the request on the ordinary text path.
+    """
+    from svc.normalization.config import normalization_active
+
+    if not normalization_active():
+        return None
+    from svc.normalization import NormalizationError, UnsupportedDocumentError
+    from svc.normalization.normalizer import DocumentNormalizer, sniff_format
+
+    if sniff_format(contents[:4096]) is None:
+        return None  # plain text, or not a document at all: the ordinary text path handles (or rejects) it as before
+
+    try:
+        return await DocumentNormalizer().normalize_bytes(contents, filename)
+    except UnsupportedDocumentError as exc:
+        logger.error("Document rejected by normalization (%s)", exc.code)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NormalizationError as exc:
+        logger.warning("Document normalization failed (%s); using the text extractor", exc.code)
+    except Exception:  # pragma: no cover - unexpected failure
+        logger.exception("Document normalization crashed; using the text extractor")
+    return None
+
+
 @app.post("/api/verify", response_model=VerificationResponse)
 async def verify_document(
     document: UploadFile = File(..., alias="document"),
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
+) -> VerificationResponse:
+    scratch: List[Any] = []  # NormalizedDocuments to clean up: their scratch directories hold the upload's text
+    try:
+        return await _verify_document(document, auth, db, scratch)
+    finally:
+        for normalized in scratch:
+            normalized.close()
+
+
+async def _verify_document(
+    document: UploadFile, auth: AuthContext, db: Session, scratch: List[Any],
 ) -> VerificationResponse:
     file = document
 
@@ -624,8 +670,16 @@ async def verify_document(
             detail="Insufficient credits. Please purchase document verification credits to continue.",
         )
 
+    normalized = await _normalize_upload(file_contents, file.filename)
+    display_contents = file_contents
+    if normalized is not None:
+        scratch.append(normalized)
+        if normalized.display_source_kind == "pdf" and normalized.display_source_path != normalized.source_path:
+            # An OCRed (or unrestricted) copy: extract the text layer the model reads instead of OCRing the page twice.
+            display_contents = await asyncio.to_thread(_read_file, normalized.display_source_path)
+
     storage = FileStorage(
-        stream=io.BytesIO(file_contents),
+        stream=io.BytesIO(display_contents),
         filename=file.filename,
         content_type=file.content_type,
     )
@@ -648,7 +702,16 @@ async def verify_document(
         compiled = await compile_citations(
             extracted_text,
             [(note.start, note.end) for note in extracted.footnotes],
+            notes=extracted.footnotes,
+            normalized=normalized,
         )
+    except CitationExtractionError as exc:
+        # Raised before any credit is deducted, so the user isn't charged.
+        logger.error(f"Citation extraction failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Citation extraction is temporarily unavailable. No credit was charged; please try again.",
+        ) from exc
     except Exception as exc:  # pragma: no cover - unexpected failure
         logger.error(f"Error in compile_citations: {exc}")
         raise HTTPException(status_code=500, detail="Failed to compile citations.") from exc
@@ -689,6 +752,8 @@ async def verify_document(
             f"OCR is unavailable on this server; page(s) {page_list} contain no "
             "text layer and were not checked."
         )
+    if normalized is not None:
+        warnings.extend(normalized.user_warnings())
 
     return VerificationResponse(
         citations=sanitized,

@@ -1,4 +1,4 @@
-# Copyright © 2025 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
+# Copyright © 2026 Phaethon Order LLC. All rights reserved. Provided solely for evaluation. See LICENSE.
 
 """Verification for secondary legal sources using Library of Congress API.
 
@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Tuple
 import httpx
 from rapidfuzz import fuzz
 
+from svc.citation_record import CitationRecord
 from utils.cleaner import clean_str, normalize_case_name_for_compare
 from utils.logger import get_logger
 
@@ -99,13 +100,13 @@ def _similarity_score(a: str, b: str) -> float:
 
 
 def _extract_citation_fields(
-    cite: Any,
+    cite: CitationRecord | None,
     resource_dict: Dict[str, Any] | None,
 ) -> Dict[str, str]:
-    """Extract citation fields from citation object or resource dict.
+    """Extract citation fields from citation record or resource dict.
     
     Args:
-        cite: Citation object (could be SecondaryCitation or similar).
+        cite: The secondary citation's CitationRecord.
         resource_dict: Resource metadata dictionary.
         
     Returns:
@@ -113,10 +114,10 @@ def _extract_citation_fields(
     """
     fields: Dict[str, str] = {}
     
-    # Try to get fields from citation object first
+    # Try to get fields from citation record first
     for field in ["source_type", "volume", "title", "section", "page", 
                   "year", "edition", "series", "author"]:
-        value = getattr(cite, field, None)
+        value = cite.get(field) if cite is not None else None
         if value:
             fields[field] = _clean_value(value)
     
@@ -464,7 +465,7 @@ def _match_result_to_citation(
 
 
 def verify_secondary_citation(
-    cite: Any,
+    cite: CitationRecord | None,
     normalized_key: str | None,
     resource_dict: Dict[str, Any] | None,
 ) -> Tuple[str, str | None, Dict[str, Any] | None]:
@@ -474,7 +475,7 @@ def verify_secondary_citation(
     fuzzy matching to determine if a valid match exists.
     
     Args:
-        cite: Citation object (SecondaryCitation or similar).
+        cite: The secondary citation's CitationRecord.
         normalized_key: Normalized citation string.
         resource_dict: Resource metadata dictionary.
         
