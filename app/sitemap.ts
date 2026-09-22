@@ -4,7 +4,7 @@ const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.jurischeck.c
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
-  const routes = ['/', '/results', '/payments/success', '/payments/cancelled'];
+  const routes = ['/', '/results', '/terms-of-use', '/payments/success', '/payments/cancelled'];
 
   return routes.map((path) => ({
     url: new URL(path, siteOrigin).toString(),

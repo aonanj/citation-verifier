@@ -50,7 +50,7 @@ const termsSections = [
     heading: '6. Confidentiality & Feedback',
     body: [
       'All materials you submit remain your property. The JurisCheck service does not claim ownership of your documents or extracted citation data.',
-      'The JurisCheck sevice uses third-party AI services to process uploaded documents. While we do not store or retain your documents, we cannot guarantee that third-party services will not retain or use your data.',
+      'The JurisCheck service uses third-party AI services to process uploaded documents. While we do not store or retain your documents, we cannot guarantee that third-party services will not retain or use your data.',
       'Feedback, suggestions, or bug reports you submit may be used to improve the service without obligation to you.',
     ],
   },
