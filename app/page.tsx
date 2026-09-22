@@ -625,43 +625,6 @@ function HomePageContent() {
           </div>
         </section>
 
-        <section className={styles.featureHighlights} aria-labelledby="feature-highlights-heading">
-          <div className={styles.featureHighlightsHeader}>
-            <h2 id="feature-highlights-heading" className={styles.sectionTitle}>
-              Fast Check Citations Before Filing
-            </h2>
-            <p className={styles.sectionSubtitle}>
-              Automate verification of citations in legal briefs and documents. Submit documents with confidence in their accuracy.
-            </p>
-          </div>
-          <div className={styles.featureGrid}>
-            <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Bluebook-native citation checks</h3>
-              <p className={styles.featureCardCopy}>
-                Consistent and robust identification of all Bluebook-style citations, including string citations and citations with introductory signals. Short-form and abbreviated citations are matched to full parent citations.
-              </p>
-            </article>
-            <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Comprehensive authority coverage</h3>
-              <p className={styles.featureCardCopy}>
-                Validates citations against authoritative databases and APIs, including Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, OpenAlex, and more.
-              </p>
-            </article>
-            <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Multi-pass verification & confirmation</h3>
-              <p className={styles.featureCardCopy}>
-                Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is confirmed across multiple authorities to ensure results are highly accurate.
-              </p>
-            </article>
-            <article className={styles.featureCard}>
-              <h3 className={styles.featureCardTitle}>Broad format and style compatibility</h3>
-              <p className={styles.featureCardCopy}>
-                Seamless operation across multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Accepts inline and footnote citation styles.
-              </p>
-            </article>
-          </div>
-        </section>
-
         <section className={styles.workspaceColumns}>
           <article className={styles.uploadCard}>
             <h2 className={styles.uploadHeading}>Upload document</h2>
@@ -763,6 +726,43 @@ function HomePageContent() {
               </p>
             </div>
           </aside>
+        </section>
+
+        <section className={styles.featureHighlights} aria-labelledby="feature-highlights-heading">
+          <div className={styles.featureHighlightsHeader}>
+            <h2 id="feature-highlights-heading" className={styles.sectionTitle}>
+              Fast Check Citations Before Filing
+            </h2>
+            <p className={styles.sectionSubtitle}>
+              Automate verification of citations in legal briefs and documents. Submit documents with confidence in their accuracy.
+            </p>
+          </div>
+          <div className={styles.featureGrid}>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Bluebook-native citation checks</h3>
+              <p className={styles.featureCardCopy}>
+                Consistent and robust identification of all Bluebook-style citations, including string citations and citations with introductory signals. Short-form and abbreviated citations are matched to full parent citations.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Comprehensive authority coverage</h3>
+              <p className={styles.featureCardCopy}>
+                Validates citations against authoritative databases and APIs, including Court Listener, GovInfo.gov, Semantic Scholar, FindLaw, Justia, OpenAlex, and more.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Multi-pass verification & confirmation</h3>
+              <p className={styles.featureCardCopy}>
+                Citations are checked across multiple parts (e.g., parties, reporter, court, year, etc.). Each part is confirmed across multiple authorities to ensure results are highly accurate.
+              </p>
+            </article>
+            <article className={styles.featureCard}>
+              <h3 className={styles.featureCardTitle}>Broad format and style compatibility</h3>
+              <p className={styles.featureCardCopy}>
+                Seamless operation across multiple file formats, including Word (docx), plain text (txt), and both text-based and image-based pdf. Accepts inline and footnote citation styles.
+              </p>
+            </article>
+          </div>
         </section>
 
         <section className={styles.faqSection} id="faq" aria-labelledby="faq-heading">
