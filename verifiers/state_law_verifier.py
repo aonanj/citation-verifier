@@ -1,4 +1,5 @@
 import json
+import math
 from typing import Any, Dict, Tuple
 
 from svc.citation_record import CitationRecord
@@ -23,8 +24,8 @@ corresponding to a citation are acceptable. Moreover, you should provide a confi
 If you are unable to verify all parts of a citation, you should adjust your confidence score downward to reflect this uncertainty. 
 Provide your response as a JSON object, according to this format:
     {
-        "status": "verified" if citation is verified (e.g., confidence score >= 0.85), "warning" if confidence is low (e.g., 0.5 <= confidence < 0.85),
-            "no_match" if no matching citation is found (e.g., confidence score < 0.5), or "error" if an error occurred,
+        "status": "verified" if citation is verified (confidence score >= 0.90), "warning" if confidence is low (0.70 <= confidence < 0.90),
+            "no_match" if no matching citation is found (confidence score < 0.70), or "error" if an error occurred,
         "citation": the standardized Bluebook citation string closest to the provided citation (if "verified" this may be the same as the provided
             citation; if "no_match" or "error" this should be null),
         "confidence": confidence score as a float between 0.0 and 1.0, indicating how confident you are that the citation is valid
@@ -37,6 +38,34 @@ ALLOWED_DOMAINS = [
     "law.cornell.edu",
     "codes.findlaw.com"
 ]
+
+# Confidence bands for an AI verification (state law and the federal-law recheck).
+AI_VERIFIED_MIN = 0.90
+AI_WARNING_MIN = 0.70
+_STATUS_RANK = {"no_match": 0, "warning": 1, "verified": 2}
+
+
+def confidence_band_status(model_status: Any, confidence: Any) -> str | None:
+    """The status an AI answer earns: the more conservative of the model's own status
+    and the band its confidence falls in (>= 0.90 verified, >= 0.70 warning, else
+    no_match), so the model can never upgrade a citation past its confidence.
+
+    None when the status isn't verified/warning/no_match or the confidence isn't a number.
+    """
+    if not isinstance(model_status, str) or isinstance(confidence, bool):
+        return None
+    status = model_status.strip().lower().replace(" ", "_")
+    if status not in _STATUS_RANK:
+        return None
+    try:
+        value = float(confidence)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(value):
+        return None
+    value = min(max(value, 0.0), 1.0)
+    band = "verified" if value >= AI_VERIFIED_MIN else "warning" if value >= AI_WARNING_MIN else "no_match"
+    return min(status, band, key=_STATUS_RANK.__getitem__)
 
 def _get_law_group(
     cite: CitationRecord | None,
@@ -182,10 +211,17 @@ def _verify_with_openai(model: dict, bluebook_citation: str) -> Tuple[str, str |
 
         logger.info(f"Manifest for state law citation verification: {manifest}")
 
-        status = manifest.get("status") or "error"
+        raw_status = manifest.get("status")
         citation = manifest.get("citation") or None
-        confidence = manifest.get("confidence") or None
-        return status, f"closest_match: {citation}, confidence: {confidence}", None
+        confidence = manifest.get("confidence")
+        substatus = f"closest_match: {citation}, confidence: {confidence}"
+        if isinstance(raw_status, str) and raw_status.strip().lower() == "error":
+            return "error", substatus, None
+        status = confidence_band_status(raw_status, confidence)
+        if status is None:
+            logger.error(f"Unusable state law verification answer: status={raw_status!r}, confidence={confidence!r}")
+            return "error", "state_law_search_failed", None
+        return status, substatus, None
 
     except Exception as e:
         logger.error(f"Error during state law citation verification: {e}")
