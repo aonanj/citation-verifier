@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 from typing import Any, Dict, Final, List, Literal, Tuple
 
 import httpx2
 
+import verifiers.state_law_verifier as state_law_verifier
 from svc.citation_record import CitationRecord
+from utils.ai_model import ai_model
 from utils.cleaner import clean_str
 from utils.logger import get_logger
 
@@ -689,6 +692,170 @@ def _verify_section_range(
     return literal_result
 
 
+# AI web-search recheck of a citation GovInfo can't confirm (e.g. "35 U.S.C. § 154(a)(1)-(2)",
+# whose subsections the link service rejects with a 400), modeled on state_law_verifier.
+AI_FALLBACK_PROMPT = """
+Below is a citation to a U.S. federal legal authority: a United States Code (U.S.C.) section, a Code of Federal
+Regulations (C.F.R.) section or part, a Statutes at Large (Stat.) page, a Federal Register (Fed. Reg.) page, a public
+law (Pub. L.), the U.S. Constitution (U.S. Const.), or a similar federal provision.
+You must verify the existence and accuracy of the citation. Check each part of it: the title or volume number, the
+code or reporter, the section (including every subsection, paragraph, or clause the citation names, e.g. "(a)(1)-(2)")
+or page, and the year.
+A year in parentheses names the edition or year of the code or publication cited: a provision that existed in that
+edition is valid even if it has since been amended, renumbered, or repealed. If you cannot confirm that the provision
+existed in the cited year, adjust your confidence score downward.
+Your primary goal is to verify whether the citation you are provided corresponds to an actual federal law citation.
+You should use only the information explicitly provided to you when generating a response.
+Because accuracy is the paramount concern, responses indicating you don't have sufficient information to provide an answer or you are unable to locate a source
+corresponding to a citation are acceptable. Moreover, you should provide a confidence score between 0.0 and
+1.0 indicating confidence for a citation verification.
+If you are unable to verify all parts of a citation, you should adjust your confidence score downward to reflect this uncertainty.
+Provide your response as a JSON object, according to this format:
+    {
+        "status": "verified" if citation is verified (e.g., confidence score >= 0.85), "warning" if confidence is low (e.g., 0.5 <= confidence < 0.85),
+            "no_match" if no matching citation is found (e.g., confidence score < 0.5), or "error" if an error occurred,
+        "citation": the standardized Bluebook citation string closest to the provided citation (if "verified" this may be the same as the provided
+            citation; if "no_match" or "error" this should be null),
+        "confidence": confidence score as a float between 0.0 and 1.0, indicating how confident you are that the citation is valid
+    }
+Do not return any text or other characters apart from the JSON object. Do not include any text or other characters outside of the JSON object.\n\n
+"""
+
+AI_FALLBACK_DOMAINS: Final[List[str]] = [
+    "law.justia.com",
+    "law.cornell.edu",
+    "codes.findlaw.com"
+]
+
+AI_FALLBACK_TIMEOUT: Final[float] = 120.0
+
+# Pre-request GovInfo errors meaning the link service can't look this citation up
+# (as opposed to a configuration fault or a service outage, which are not rechecked).
+_AI_RECHECK_ERROR_SUBSTATUSES: Final[frozenset[str]] = frozenset({
+    "unsupported_reporter",
+    "missing_reporter",
+    "insufficient_citation_data",
+    "invalid_endpoint",
+    "citation predates earliest available data",
+})
+
+_AI_STATUSES: Final[Dict[str, str]] = {
+    "verified": "verified",
+    "warning": "warning",
+    "no_match": "no_match",
+    "no match": "no_match",
+}
+
+_WHITESPACE_RE: Final[re.Pattern[str]] = re.compile(r"\s+")
+
+
+def _needs_ai_recheck(result: Tuple[str, str | None, Dict[str, Any] | None]) -> bool:
+    status, substatus, _ = result
+    if status in ("no_match", "no match"):
+        return True
+    return status == "error" and substatus in _AI_RECHECK_ERROR_SUBSTATUSES
+
+
+def _ai_citation_text(
+    record: CitationRecord,
+    normalized_key: str | None,
+    fallback_citation: str | None,
+) -> str | None:
+    """The citation as written (plus its year when the text lacks it), for the AI recheck."""
+    text = None
+    for candidate in (record.matched_text, normalized_key, fallback_citation):
+        cleaned = _WHITESPACE_RE.sub(" ", candidate or "").strip()
+        if cleaned:
+            text = cleaned
+            break
+    if not text:
+        return None
+
+    year = _clean_value(record.get("year"))
+    if year and year not in text:
+        text += f" ({year})"
+    return text
+
+
+def _last_message_text(response: Any) -> str | None:
+    text = None
+    for item in getattr(response, "output", None) or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        parts = [
+            content.text
+            for content in (getattr(item, "content", None) or [])
+            if getattr(content, "type", None) == "output_text" and getattr(content, "text", None)
+        ]
+        if parts:
+            text = "".join(parts)
+    return text
+
+
+def _blank_to_none(value: Any) -> Any:
+    if value is None or (isinstance(value, str) and value.strip().lower() in {"null", "none", ""}):
+        return None
+    return value
+
+
+def _recheck_with_ai(
+    citation_text: str,
+    govinfo_result: Tuple[str, str | None, Dict[str, Any] | None],
+) -> Tuple[str, str | None, Dict[str, Any] | None]:
+    """Recheck a citation GovInfo couldn't confirm with AI_MODEL + web search.
+
+    Any failure (no usable AI_MODEL, request error or timeout, unparseable or
+    unexpected answer) returns govinfo_result unchanged.
+    """
+    try:
+        model = ai_model()
+        client = state_law_verifier._get_ai_client(model)
+        response = client.responses.create(
+            model=model.get("model"),
+            input=AI_FALLBACK_PROMPT + f"**Citation to verify**: `{citation_text}`",
+            tools=[{
+                "type": "web_search",
+                "filters": {"allowed_domains": AI_FALLBACK_DOMAINS},
+            }],
+            tool_choice="auto",
+            text={"verbosity": "low"},
+            reasoning={"effort": "medium"},
+            store=False,
+            timeout=AI_FALLBACK_TIMEOUT,
+        )
+        data = json.loads(state_law_verifier._clean_json_response(_last_message_text(response) or ""))
+    except Exception as exc:
+        logger.error("AI recheck of a federal law citation failed: %s", exc)
+        return govinfo_result
+
+    raw_status = data.get("status") if isinstance(data, dict) else None
+    status = _AI_STATUSES.get(raw_status.strip().lower()) if isinstance(raw_status, str) else None
+    if status is None:
+        logger.error("AI recheck of a federal law citation returned an unusable status: %r", raw_status)
+        return govinfo_result
+
+    closest_match = _blank_to_none(data.get("citation"))
+    confidence = _blank_to_none(data.get("confidence"))
+    logger.info("AI recheck of a federal law citation: status=%s, confidence=%s", status, confidence)
+
+    govinfo_status, govinfo_substatus, govinfo_details = govinfo_result
+    details: Dict[str, Any] = {
+        "source": "ai_web_search",
+        "model": model.get("model"),
+        "citation_checked": citation_text,
+        "closest_match": closest_match,
+        "confidence": confidence,
+        "govinfo": {
+            "status": govinfo_status,
+            "substatus": govinfo_substatus,
+            "details": govinfo_details,
+        },
+    }
+    if status == "no_match":
+        return "no_match", "Not found in GovInfo or by AI web search", details
+    return status, f"AI web search closest_match: {closest_match}, confidence: {confidence}", details
+
+
 def verify_federal_law_citation(
     primary_full: CitationRecord | None,
     normalized_key: str | None,
@@ -704,6 +871,22 @@ def verify_federal_law_citation(
         logger.error(f"Unsupported jurisdiction: {jurisdiction}")
         return "error", "unsupported_jurisdiction", None
 
+    result = _verify_with_govinfo(primary_full, normalized_key, resource_dict, fallback_citation)
+    if not _needs_ai_recheck(result):
+        return result
+
+    citation_text = _ai_citation_text(primary_full, normalized_key, fallback_citation)
+    if not citation_text:
+        return result
+    return _recheck_with_ai(citation_text, result)
+
+
+def _verify_with_govinfo(
+    primary_full: CitationRecord,
+    normalized_key: str | None,
+    resource_dict: Dict[str, Any] | None,
+    fallback_citation: str | None,
+) -> Tuple[str, str | None, Dict[str, Any] | None]:
     govinfo_env = os.getenv(GOVINFO_API_KEY) or ""
     api_key = base64.b64encode(govinfo_env.encode("utf-8"))
     if not api_key:
