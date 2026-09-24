@@ -109,6 +109,12 @@ button {
   font-family: inherit;
 }
 
+h1 {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;

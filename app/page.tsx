@@ -593,10 +593,10 @@ function HomePageContent() {
             </span>
             <div>
               <span className={styles.heroEyebrow}>Bluebook-native verification</span>
-              <h1 className={styles.heroTitle}>
+              <p className={styles.heroTitle}>
                 JurisCheck
                 <span className={styles.heroAccent}>Comprehensive validation for document citation confidence.</span>
-              </h1>
+              </p>
               <p className={styles.heroSubtitle}>
                 Citation verification web service specifically designed for the legal space.
               </p>

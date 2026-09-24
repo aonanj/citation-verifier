@@ -200,7 +200,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     <img src="/images/scales-of-justice.png" alt="" aria-hidden="true" />
                   </span>
                   <div>
-                    <span className="site-footer__label">JurisCheck</span>
+                    <span className="site-footer__label"><h1>JurisCheck</h1></span>
                     <span className="site-footer__tagline">Citation confidence for legal documents.</span>
                   </div>
                 </div>
