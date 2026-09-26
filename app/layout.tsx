@@ -16,7 +16,7 @@ const webApplicationLd = {
   name: 'JurisCheck Citation Checker',
   url: normalizedSiteUrl,
   description:
-    'JurisCheck is a Bluebook-native legal citation verification service that catches AI-generated hallucinations, fake citations, and other inaccuracies in legal documents.',
+    'JurisCheck is a Bluebook-native legal citation verification service that catches AI-hallucinated, erroneous, and other inaccurate citations in legal documents.',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   inLanguage: 'en-US',
@@ -26,7 +26,7 @@ const webApplicationLd = {
   },
   audience: {
     '@type': 'Audience',
-    audienceType: ['Attorneys', 'Law firms', 'Legal scholars'],
+    audienceType: ['Attorneys', 'Law firms', 'Law school faculty', 'Law students'],
   },
   featureList: [
     'Automated verification of Bluebook citations and string cites',

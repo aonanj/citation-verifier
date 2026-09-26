@@ -31,3 +31,6 @@ eval/results/
 eval/
 handoff/
 HANDOFF.md
+.neon
+.agents/
+

@@ -7,6 +7,8 @@
   "dependencies": {
     "@auth0/auth0-react": "^2.8.0",
     "@auth0/nextjs-auth0": "^3.8.0",
+    "@neon/config": "^1.7.3",
+    "@neon/env": "^1.4.4",
     "@types/pdf-parse": "^1.1.5",
     "express": "^5.1.0",
     "express-oauth2-jwt-bearer": "^1.7.1",

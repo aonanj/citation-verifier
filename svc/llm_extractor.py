@@ -15,8 +15,10 @@ extract_citations():
   4. Pass 2, one request: the model reads the ordered, compact list of all
      grounded citations and names the full citation each short form, Id. or
      supra refers to. Code checks the answer exists, comes earlier and is of
-     a compatible type; an Id. after a string citation is flagged (Bluebook
-     Rule 4.1) regardless of the model's answer.
+     a compatible type; a "supra note N" is resolved by code to the citation
+     in note N that carries its name, whatever the model answered; an Id.
+     after a string citation is flagged (Bluebook Rule 4.1) regardless of the
+     model's answer.
 
 Any failed request raises CitationExtractionError: a failure must never look
 like a document with no citations. Requests use store=False, and nothing here
@@ -232,7 +234,6 @@ _RESOLUTIONS_SCHEMA = {
 }
 
 _EXTRACT_INSTRUCTIONS = """\
-Use the bluebook-citation-extraction skill in `citations` mode.\n\n \
 You extract legal citations from one chunk of a legal document (a brief, memo, opinion or article). \
 A separate system verifies each citation against legal databases, so your output must be a faithful \
 transcription of what the document says.
@@ -320,7 +321,6 @@ Return the citations in the order they appear, or an empty list if there are non
 one message: the final JSON object. Never emit a preliminary, placeholder or empty answer before it."""
 
 _RESOLVE_INSTRUCTIONS = """\
-Use the bluebook-citation-extraction skill in `resolutions` mode.\n\n \
 You resolve short-form legal citations. The input lists every citation found in a document, in document \
 order, one per line:
 [id] location | category | type | citation text
@@ -571,6 +571,10 @@ async def _structured_call(
     """
     if config.provider == "openai":
         import openai
+
+        instructions = (
+            "Use the bluebook-citation-extraction skill.\n\n" 
+            + instructions        )
 
         request: Dict[str, Any] = {
             "model": config.model,
@@ -1011,12 +1015,82 @@ def _latest_same_source(short: GroundedCitation, citations: Sequence[GroundedCit
     return None
 
 
+_SUPRA_RE = re.compile(r"\bsupra\b", re.IGNORECASE)
+_SUPRA_NOTE_RE = re.compile(r"\bsupra\s+notes?\s+([0-9A-Za-z*†‡§]+)", re.IGNORECASE)
+_NAME_WORD_RE = re.compile(r"[^\W\d_]{2,}")
+
+
+def _name_words(value: str) -> List[str]:
+    """The words of a name or text, lowercased, with line-break hyphens rejoined ("Judg- ment")."""
+    return [w.lower() for w in _NAME_WORD_RE.findall(_LINE_BREAK_HYPHEN_RE.sub("", value))]
+
+
+def _supra_note(short: GroundedCitation, index: _NoteIndex) -> _Note | None:
+    """The note a "supra note N" names: the latest earlier note labeled N
+    (labels repeat when numbering restarts), of the supra's own note kind if any."""
+    reference = re.sub(r"^notes?\s+", "", clean_str(short.fields.get("note_reference")) or "", flags=re.IGNORECASE)
+    if not reference:
+        match = _SUPRA_NOTE_RE.search(short.matched_text)
+        reference = match.group(1) if match else ""
+    if not reference:
+        return None
+    holder = index.containing(short.span[0])
+    kind = holder.kind if holder else "footnote"
+    earlier = [
+        n for n in index.notes
+        if n.start < short.span[0] and (n.label or str(n.ordinal)).lower() == reference.lower()
+    ]
+    pool = [n for n in earlier if n.kind == kind] or earlier
+    return pool[-1] if pool else None
+
+
+def _supra_note_antecedent(
+    short: GroundedCitation,
+    citations: Sequence[GroundedCitation],
+    text: str,
+    index: _NoteIndex,
+) -> int | None:
+    """The full citation a "supra note N" names, read from the document:
+    the one in note N whose text carries the supra's name ("Tyler, supra note
+    13" -> the citation in note 13 that "Tyler" introduces; the name may stand
+    in a lead-in, "See Complaint, Ass'n for ..."). None when the note, or a
+    citation in it carrying the name, isn't there - a wrong note number is
+    left to pass 2, never repaired here."""
+    if short.category != "supra":
+        return None
+    note = _supra_note(short, index)
+    if note is None:
+        return None
+    candidates = [c for c in citations[:short.index] if c.is_full and note.start <= c.span[0] < note.end]
+    if not candidates:
+        return None
+    name = clean_str(short.fields.get("refers_to_name"))
+    if not name:
+        match = _SUPRA_RE.search(short.matched_text)
+        name = short.matched_text[:match.start()] if match else ""
+    words = _name_words(name or "")
+    found: GroundedCitation | None = None
+    if not words:
+        found = candidates[0] if len(candidates) == 1 else None
+    else:
+        start = note.start
+        for candidate in candidates:
+            if set(words) <= set(_name_words(text[start:candidate.span[1]])):
+                found = candidate
+                break
+            start = candidate.span[1]
+    if found is None or not _compatible(short, found):
+        return None
+    return found.index
+
+
 async def _resolve_short_forms(
     client: Any,
     config: _Config,
     semaphore: asyncio.Semaphore,
     citations: List[GroundedCitation],
     index: _NoteIndex,
+    text: str,
 ) -> None:
     shorts = [c for c in citations if not c.is_full]
     if not shorts:
@@ -1036,6 +1110,15 @@ async def _resolve_short_forms(
         # to (shorts are resolved in document order).
         if isinstance(target, int) and 0 <= target < short.index and not citations[target].is_full:
             target = citations[target].refers_to
+        # A supra naming its note is resolved from the document, whatever the
+        # model answered (null, nothing, a citation in another note).
+        by_note = _supra_note_antecedent(short, citations, text, index)
+        if by_note is not None:
+            short.refers_to = by_note
+            _add_stat("resolutions_by_supra_note")
+            if target is not None and target != by_note:
+                _add_stat("rejected_resolutions")
+            continue
         if target is not None:
             if (
                 isinstance(target, int)
@@ -1171,7 +1254,7 @@ async def extract_citations(
                     *(_extract_chunk(client, config, semaphore, text, index, chunk) for chunk in chunks)
                 )
                 citations = _grounded_citations(text, [pair for answer in chunk_answers for pair in answer], index)
-            await _resolve_short_forms(client, config, semaphore, citations, index)
+            await _resolve_short_forms(client, config, semaphore, citations, index, text)
     else:
         raise CitationExtractionError(
             f"{config.model} is not supported: only OpenAI (\"gpt...\") models are implemented"
