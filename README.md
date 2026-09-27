@@ -117,11 +117,12 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 
 ## Dependencies
 ### Python runtime
-Major libraries are pinned in `requirements.txt` (compiled with Python 3.13):
+Every library is pinned in `requirements.txt`, exported from `uv.lock` (`uv lock`, then `uv export --format requirements-txt --no-hashes --no-emit-project -o requirements.txt`; Python 3.13):
 - `fastapi`, `uvicorn` – API framework and ASGI server
 - `eyecite` – legal citation parsing and clustering
 - `pymupdf`, `pytesseract`, `python-docx`, `Pillow` – document ingestion and OCR
 - `httpx2`, `rapidfuzz`, `openai` – HTTP client, fuzzy matching, and AI verification
+- `boto3` – Neon Object Storage (optional document storage, imported only when it is on)
 - `pydantic` – data validation and serialization
 - `python-dotenv`, `werkzeug`, `regex`, `psycopg[binary]` – supporting utilities
 
@@ -179,6 +180,13 @@ DOCUMENT_NORMALIZATION=off            # "on": the LLM extractor reads tagged tex
 # Logging configuration
 LOG_TO_FILE=false              # Optional: write logs to disk
 
+# Document storage (Neon Object Storage; see "Document storage" below)
+DOCUMENT_STORAGE=off           # "on": keep each upload in bucket `docs` and its report in bucket `reports`
+AWS_ACCESS_KEY_ID=...          # Neon storage credential (storage:read + storage:write) for the branch
+AWS_SECRET_ACCESS_KEY=...
+AWS_ENDPOINT_URL_S3=https://<branch>.storage.<cell>.<region>.aws.neon.tech
+AWS_REGION=us-east-1
+
 # Authentication & payments
 AUTH0_DOMAIN=<tenant>.auth0.com
 AUTH0_AUDIENCE=https://<audience> # Note no trailing `/` 
@@ -210,9 +218,22 @@ Off by default and read at call time. It has an effect only with `CITATION_EXTRA
 | `NORMALIZATION_LIBREOFFICE_BIN`, `_OFFICE_BACKEND` (`soffice` or `unoserver`), `_UNOCONVERT_BIN` | auto | The optional DOCX-to-PDF fallback renderer |
 | `NORMALIZATION_CACHE` (`off` or `disk`), `_CACHE_DIR`, `_CACHE_TTL_S`, `_CACHE_MAX_MB` | `off`, temp dir, `900`, `512` | Cache of normalized derivatives keyed by SHA-256 + pipeline version + OCR settings |
 
-- **Privacy.** The original upload is never modified; everything derived lives in a per-request `0700` scratch directory that is removed when the request ends (success or failure), and OCR/LibreOffice run as subprocesses with a scrubbed environment (no API keys). PDFs travel to the model as inline base64 (`store=false`, nothing is uploaded to a file store). The cache is **off** because a cached derivative contains the document's text, which the Terms say is not retained; turning it on is a product decision.
+- **Privacy.** The original upload is never modified; everything derived lives in a per-request `0700` scratch directory that is removed when the request ends (success or failure), and OCR/LibreOffice run as subprocesses with a scrubbed environment (no API keys). PDFs travel to the model as inline base64 (`store=false`, nothing is uploaded to a file store). The cache is **off** because a cached derivative contains the document's text on this server's disk, which the Terms don't describe (they describe only the private cloud storage copy, see Document storage below); turning it on is a product decision.
 - **Isolation.** Run OCR and conversion in a container with a restricted filesystem and no network access where you can; the code does not (and cannot) enforce that itself.
 - **Failure modes.** Rejected (400): encrypted PDFs, malformed or oversized files. Otherwise degraded, never failed: no OCR available, an OCR error or a LibreOffice error leaves the pages or content unread and adds a warning to the response.
+
+### Document storage
+Off by default and read at call time (`DOCUMENT_STORAGE=on` turns it on; nothing imports `boto3` while it is off). Each completed verification (HTTP 200, with or without citations) stores two private objects under one prefix in the Neon project's object storage:
+
+| Bucket | Key | Content |
+| --- | --- | --- |
+| `docs` | `users/<user id>/<UTC time>-<uuid>/document.<pdf\|docx\|txt>` | The original upload, byte for byte |
+| `reports` | `users/<user id>/<UTC time>-<uuid>/report.json` | The `/api/verify` response body, byte for byte (it includes the document's text) |
+
+- **Best effort.** Storing runs after the response is built, on its own thread pool, bounded at 30 s. A failure is logged (exception class, which object, S3 error code; never the filename or text) and changes neither the response nor the credit charge. Failed requests (400/402/500/503) store nothing.
+- **No expiry.** Neon stores lifecycle rules but does not enforce them, so nothing is deleted automatically.
+- **Credentials.** The four `AWS_*` variables come from the Neon branch (`neon env pull`, or the Console). A credential works on its branch and every branch below it, so point `AWS_ENDPOINT_URL_S3` at a child branch for testing. `python check_config.py` checks both buckets when the flag is on.
+- **Privacy copy.** The Terms (Section 5) and FAQ say JurisCheck may keep these copies; deploy that copy before turning the flag on.
 
 ### Database Setup (Neon)
 Neon issues a Postgres connection string in the form `postgresql://<user>:<password>@<host>/<database>?sslmode=require`.  

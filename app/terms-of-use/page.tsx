@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     'Terms of Use for JurisCheck covering eligibility, payments, acceptable use requirements, confidentiality, and support.',
 };
 
-const updatedDate = 'August 1, 2026';
+const updatedDate = 'September 26, 2026';
 
 const termsSections = [
   {
@@ -42,7 +42,7 @@ const termsSections = [
   {
     heading: '5. Data Handling & Privacy',
     body: [
-      'Uploaded documents are encrypted in transit, processed solely for citation verification, and deleted after delivery of results. Extracted citation metadata may be retained temporarily for auditing and payment reconciliation.',
+      'Uploaded documents are encrypted in transit and processed for citation verification. JurisCheck may keep a copy of each uploaded document and its verification report, which includes the document\'s text, in private cloud storage for support and dispute resolution. You may request deletion of your stored documents and reports at admin@phaethorder.com. Extracted citation metadata may be retained temporarily for auditing and payment reconciliation.',
       'Do not upload documents that contain personally identifiable information, protected health information, or other regulated data without ensuring you have the legal right to do so.',
     ],
   },
@@ -50,7 +50,7 @@ const termsSections = [
     heading: '6. Confidentiality & Feedback',
     body: [
       'All materials you submit remain your property. The JurisCheck service does not claim ownership of your documents or extracted citation data.',
-      'The JurisCheck service uses third-party AI services to process uploaded documents. While we do not store or retain your documents, we cannot guarantee that third-party services will not retain or use your data.',
+      'The JurisCheck service uses third-party AI services to process uploaded documents. Documents and reports kept by JurisCheck are stored as described in Section 5, but we cannot guarantee that third-party services will not retain or use your data.',
       'Feedback, suggestions, or bug reports you submit may be used to improve the service without obligation to you.',
     ],
   },

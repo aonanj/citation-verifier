@@ -95,18 +95,19 @@ const FAQ_ITEMS = [
     question: 'Is my document secure during the verification process?',
     answer: (
       <>
-        Documents are encrypted for upload to JurisCheck, and are deleted after processing.
-        A Word Add-In is also available so documents can be locally processed, extracting
-        citations in order before the verification process while keeping sensitive data on
-        the local machine. Contact{' '}
+        Documents are encrypted for upload to JurisCheck. A Word Add-In is also available so documents can be locally processed, extracting citations in order before the verification process while keeping sensitive data on the local machine. Contact{' '}
         <a href="mailto:admin@phaethorder.com">admin@phaethorder.com</a> for access.
       </>
     ),
   },
   {
     question: 'Are verification results retained for later review?',
-    answer:
-      'In the interest of data privacy and security, JurisCheck does not retain uploaded documents or verification results. Users are encouraged to save or download verification reports immediately after processing completes (an export pdf option is provided on the results page).',
+    answer: (
+      <>
+        JurisCheck may keep a copy of uploaded documents and verification reports in private cloud storage for support and dispute resolution. To request deletion of stored documents and reports, contact{' '}
+        <a href="mailto:admin@phaethorder.com">admin@phaethorder.com</a> .
+      </>
+    ),
   },
   {
     question: 'What can I do if I am not satisfied with the verification results?',

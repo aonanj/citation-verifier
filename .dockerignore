@@ -18,3 +18,5 @@ graphify-out/
 eval/
 handoff/
 HANDOFF.md
+.env
+.env*

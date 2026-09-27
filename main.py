@@ -28,6 +28,7 @@ from svc.doc_processor import NoteSpan, extract_document, note_for_offset, ocr_a
 from svc.llm_extractor import CitationExtractionError
 from utils.auth import AuthContext, get_auth_context
 from utils.logger import setup_logger
+from utils.object_storage import storage_enabled, store_verification
 from utils.payments import PAYMENT_PACKAGES, PaymentPackage, get_package
 
 logger = setup_logger()
@@ -755,7 +756,7 @@ async def _verify_document(
     if normalized is not None:
         warnings.extend(normalized.user_warnings())
 
-    return VerificationResponse(
+    response = VerificationResponse(
         citations=sanitized,
         extracted_text=extracted_text,
         remaining_credits=user.credits,
@@ -765,6 +766,15 @@ async def _verify_document(
         ],
         warnings=warnings,
     )
+
+    if storage_enabled():
+        # End the transaction record_document_usage's refresh opened, so the connection
+        # isn't idle-in-transaction during the uploads. Keeps the original upload bytes,
+        # not an OCR derivative; storage failures are logged and never change the response.
+        db.commit()
+        await store_verification(user.id, extension, file_contents, response)
+
+    return response
 
 
 @app.get("/api/payments/packages", response_model=List[PaymentPackageResponse])

@@ -184,11 +184,39 @@ def main() -> None:
                   else "○ LibreOffice: not found (optional: the DOCX fallback renderer; such files keep their tagged text and a warning)")
             if norm_config.cache_mode == "disk":
                 print(f"⚠ NORMALIZATION_CACHE=disk: text of uploaded documents is kept on this server for {norm_config.cache_ttl_s:.0f} s "
-                      "(the Terms say documents are not retained: a product decision, see CLAUDE.md item 35)")
+                      "(the Terms describe only the private cloud storage copy: a product decision, see CLAUDE.md item 35)")
             print(f"  limits: {norm_config.max_source_bytes // (1024 * 1024)} MB per file, {norm_config.max_pdf_pages} PDF pages, "
                   f"OCR timeout {norm_config.ocr_timeout_s:.0f} s, total timeout {norm_config.total_timeout_s:.0f} s")
     except ImportError as exc:
         print(f"⚠ Could not check document normalization (import failed: {exc})")
+    print()
+
+    # Object storage (kept copies of uploads and reports, CLAUDE.md item 41)
+    print("Object Storage:")
+    print("-" * 40)
+    try:
+        from utils import object_storage
+
+        if not object_storage.storage_enabled():
+            print("○ DOCUMENT_STORAGE: off (uploads and reports are not kept)")
+        else:
+            print(f"✓ DOCUMENT_STORAGE: on (uploads -> '{object_storage.DOCS_BUCKET}', reports -> '{object_storage.REPORTS_BUCKET}')")
+            print("⚠ Uploaded documents and their reports (which include the document text) are kept with no expiry")
+            for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL_S3", "AWS_REGION"):
+                ok, msg = check_env_var(var, required=True)
+                print(msg)
+                if not ok:
+                    issues.append(f"DOCUMENT_STORAGE=on but {var} is not set")
+            if not object_storage.missing_settings():
+                for bucket in (object_storage.DOCS_BUCKET, object_storage.REPORTS_BUCKET):
+                    try:
+                        object_storage.head_bucket(bucket)
+                        print(f"✓ Bucket '{bucket}': reachable")
+                    except Exception as exc:
+                        print(f"✗ Bucket '{bucket}': {type(exc).__name__}: {exc}")
+                        issues.append(f"DOCUMENT_STORAGE=on but bucket '{bucket}' is not reachable")
+    except ImportError as exc:
+        print(f"⚠ Could not check object storage (import failed: {exc})")
     print()
 
     # Frontend Configuration

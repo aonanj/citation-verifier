@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from typing import Optional
 
+import boto3
 from sqlalchemy.exc import SQLAlchemyError
 
 # The models import registers the tables with SQLAlchemy's metadata.
