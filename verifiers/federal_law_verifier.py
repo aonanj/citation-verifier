@@ -935,8 +935,8 @@ def _recheck_with_ai(
         details["base_section_confirmed"] = base_confirmed[0]
         details["base_confirmed_by"] = base_confirmed[1]
     if status == "no_match":
-        return "no_match", "Not found in GovInfo or by AI web search", details
-    return status, f"AI web search closest_match: {closest_match}, confidence: {confidence}", details
+        return "no_match", "Not found in GovInfo/LLM search", details
+    return status, f"Closest found: {closest_match}, confidence: {confidence}", details
 
 
 # GovInfo's first U.S.C./C.F.R. edition. A year GovInfo has no edition for also answers

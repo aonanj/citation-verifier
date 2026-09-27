@@ -238,10 +238,12 @@ You extract legal citations from one chunk of a legal document (a brief, memo, o
 A separate system verifies each citation against legal databases, so your output must be a faithful \
 transcription of what the document says.
 
-FAITHFULNESS (most important)
+---
+
+FAITHFULNESS (most important)\n
 - Copy every value exactly as the document writes it, including typos, wrong numbers, odd spacing and \
-capitalization. Never correct, complete, standardize or look up anything. If the document cites Roe v. \
-Wade as "411 U.S. 113", report volume "411". An error copied faithfully is what lets the verifier catch it.
+capitalization. If the document cites Roe v. Wade as `411 U.S. 113`, report volume `411`. 
+- Never correct, complete, standardize or look up anything. An error copied faithfully is what lets the verifier catch it.
 - If the citation itself does not state a value, return null. Never supply a year, court, author, title \
 or name from your own knowledge or from a different citation.
 - matched_text must be copied character for character from the chunk: one contiguous stretch of the \
@@ -250,71 +252,79 @@ its reporter citation in a footnote): extract the citation where it is written a
 case_name. Never write out a full citation the document does not contain: a short form whose full \
 citation is not in the chunk is still a short_form.
 - List each citation once, where it appears. A citation repeated later in the text is listed again \
-at that later place. Every "Id." is a citation, including a bare "Id." that makes up a whole footnote: \
+at that later place. Every `Id.` is a citation, including a bare `Id.` that makes up a whole footnote: \
 list each one.
-- Citations inside a parenthetical ("(quoting Hartranft, 121 U.S. at 615)", "(citing 35 U.S.C. § 101)") \
+- Citations inside a parenthetical (`(quoting Hartranft, 121 U.S. at 615)`, `(citing 35 U.S.C. § 101)`) \
 are citations too: list them separately.
 
+---
+
 WHAT TO EXTRACT, in order of appearance, every citation to:
-- case: court decisions ("Roe v. Wade, 410 U.S. 113, 115 (1973)", "In re Deuel, 51 F.3d 1552 (Fed. Cir. \
-1995)", "Smith v. Jones, No. 12-cv-345, 2014 WL 123456, at *3 (D.D.C. Jan. 2, 2014)").
-- law: constitutions, statutes, session laws, regulations and the Federal Register ("35 U.S.C. § 101 \
-(2006)", "37 C.F.R. § 1.56", "Pub. L. No. 112-29, 125 Stat. 284 (2011)", "Cal. Civ. Proc. Code § 425.16 \
-(West 2020)", "U.S. Const. art. I, § 8, cl. 8").
-- journal: articles in law reviews and journals ("Lori B. Andrews, The Gene Patent Dilemma, 2 Hous. J. \
-Health L. & Pol'y 65, 90 (2002)").
+- case: court decisions (`Roe v. Wade, 410 U.S. 113, 115 (1973)`, `In re Deuel, 51 F.3d 1552 (Fed. Cir. \
+1995)`, `Smith v. Jones, No. 12-cv-345, 2014 WL 123456, at *3 (D.D.C. Jan. 2, 2014)`).
+- law: constitutions, statutes, session laws, regulations and the Federal Register (`35 U.S.C. § 101 \
+(2006)`, `37 C.F.R. § 1.56`, `Pub. L. No. 112-29, 125 Stat. 284 (2011)`, `Cal. Civ. Proc. Code § 425.16 \
+(West 2020)`, `U.S. Const. art. I, § 8, cl. 8`).
+- journal: articles in law reviews and journals (`Lori B. Andrews, The Gene Patent Dilemma, 2 Hous. J. \
+Health L. & Pol'y 65, 90 (2002)`).
 - secondary: treatises and other books, restatements, legal encyclopedias (C.J.S., Am. Jur.) and A.L.R. \
 annotations.
-- short_form: a later reference to an authority: a short-form case citation ("Roe, 410 U.S. at 115", \
-"410 U.S. at 115"), "Id." or "id." (with or without a pin cite), "Ibid.", a supra reference ("Andrews, \
-supra note 12, at 90"), or a case named with a pin cite but no reporter ("Roe at 115", category \
-"reference").
-Do not extract record citations ("Compl. ¶ 12", "Tr. 45"), docket entries, cross-references within the \
-document ("see infra Part II"), section references that do not name the code ("under § 101"), case names \
-or statute names mentioned without a citation ("the Copyright Act of 1976"), legislative history \
-(committee reports such as "H.R. Rep. No. 1923", the Congressional Record, U.S.C.C.A.N.), or websites \
+- short_form: a later reference to an authority: a short-form case citation (`Roe, 410 U.S. at 115`, \
+`410 U.S. at 115`), `Id.` or `id.` (with or without a pin cite), `Ibid.`, a supra reference (`Andrews, \
+supra note 12, at 90`), or a case named with a pin cite but no reporter (`Roe at 115`, category \
+`reference`).
+Do not extract record citations (`Compl. ¶ 12`, `Tr. 45`), docket entries, cross-references within the \
+document (`see infra Part II`), section references that do not name the code (`under § 101`), case names \
+or statute names mentioned without a citation (`the Copyright Act of 1976`), legislative history \
+(committee reports such as `H.R. Rep. No. 1923`, the Congressional Record, U.S.C.C.A.N.), or websites \
 and news articles.
 
+---
+
 EXTENT OF matched_text
-- Leave out introductory signals ("See", "See, e.g.,", "Cf.", "But see", "accord", "see also") and \
-explanatory parentheticals ("(holding that ...)").
+- Leave out introductory signals (`See`, `See, e.g.,`, `Cf.`, `But see`, `accord`, `see also`, `compare`) and \
+explanatory parentheticals (`(holding that ...)`).
 - A full citation runs from the first word of the case name, author or volume number through the closing \
 parenthetical with the date (and court), or through the last page or section when there is none. If the \
 case name is separated from the reporter citation by other words, start matched_text at the volume number \
 and still report case_name.
-- A parallel citation ("410 U.S. 113, 93 S. Ct. 705 (1973)") is ONE case citation covering all of it; \
+- A parallel citation (`410 U.S. 113, 93 S. Ct. 705 (1973)`) is ONE case citation covering all of it; \
 report the first reporter's volume, reporter and page.
-- Subsequent history ("aff'd, 5 F.4th 1 (2d Cir. 2021)") is a separate case citation.
-- A short form's matched_text is the short form with its pin cite ("Roe, 410 U.S. at 115", "Id. at 629", \
-"Andrews, supra note 12, at 90", "Id.").
+- Subsequent history (`aff'd, 5 F.4th 1 (2d Cir. 2021)`) is a separate case citation.
+- A short form's matched_text is the short form with its pin cite (`Roe, 410 U.S. at 115`, `Id. at 629`, \
+`Andrews, supra note 12, at 90`, `Id.`).
+
+---
 
 FIELDS (null when the citation does not state it; digits exactly as written)
-- core_text: the identifying core, copied from matched_text: "410 U.S. 113", "35 U.S.C. § 101", \
-"125 Stat. 284", "2 Hous. J. Health L. & Pol'y 65".
-- pin_cite: the specific page(s) or section cited, without "at" ("115", "115-16", "*3").
-- case: case_name as written ("Roe v. Wade", "In re Deuel"); volume; reporter ("U.S.", "F.3d", "S. Ct."); \
-page (the first page); court from the parenthetical ("Fed. Cir.", "D.D.C."); year.
-- law: jurisdiction ("federal" for the U.S. Constitution, U.S.C., C.F.R., Stat., Pub. L. and Fed. Reg.; \
-"state" for state constitutions, codes and regulations; otherwise "unknown"); reporter, the code or \
-source ("U.S.C.", "C.F.R.", "Stat.", "Fed. Reg.", "Pub. L.", "Cal. Civ. Proc. Code", "U.S. Const."); \
-title_number, the title number before the code ("35" in "35 U.S.C."; null when there is none, never an \
-act's name); section, without the § sign ("101", "101-103", \
-"1.56", "art. I, § 8, cl. 8" for a constitution); volume and page for Stat. and Fed. Reg. ("125", "284"); \
-congress and law_number for a public law ("112" and "29" in "Pub. L. No. 112-29"); year.
+- core_text: the identifying core, copied from matched_text: `410 U.S. 113`, `35 U.S.C. § 101`, \
+`125 Stat. 284`, `2 Hous. J. Health L. & Pol'y 65`.
+- pin_cite: the specific page(s) or section cited, without `at` (`115`, `115-16`, `*3`).
+- case: case_name as written (`Roe v. Wade`, `In re Deuel`); volume; reporter (`U.S.`, `F.3d`, `S. Ct.`); \
+page (the first page); court from the parenthetical (`Fed. Cir.`, `D.D.C.`); year.
+- law: jurisdiction (`federal` for the U.S. Constitution, U.S.C., C.F.R., Stat., Pub. L. and Fed. Reg.; \
+`state` for state constitutions, codes and regulations; otherwise `unknown`); reporter, the code or \
+source (`U.S.C.`, `C.F.R.`, `Stat.`, `Fed. Reg.`, `Pub. L.`, `Cal. Civ. Proc. Code`, `U.S. Const.`); \
+title_number, the title number before the code (`35` in `35 U.S.C.`; null when there is none, never an \
+act's name); section, without the § sign (`101`, `101-103`, \
+`1.56`, `art. I, § 8, cl. 8` for a constitution); volume and page for Stat. and Fed. Reg. (`125`, `284`); \
+congress and law_number for a public law (`112` and `29` in `Pub. L. No. 112-29`); year.
 - journal: author(s) as written; title of the article; journal as abbreviated in the citation; volume; \
 page (the first page); year.
-- secondary: source_type ("cjs", "amjur", "alr", "restatement", or "treatise" for treatises and other \
-books); author; title (the book's title, the C.J.S./Am. Jur. topic such as "Contracts", or the \
-Restatement subject such as "Torts"); volume; section; page; edition ("2d" in "Am. Jur. 2d", "Second" in \
-"Restatement (Second)", "3d ed." for a book); series ("3d" in "A.L.R.3d"); year.
+- secondary: source_type (`cjs`, `amjur`, `alr`, `restatement`, or `treatise` for treatises and other \
+books); author; title (the book's title, the C.J.S./Am. Jur. topic such as `Contracts`, or the \
+Restatement subject such as `Torts`); volume; section; page; edition (`2d` in `Am. Jur. 2d`, `Second` in \
+`Restatement (Second)`, `3d ed.` for a book); series (`3d` in `A.L.R.3d`); year.
 - short_form: category; type_hint (case, law, journal or secondary when the form itself shows it, \
-otherwise unknown); refers_to_name, the name or short title used ("Roe", "Andrews"; null for Id. and \
-Ibid.); volume and reporter when present ("410" and "U.S." in "410 U.S. at 115"); note_reference, the \
-note number in "supra note 12".
+otherwise unknown); refers_to_name, the name or short title used (`Roe`, `Andrews`; null for Id. and \
+Ibid.); volume and reporter when present (`410` and `U.S.` in `410 U.S. at 115`); note_reference, the \
+note number in `supra note 12`.
 - string_group: when several citations stand in one citation sentence separated by semicolons (a string \
 citation), give them all the same number (1, 2, 3, ... per string in this chunk); otherwise null.
 
-NOTES: footnote and endnote text appears inline, wrapped in <footnote n="..."> and <endnote n="..."> tags. \
+---
+
+NOTES: footnote and endnote text appears inline, wrapped in <footnote \\{x\\}="..."> and <endnote \\{x\\}="..."> tags. \
 The tags are not part of the document: never include them in matched_text or any field.
 
 Return the citations in the order they appear, or an empty list if there are none. Produce exactly \
@@ -324,20 +334,20 @@ _RESOLVE_INSTRUCTIONS = """\
 You resolve short-form legal citations. The input lists every citation found in a document, in document \
 order, one per line:
 [id] location | category | type | citation text
-location is "main text" or the footnote/endnote holding the citation; "string N" marks citations in the \
+location is `main text` or the footnote/endnote holding the citation; `string \\{x\\}` marks citations in the \
 same string citation.
 
 For each citation whose category is short, id, ibid, supra or reference, return the id of the earlier \
 FULL citation (category full) it refers to, following the Bluebook:
-- "Id." and "ibid." refer to the immediately preceding cited authority: the citation just before, or the \
+- `Id.` and `ibid.` refer to the immediately preceding cited authority: the citation immediately before it, or the \
 full citation that one refers to. If that preceding citation is part of a string citation citing several \
 authorities, or (in footnotes) the preceding footnote cites more than one authority, id. has no valid \
-antecedent: return null.
+antecedent: return null. If that preceding citation was ignored, return null. 
 - A short-form case citation refers to the earlier full citation of the same case (same volume and \
 reporter; the name may be shortened).
 - A supra reference refers to the earlier full citation of the work by that author or short title; \
-"supra note N" means that full citation appears in footnote N.
-- A reference ("Roe at 115") refers to the earlier full citation of that case.
+`supra note \\{x\\}` means that full citation appears in footnote \\{x\\}.
+- A reference (`Roe at 115`) refers to the earlier full citation of that case.
 Return null when no earlier full citation fits; do not guess. Only the id of a full citation that comes \
 earlier is a valid answer. Return one entry for every short, id, ibid, supra and reference citation. \
 Produce exactly one message: the final JSON object. Never emit a preliminary, placeholder or empty \

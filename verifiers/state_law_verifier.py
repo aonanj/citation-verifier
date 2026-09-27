@@ -214,7 +214,7 @@ def _verify_with_openai(model: dict, bluebook_citation: str) -> Tuple[str, str |
         raw_status = manifest.get("status")
         citation = manifest.get("citation") or None
         confidence = manifest.get("confidence")
-        substatus = f"closest_match: {citation}, confidence: {confidence}"
+        substatus = f"Closest found: {citation}, confidence: {confidence}"
         if isinstance(raw_status, str) and raw_status.strip().lower() == "error":
             return "error", substatus, None
         status = confidence_band_status(raw_status, confidence)

@@ -598,8 +598,7 @@ def verify_secondary_citation(
                 "source": "library_of_congress",
                 "queries_attempted": len(queries),
                 "note": (
-                    f"No matching record found in Library of Congress catalog "
-                    f"for {source_name} citation"
+                    f"{source_name} not found in Library of Congress."
                 ),
             },
         )
@@ -632,8 +631,7 @@ def verify_secondary_citation(
                 "loc_title": match_details.get("result_title"),
                 "loc_date": match_details.get("result_date"),
                 "note": (
-                    "Found possible match but confidence is below verification "
-                    "threshold. Manual review recommended."
+                    "Close match found. Manual review recommended."
                 ),
             },
         )
@@ -647,9 +645,7 @@ def verify_secondary_citation(
             "confidence": round(confidence, 3),
             "matched_fields": match_details["matched_fields"],
             "note": (
-                f"Found potential matches but confidence too low to verify. "
-                f"Best match had {len(match_details['matched_fields'])} "
-                f"matching fields."
+                f"Potential match on {len(match_details['matched_fields'])} fields."
             ),
         },
     )

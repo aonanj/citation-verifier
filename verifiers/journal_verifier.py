@@ -760,7 +760,7 @@ def verify_journal_citation(
         resource_dict=resource_dict,
     )
     if validation[0] == "verified":
-        logger.info(f"Journal citation verified by OpenAlex: {primary_full}")
+        logger.info(f"OpenAlex verified: {primary_full}")
         return validation
     if validation[0] == "warning" and best_warning is None:
         best_warning = validation
@@ -770,7 +770,7 @@ def verify_journal_citation(
         resource_dict=resource_dict,
     )
     if validation[0] == "verified":
-        logger.info(f"Journal citation verified by Semantic Scholar: {primary_full}")
+        logger.info(f"Semantic Scholar verified: {primary_full}")
         return validation
     if validation[0] == "warning" and best_warning is None:
         best_warning = validation

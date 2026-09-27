@@ -46,11 +46,10 @@ USER_MESSAGES: Dict[str, str] = {
     "pdf_text_layer_suspect": "Page(s) {param} have a damaged text layer; citations on those pages may be missed.",
     "pdf_encrypted_owner_only": "This PDF has owner-password restrictions; an unrestricted copy was read.",
     "citations_unmatched": (
-        "{param} citation(s) reported by the AI model could not be matched to the document text and were left out."
+        "Omitted {param} citation(s) that could not be cross-referenced in the document."
     ),
     "citations_unplaced": (
-        "{param} citation(s) were found in the document but could not be placed in its extracted text (for example, "
-        "inside a text box) and were left out."
+        "Omitted {param} citation(s) that could not be placed in document text."
     ),
 }
 
