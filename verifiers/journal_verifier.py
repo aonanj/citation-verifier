@@ -37,7 +37,15 @@ _DEFAULT_FIELDS_BASE = [
 _DEFAULT_FIELDS_BASIC = ",".join(_DEFAULT_FIELDS_BASE)
 _DEFAULT_FIELDS_AUTH = ",".join(_DEFAULT_FIELDS_BASE + ["tldr"])
 _FIELDS = ",".join([
-    "title","year","venue","authors.name","url","externalIds"
+    "title",
+    "year",
+    "venue",
+    "authors.name",
+    "url",
+    "externalIds",
+    "journal.volume",
+    "journal.pages", 
+    "journal.name"
 ])
 
 def _sleep_min_interval(last_ts):
@@ -531,7 +539,7 @@ def _journal_name(paper: Dict[str, Any]) -> str:
     j = paper.get("journal")
     if isinstance(j, dict):
         jname = j.get("name")
-    return jname or paper.get("venue") or ""
+    return jname if jname else paper.get("venue") or ""
 
 def _escape_semantic_scholar_term(term: str) -> str:
     if not term:
@@ -636,7 +644,7 @@ def _verify_citation_with_semantic_scholar(
             attempt = 0
             while True:
                 last_call = _sleep_min_interval(last_call)
-
+                logger.info(f"Executing Semantic Scholar search params: {params}, query: {q}")
                 r = client.get(f"{_SEMANTIC_SCHOLAR_BASE_URL}/paper/search", params=params)
                 if r.status_code == 200:
                     data = r.json() or {}
@@ -646,6 +654,7 @@ def _verify_citation_with_semantic_scholar(
                         for candidate in items[:10]:
                             candidate_title_norm = normalize_case_name_for_compare(candidate.get("title"))
                             if extracted_title_norm and candidate_title_norm:
+                                logger.info(f"Comparing titles: extracted_title_norm={extracted_title_norm}, candidate_title_norm={candidate_title_norm}")
                                 title_ok = (
                                     extracted_title_norm == candidate_title_norm
                                     or extracted_title_norm in candidate_title_norm
@@ -658,8 +667,10 @@ def _verify_citation_with_semantic_scholar(
                                             scorer=fuzz.partial_ratio, score_cutoff=85,
                                         )
                                     )
+                                    logger.info(f"Title match result: title_ok={title_ok}")
                             else:
                                 title_ok = not extracted_title_norm
+                                logger.info(f"Title match result: title_ok={title_ok}")
 
                             author_ok = not extracted_author_norm
                             if extracted_author_norm:
@@ -678,31 +689,21 @@ def _verify_citation_with_semantic_scholar(
                                         break
 
                             if title_ok and author_ok:
-                                matched_paper = candidate
-                                break
+                                journal_entry = candidate.get("journal") or None
+                                if isinstance(journal_entry, dict):
+                                    j_vol = journal_entry.get("volume") or None
+                                    j_pages = journal_entry.get("pages") or None
+                                    j_name = journal_entry.get("name") or None
+
+                                    if j_vol and j_pages and j_name:
+                                        if j_vol == vol_s and j_pages[:len(page_s)] == page_s and process.extractOne(journal, [j_name], scorer=fuzz.partial_ratio, score_cutoff=75):
+                                            logger.info(f"Journal match result: j_vol={j_vol}, j_pages={j_pages}, j_name={j_name}")
+                                            matched_paper = candidate
 
                         if matched_paper is not None and (extracted_title_norm or extracted_author_norm):
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
-
-                        logger.info(f"Semantic Scholar match found first result: {items[0]}")
-                        returned_title = items[0].get("title")
-                        returned_authors = []
-                        authorship = items[0].get("authors") or []
-                        for author in authorship:
-                            a_name = author.get("name")
-                            if a_name:
-                                returned_authors.append(a_name)
-                        details = {
-                            "source": "semantic_scholar",
-                            "unverified_fields": "title, author",
-                            "returned_values": {
-                                "title": returned_title,
-                                "author": ", ".join(returned_authors)
-                            },
-                        }
-                        return "warning", "Unverified details", details
-                    break  # try next query
+                            
 
                 if r.status_code == 429 and attempt < 3:
                     ra = r.headers.get("Retry-After")
