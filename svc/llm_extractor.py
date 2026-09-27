@@ -572,10 +572,6 @@ async def _structured_call(
     if config.provider == "openai":
         import openai
 
-        instructions = (
-            "Use the bluebook-citation-extraction skill.\n\n" 
-            + instructions        )
-
         request: Dict[str, Any] = {
             "model": config.model,
             "instructions": instructions,
@@ -600,9 +596,13 @@ async def _structured_call(
                     "skills": [skill_ref],
                 },
             }]
+
+            request["instructions"] = f"Use the skill with skill ID '{config.skill_id}' in '{schema_name}' mode.\n\n" + request.get("instructions", "")
+
+            logger.info("OpenAI instructions updated to include skill usage: %s", request["instructions"])
             logger.info("OpenAI skill id: %s", skill_ref["skill_id"])
         else:
-            logger.info("OpenAI skill id not set")
+            logger.info("OpenAI skill id not set.")
         async with semaphore:
             try:
                 response = await client.responses.create(**request)
