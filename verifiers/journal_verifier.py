@@ -698,12 +698,13 @@ def _verify_citation_with_semantic_scholar(
                                     if j_vol and j_pages and j_name:
                                         if j_vol == vol_s and j_pages[:len(page_s)] == page_s and process.extractOne(journal, [j_name], scorer=fuzz.partial_ratio, score_cutoff=75):
                                             logger.info(f"Journal match result: j_vol={j_vol}, j_pages={j_pages}, j_name={j_name}")
-                                            matched_paper = candidate
+                                            return "verified", None, {"source": "semantic_scholar", "data": candidate}
+                                            
 
                         if matched_paper is not None and (extracted_title_norm or extracted_author_norm):
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
-                            
+                        break       
 
                 if r.status_code == 429 and attempt < 3:
                     ra = r.headers.get("Retry-After")
