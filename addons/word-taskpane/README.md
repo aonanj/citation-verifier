@@ -74,9 +74,9 @@ Prototype Office task pane that packages the current Word document as a base64 `
 
 This repository is publicly viewable for portfolio purposes only. The code is proprietary.
 Copyright © 2026 Phaethon Order LLC. All rights reserved.
-Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reuse requests.
+Contact [admin@phaethorder.com](mailto:admin@phaethorder.com) for licensing or reuse requests.
 
 See [LICENSE](../../LICENSE)
 
 ## Contact
-Questions or support: [support@phaethon.llc](mailto:support@phaethon.llc).
+Questions or support: [admin@phaethorder.com](mailto:admin@phaethorder.com).

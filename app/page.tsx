@@ -99,7 +99,7 @@ const FAQ_ITEMS = [
         A Word Add-In is also available so documents can be locally processed, extracting
         citations in order before the verification process while keeping sensitive data on
         the local machine. Contact{' '}
-        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
+        <a href="mailto:admin@phaethorder.com">admin@phaethorder.com</a> for access.
       </>
     ),
   },
@@ -113,7 +113,7 @@ const FAQ_ITEMS = [
     answer: (
       <>
         Contact{' '}
-        <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> with a description of the issue. When possible, please indicate date and time that the issue occurred, exported verification report, and any other details. A response can be expected within three business days. 
+        <a href="mailto:admin@phaethorder.com">admin@phaethorder.com</a> with a description of the issue. When possible, please indicate date and time that the issue occurred, exported verification report, and any other details. A response can be expected within three business days. 
       </>
     ),
   },
@@ -798,7 +798,7 @@ function HomePageContent() {
           <p>
             <strong>Note:</strong> JurisCheck uses a third-party AI service. Uploading confidential or privileged information is not recommended. JurisCheck can be securely used as a Word
             Add-In. Contact{' '}
-            <a href="mailto:support@phaethon.llc">support@phaethon.llc</a> for access.
+            <a href="mailto:admin@phaethorder.com">admin@phaethorder.com</a> for access.
           </p>
         </section>
       </div>

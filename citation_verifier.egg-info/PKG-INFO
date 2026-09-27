@@ -107,7 +107,7 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 ### Known Issues & Limitations
 - **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
 - **URLs and other citations**: Supported citation types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals; (6) secondary legal sources (legal encyclopedias, restatements, ALR, treatises). URLs and citation types other than those listed above are not supported. Support for additional citation types is in development. 
-- **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [support@phaethon.llc](mailto:support@phaethon.llc).  
+- **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [admin@phaethorder.com](mailto:admin@phaethorder.com).  
 
 ## System Architecture
 ### Backend (Python)
@@ -362,11 +362,11 @@ The Dockerfile uses Python 3.12-slim, installs Tesseract OCR, and exposes port 8
 
 This repository is publicly viewable for portfolio purposes only. The code is proprietary.
 Copyright © 2026 Phaethon Order LLC. All rights reserved.
-Contact [support@phaethon.llc](mailto:support@phaethon.llc) for licensing or reuse requests.
+Contact [admin@phaethorder.com](mailto:admin@phaethorder.com) for licensing or reuse requests.
 
 *See* [LICENSE](LICENSE.md) for terms.
 
 Note: `package.json` may list a different license; the authoritative license for this repository is proprietary.
 
 ## Contact
-Questions or support: [support@phaethon.llc](mailto:support@phaethon.llc).
+Questions or support: [admin@phaethorder.com](mailto:admin@phaethorder.com).

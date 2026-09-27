@@ -39,4 +39,4 @@ code or the use or other dealings in the code.
 
 ### Contact
 
-For licensing, client registration, or commercial use inquiries, please contact: [support@phaethon.llc](mailto:support@phaethon.llc).
+For licensing, client registration, or commercial use inquiries, please contact: [admin@phaethorder.com](mailto:admin@phaethorder.com).

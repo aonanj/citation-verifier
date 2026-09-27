@@ -71,7 +71,7 @@ const faqEntriesLd = [
   {
     name: 'Is my document secure during the verification process?',
     text:
-      'Documents are encrypted for upload to JurisCheck, and are deleted after processing. Documents can also be locally processed so only citation data is sent to JurisCheck through our Microsoft Word Add-In -- please contact support@phaethon.llc for access.',
+      'Documents are encrypted for upload to JurisCheck, and are deleted after processing. Documents can also be locally processed so only citation data is sent to JurisCheck through our Microsoft Word Add-In -- please contact admin@phaethorder.com for access.',
   },
   {
     name: 'Are verification results retained for later review?',
@@ -81,7 +81,7 @@ const faqEntriesLd = [
   {
     name: 'What can I do if I am not satisfied with the verification results?',
     text:
-      'Export the verification results as a pdf. Send an email to support@phaethon.llc with the exported pdf and a description of the issue, including approximate date and time. Your issue will be reviewed and we will follow up with you to discuss next steps within three business days.',
+      'Export the verification results as a pdf. Send an email to admin@phaethorder.com with the exported pdf and a description of the issue, including approximate date and time. Your issue will be reviewed and we will follow up with you to discuss next steps within three business days.',
   },
 ];
 
@@ -206,7 +206,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </div>
                 <div className="site-footer__links">
                   <a href="/terms-of-use">Terms of Use</a>
-                  <a href="mailto:support@phaethon.llc">Contact Support</a>
+                  <a href="mailto:admin@phaethorder.com">Contact Support</a>
                   <a href="https://www.phaethonorder.com" target="_blank" rel="noopener noreferrer">
                     Visit phaethonorder.com
                   </a>

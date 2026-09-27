@@ -72,7 +72,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="TaskPane.Url" DefaultValue="https://localhost:5174/index.html" />
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://phaethon.llc" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://phaethonorder.com" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="JurisCheck" />

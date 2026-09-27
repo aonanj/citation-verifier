@@ -22,14 +22,14 @@ const termsSections = [
     heading: '2. Account Eligibility & Security',
     body: [
       'Accounts are available to individuals, law firms, academic institutions, and their authorized contractors. You are responsible for maintaining the confidentiality of login credentials and for all activity that occurs under your account.',
-      'Notify support@phaethon.llc immediately if you suspect unauthorized access, credential compromise, or changes to the status of the individuals who use JurisCheck on your behalf.',
+      'Notify admin@phaethorder.com immediately if you suspect unauthorized access, credential compromise, or changes to the status of the individuals who use JurisCheck on your behalf.',
     ],
   },
   {
     heading: '3. Credits, Payments, and Refunds',
     body: [
       'Verification requests consume prepaid credits that are purchased through the embedded Stripe checkout. Credits do not expire but are non-transferable.',
-      'Charges are non-refundable once a verification run has started. Contact support@phaethon.llc within three business days if you believe credits were deducted in error; remediation is handled case-by-case.',
+      'Charges are non-refundable once a verification run has started. Contact admin@phaethorder.com within three business days if you believe credits were deducted in error; remediation is handled case-by-case.',
     ],
   },
   {
@@ -71,7 +71,7 @@ const termsSections = [
   {
     heading: '9. Suspension & Termination',
     body: [
-      'We may suspend or terminate access to JurisCheck if you violate these Terms, misuse the service, or create risk of liability for other users. You may terminate your account at any time by contacting support@phaethon.llc; unused credits are forfeited upon termination unless otherwise required by law.',
+      'We may suspend or terminate access to JurisCheck if you violate these Terms, misuse the service, or create risk of liability for other users. You may terminate your account at any time by contacting admin@phaethorder.com; unused credits are forfeited upon termination unless otherwise required by law.',
     ],
   },
   {
@@ -127,8 +127,8 @@ export default function TermsOfUsePage() {
           <h2 className={styles.sectionHeading}>Inquiries and Support</h2>
           <p className={styles.paragraph}>
             Contact JurisCheck support at{' '}
-            <a href="mailto:support@phaethon.llc" className={styles.link}>
-              support@phaethon.llc
+            <a href="mailto:admin@phaethorder.com" className={styles.link}>
+              admin@phaethorder.com
             </a>{' '}
             for account assistance, incident reports, or clarification of these Terms.
           </p>
