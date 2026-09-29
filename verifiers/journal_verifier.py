@@ -622,11 +622,11 @@ def _verify_citation_with_semantic_scholar(
         # For quoted queries, don't escape - the quotes handle special characters
         quoted_phrase = f"\"{phrase}\"" if phrase else ""
         if quoted_phrase:
-            _add_query([quoted_phrase, vol_s, page_s, year_str])
+            _add_query([vol_s, quoted_phrase, page_s, f"({year_str})" if year_str else None])
         # For unquoted queries, escape special characters
         escaped_phrase = _escape_semantic_scholar_term(phrase)
         if escaped_phrase:
-            _add_query([escaped_phrase, vol_s, page_s, year_str])
+            _add_query([vol_s,escaped_phrase, page_s, f"({year_str})" if year_str else None])
 
 
     last_client_error: Optional[str] = None
@@ -667,7 +667,7 @@ def _verify_citation_with_semantic_scholar(
                                             scorer=fuzz.partial_ratio, score_cutoff=85,
                                         )
                                     )
-                                    logger.info(f"Title match result: title_ok={title_ok}")
+                                    logger.info(f"Title fuzzy match result: title_ok={title_ok}")
                             else:
                                 title_ok = not extracted_title_norm
                                 logger.info(f"Title match result: title_ok={title_ok}")
@@ -698,13 +698,12 @@ def _verify_citation_with_semantic_scholar(
                                     if j_vol and j_pages and j_name:
                                         if j_vol == vol_s and j_pages[:len(page_s)] == page_s and process.extractOne(journal, [j_name], scorer=fuzz.partial_ratio, score_cutoff=75):
                                             logger.info(f"Journal match result: j_vol={j_vol}, j_pages={j_pages}, j_name={j_name}")
-                                            return "verified", None, {"source": "semantic_scholar", "data": candidate}
-                                            
+                                            matched_paper = candidate
 
-                        if matched_paper is not None and (extracted_title_norm or extracted_author_norm):
+                        if matched_paper is not None and (extracted_title_norm and extracted_author_norm):
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
-                        break       
+                            
 
                 if r.status_code == 429 and attempt < 3:
                     ra = r.headers.get("Retry-After")
