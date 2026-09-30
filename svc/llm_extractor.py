@@ -234,8 +234,8 @@ transcription of what the document says.
 
 FAITHFULNESS (most important)\n
 - Copy every value exactly as the document writes it, including typos, wrong numbers, odd spacing and \
-capitalization. If the document cites Roe v. Wade as `411 U.S. 113`, report volume `411`. An error copied faithfully is what lets the verifier catch it. \n
-- Never correct, complete, standardize or look up anything. \n
+capitalization. If the document cites Roe v. Wade as `411 U.S. 113`, report volume `411`. \n
+- Never correct, complete, standardize or look up anything. Faithfully copied errors will be caught at a later verification stage. \n
 - If the citation itself does not state a value, return null. Never supply a year, court, author, title \
 or name from your own knowledge or from a different citation. \n
 - matched_text must be copied character for character from the chunk: one contiguous stretch of the \
