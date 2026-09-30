@@ -643,7 +643,9 @@ def _verify_citation_with_semantic_scholar(
                     items = data.get("data", []) if isinstance(data, dict) else []
                     if items and len(items) > 0:
                         matched_paper = None
+                        item_num = -1
                         for candidate in items[:10]:
+                            item_num += 1
                             candidate_title_norm = normalize_case_name_for_compare(candidate.get("title"))
                             if extracted_title_norm and candidate_title_norm:
                                 title_ok = (
@@ -686,9 +688,9 @@ def _verify_citation_with_semantic_scholar(
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
 
                         logger.info(f"Semantic Scholar match found first result: {items[0]}")
-                        returned_title = items[0].get("title")
+                        returned_title = items[item_num].get("title")
                         returned_authors = []
-                        authorship = items[0].get("authors") or []
+                        authorship = items[item_num].get("authors") or []
                         for author in authorship:
                             a_name = author.get("name")
                             if a_name:
