@@ -37,7 +37,15 @@ _DEFAULT_FIELDS_BASE = [
 _DEFAULT_FIELDS_BASIC = ",".join(_DEFAULT_FIELDS_BASE)
 _DEFAULT_FIELDS_AUTH = ",".join(_DEFAULT_FIELDS_BASE + ["tldr"])
 _FIELDS = ",".join([
-    "title","year","venue","authors.name","url","externalIds"
+    "title",
+    "year",
+    "venue",
+    "authors.name",
+    "url",
+    "externalIds",
+    "journal.volume",
+    "journal.name",
+    "journal.pages"
 ])
 
 def _sleep_min_interval(last_ts):
@@ -593,7 +601,7 @@ def _verify_citation_with_semantic_scholar(
     queries: List[str] = []
 
     def _add_query(parts: List[Optional[str]]) -> None:
-        query = " ".join(part for part in parts if part)
+        query = "+".join(part for part in parts if part)
         if query and query not in queries:
             queries.append(query)
 
@@ -610,15 +618,19 @@ def _verify_citation_with_semantic_scholar(
                 if normalized_variant and normalized_variant not in journal_variants:
                     journal_variants.append(normalized_variant)
 
+    if extracted_title_norm and extracted_title_norm != "":
+        title_s = f"\"{_escape_semantic_scholar_term(extracted_title_norm)}\""
+        _add_query([title_s])
+
     for phrase in journal_variants:
         # For quoted queries, don't escape - the quotes handle special characters
         quoted_phrase = f"\"{phrase}\"" if phrase else ""
         if quoted_phrase:
-            _add_query([quoted_phrase, vol_s, page_s, year_str])
+            _add_query([quoted_phrase, vol_s, page_s])
         # For unquoted queries, escape special characters
         escaped_phrase = _escape_semantic_scholar_term(phrase)
         if escaped_phrase:
-            _add_query([escaped_phrase, vol_s, page_s, year_str])
+            _add_query([escaped_phrase, vol_s, page_s])
 
 
     last_client_error: Optional[str] = None
@@ -644,7 +656,7 @@ def _verify_citation_with_semantic_scholar(
                     if items and len(items) > 0:
                         matched_paper = None
                         item_num = -1
-                        for candidate in items[:10]:
+                        for candidate in items[:20]:
                             item_num += 1
                             candidate_title_norm = normalize_case_name_for_compare(candidate.get("title"))
                             if extracted_title_norm and candidate_title_norm:
@@ -687,7 +699,8 @@ def _verify_citation_with_semantic_scholar(
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
 
-                        logger.info(f"Semantic Scholar match found first result: {items[0]}")
+                        logger.info(f"Semantic Scholar match found first result: {items[item_num]}")
+                        returned_title = ""
                         returned_title = items[item_num].get("title")
                         returned_authors = []
                         authorship = items[item_num].get("authors") or []
