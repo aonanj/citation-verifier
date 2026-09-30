@@ -688,8 +688,8 @@ def _cfr_pdf_reserved(body: bytes, section_id: str) -> bool:
     try:
         import pymupdf
 
-        with pymupdf.open(stream=body, filetype="pdf") as document:
-            text = " ".join(page.get_text() for page in document)
+        with pymupdf.open(stream=body, filetype="pdf") as document: 
+            text = " ".join(page.get_text() for page in document) # type: ignore[attr-defined]
     except Exception:
         return False
 
@@ -1172,7 +1172,7 @@ def _check_with_govinfo_editions(
         if found:
             if rest:
                 return None, (f"{title} {reporter} § {base}", _SOURCE_LABELS[source])
-            details = {"source": source}
+            details: Dict[str, Any] | None = {"source": source}
             if year is not None:
                 details["year_checked"] = year
             return ("verified", None, details), None

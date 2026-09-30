@@ -43,9 +43,7 @@ _FIELDS = ",".join([
     "authors.name",
     "url",
     "externalIds",
-    "journal.volume",
-    "journal.pages", 
-    "journal.name"
+    "journal"
 ])
 
 def _sleep_min_interval(last_ts):
@@ -696,9 +694,11 @@ def _verify_citation_with_semantic_scholar(
                                     j_name = journal_entry.get("name") or None
 
                                     if j_vol and j_pages and j_name:
-                                        if j_vol == vol_s and j_pages[:len(page_s)] == page_s and process.extractOne(journal, [j_name], scorer=fuzz.partial_ratio, score_cutoff=75):
+                                        if j_vol == vol_s and j_pages[:len(page_s)] == page_s:
                                             logger.info(f"Journal match result: j_vol={j_vol}, j_pages={j_pages}, j_name={j_name}")
                                             matched_paper = candidate
+                                else:
+                                    logger.info(f"Journal entry missing required fields not dict: {journal_entry}")
 
                         if matched_paper is not None and (extracted_title_norm and extracted_author_norm):
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
