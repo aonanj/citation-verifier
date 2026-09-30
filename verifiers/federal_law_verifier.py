@@ -303,7 +303,7 @@ def _build_fr_endpoint(
             ),
         )
 
-    endpoint = f"{GOVINFO_REPORTER_MAP['Fed. Reg.']}/{volume}/{page}"
+    endpoint = f"{GOVINFO_REPORTER_MAP['Fed. Reg.']}/{volume}/{page.split('-')[0]}"
     return endpoint, None, None
 
 
