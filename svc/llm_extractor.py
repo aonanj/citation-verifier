@@ -30,21 +30,13 @@ and called only for them, and any other AI_MODEL raises CitationExtractionError.
 
 OpenAI models use a 'bluebook-citation-extraction' skill: 
 {
-  "id": "skill_6aaf69cd52388191b5808d2a2140bfe10b43bf1c1afe9ad1",
+  "id": "skill_6abcb965b7a08191ae45851ee5d1f06d03560219cba9ff17",
   "object": "skill",
-  "created_at": 1789880781,
+  "created_at": 1790753125,
   "default_version": "1",
-  "description": "Faithfully extract the supported Bluebook-style legal citations from supplied document text, or resolve extracted short forms to earlier full citations, using the strict JSON contracts expected by llm_extractor.py. Use for grounded transcription and antecedent resolution; do not use to verify, correct, normalize, or generate authorities.",
-  "latest_version": "1",
-  "name": "bluebook-citation-extraction"
-}
-
-{
-  "id": "skill_6ab04c0010e08191bf01aa7c8a9468b10a8c3b342a85af55",
-  "object": "skill",
-  "created_at": 1789938688,
-  "default_version": "1",
-  "description": "Faithfully extract the supported Bluebook-style legal citations from supplied document text, or resolve extracted short forms to earlier full citations, using the strict JSON contracts expected by llm_extractor.py. Use for grounded transcription and antecedent resolution; do not use to verify, correct, normalize, or generate authorities.",
+  "description": "Faithfully extract supported Bluebook-style legal citations from supplied document text, including dense footnotes, endnotes, inline citations, \
+    PDF line wraps, nested citations, and short forms, or resolve extracted short forms to earlier full citations. Use with the strict citations or resolutions JSON \
+    schemas expected by llm_extractor.py; do not verify, correct, normalize, or invent authorities.",
   "latest_version": "1",
   "name": "bluebook-citation-extraction"
 }
@@ -242,20 +234,20 @@ transcription of what the document says.
 
 FAITHFULNESS (most important)\n
 - Copy every value exactly as the document writes it, including typos, wrong numbers, odd spacing and \
-capitalization. If the document cites Roe v. Wade as `411 U.S. 113`, report volume `411`. 
-- Never correct, complete, standardize or look up anything. An error copied faithfully is what lets the verifier catch it.
+capitalization. If the document cites Roe v. Wade as `411 U.S. 113`, report volume `411`. An error copied faithfully is what lets the verifier catch it. \n
+- Never correct, complete, standardize or look up anything. \n
 - If the citation itself does not state a value, return null. Never supply a year, court, author, title \
-or name from your own knowledge or from a different citation.
+or name from your own knowledge or from a different citation. \n
 - matched_text must be copied character for character from the chunk: one contiguous stretch of the \
 document text. Never assemble a citation from pieces in different places (a case named in the main text, \
 its reporter citation in a footnote): extract the citation where it is written and put the name in \
 case_name. Never write out a full citation the document does not contain: a short form whose full \
-citation is not in the chunk is still a short_form.
+citation is not in the chunk is still a short_form. \n
 - List each citation once, where it appears. A citation repeated later in the text is listed again \
 at that later place. Every `Id.` is a citation, including a bare `Id.` that makes up a whole footnote: \
-list each one.
+list each one. \n
 - Citations inside a parenthetical (`(quoting Hartranft, 121 U.S. at 615)`, `(citing 35 U.S.C. § 101)`) \
-are citations too: list them separately.
+are citations too: list them separately. \n
 
 ---
 

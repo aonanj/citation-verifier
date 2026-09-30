@@ -699,7 +699,7 @@ def _verify_citation_with_semantic_scholar(
                             logger.info("Semantic Scholar volume/page fallback verified via title/author match")
                             return "verified", None, {"source": "semantic_scholar", "data": matched_paper}
 
-                        logger.info(f"Semantic Scholar match found first result: {items[item_num]}")
+                        logger.info(f"Semantic Scholar match found {item_num} result: {items[item_num]}")
                         returned_title = ""
                         returned_title = items[item_num].get("title")
                         returned_authors = []
