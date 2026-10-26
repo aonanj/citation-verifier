@@ -1,16 +1,23 @@
 # JurisCheck - Citation Verification
 
-Full-stack toolchain that verifies legal citations in legal briefs, memos, journal articles, and other legal and academic documents against primary sources. Available as a web service with a Next.js frontend that accepts DOCX, PDF, and plain text documents. The backend is a containerized Python service that extracts citations from a document (both inline citations and footnotes are compatible), normalizes them, and then verifies each citation. The annotated results are displayed with contextual highlights. The service is also available as a Microsoft Word Add-In. 
+Full-stack toolchain that verifies legal citations in legal briefs, memos, journal articles, and other legal and academic documents against primary sources. Available as a web service with a Next.js frontend that accepts DOCX, PDF, and plain text documents. The backend is a containerized Python service that extracts citations from a document (both inline citations and footnotes are compatible), normalizes them, and then verifies each citation. The annotated results are displayed with contextual highlights. (Note: Citations are assumed to be in Bluebook standard format.)
 
-The deployed site now includes a public Terms of Use page (`/terms-of-use`) so firms can reference core usage, payment, and data-handling policies directly from the UI.
+The service is also available as a Microsoft Word Add-In. ee [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
 
-See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details about Word integration. 
+---
 
-(Note: Citations are assumed to be in Bluebook standard format.)
+## News
+
+- [Best AI Tools to Verify Legal Citations (2026) – nextlaw.ai](https://www.nexlaw.ai/blog/best-ai-tools-verify-legal-citations-2026/)
+- [New Tools Verify Legal Citations to Combat AI Errors in Briefs – legaltechdigest.com](https://legaltechdigest.com/news/new-tools-verify-legal-citations-to-combat-ai-errors-in-briefs)
+
+---
 
 ## Live Deployment
 - App: https://www.jurischeck.com
 - Demo login: `phaethon@phaethon.llc` / `pollc123#` (Auth0 username/password grant)
+
+---
 
 ## Screenshots
 
@@ -23,6 +30,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 ### Word Add-In UI
 ![Word Add-In UI](docs/screenshots/CV-Screenshot-4.png)
 
+---
 
 ## Overview
 - **Document ingestion**: Accepts PDF (text or scanned), DOCX, and plain text files. Compatible with both inline citations and footnote citations.
@@ -38,10 +46,7 @@ See [/addons/word-taskpane](/addons/word-taskpane/README.md) for further details
 
 Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → compile_citations → verifiers → JSON response → Next.js renderer`.
 
-### Known Issues & Limitations
-- **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
-- **URLs and other citations**: Supported citation types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals; (6) secondary legal sources (legal encyclopedias, restatements, ALR, treatises). URLs and citation types other than those listed above are not supported. Support for additional citation types is in development. 
-- **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [admin@phaethorder.com](mailto:admin@phaethorder.com).  
+---
 
 ## System Architecture
 ### Backend (Python)
@@ -75,6 +80,8 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 - Summaries group citations by type, while each citation card shows type, occurrences, substatus, and verifier-supplied diagnostics.
 - String citations are displayed with grouping indicators showing their relationship.
 - `BACKEND_URL` configures the backend target; defaults to `http://localhost:8000` for local development.
+
+---
 
 ## Project Layout
 ```
@@ -114,6 +121,8 @@ Pipeline: `document upload → POST /api/verify (FastAPI) → extract_text → c
 ├── package.json                      # Frontend dependencies
 └── pyproject.toml                    # Backend build metadata
 ```
+
+---
 
 ## Dependencies
 ### Python runtime
@@ -156,6 +165,8 @@ Key dependencies in `package.json`:
    ```bash
    npm install
    ```
+
+---
 
 ## Configuration
 Create `.env` in the project root for backend configuration:
@@ -288,6 +299,8 @@ npm run dev
 - Point the frontend at a different backend by setting `BACKEND_URL` before `npm run dev`.
 - For Stripe webhooks in development, run `stripe listen --forward-to 127.0.0.1:8000/api/payments/webhook`.
 
+---
+
 ## API
 `POST /api/verify`
 - **Auth**: `Authorization: Bearer <access_token>` (Auth0 access token)
@@ -336,6 +349,8 @@ npm run dev
 - **Response**: `{ "session_id": "cs_test_...", "checkout_url": "https://checkout.stripe.com/...", "package_key": "...", "credits": 5, "amount_cents": 1950 }`
 - Redirect the browser to `checkout_url` to complete payment. Register the Stripe webhook at `/api/payments/webhook` to credit purchases.
 
+---
+
 ## Evaluating the citation extractors
 `eval/run_eval.py` scores the rules and LLM extractors against hand-reviewed gold citations, with the verifiers' HTTP stubbed:
 ```bash
@@ -351,6 +366,8 @@ python -m eval.run_eval normalize [--rebuild] [--only SUBSTRING ...] [--list]   
 python -m eval.run_eval normalize-extract [--runs N] [--fixture NAME ...]       # the live model reading the fixtures; costs money
 ```
 `normalize` builds twelve fixture classes from code (`eval/norm_fixtures.py`: DOCX footnotes/endnotes/tables/text boxes, born-digital single- and two-column PDFs, 300 DPI and skewed scans, mixed and defective-OCR PDFs, signed, encrypted, citations split across lines and pages), each with expectations known by construction, and checks the normalizer against them, plus unit checks of every part (text, validator, classifier, reading order, security limits, OCR mechanics, cache, telemetry) and the real extractor reading a normalized document, answered by a fake model (`eval/fake_openai.py`) that reads the actual request and can misbehave in each way a model can. `/api/verify` itself is exercised in a subprocess with a scratch database. Checks that need Tesseract/OCRmyPDF are skipped where they are missing. `normalize-extract` reports recall, precision, exact-span F1, citation-type accuracy, source-location accuracy and schema success, with normalization, model and validation latency kept apart.
+
+---
 
 ## Deployment
 The backend is containerized using Docker for easy deployment:
@@ -371,8 +388,12 @@ The Dockerfile uses Python 3.13-slim, installs Tesseract OCR, and exposes port 8
 - **String citations**: Citations separated by semicolons are individually verified. The sequential order of citations in the document is maintained.
 - **Status interpretation**: `substatus` provides detailed explanations for warnings and errors (e.g., `case name mismatch`, `closest_match: …`, `confidence: 0.75`).
 
+---
+
 ## Logging
 `utils/logger.py` honors `LOG_TO_FILE`/`LOG_FILE_PATH` or defaults to console output. Log formatting matches `[timestamp] - logger level message` for easier aggregation.
+
+---
 
 ## License
 
@@ -384,5 +405,12 @@ Contact [admin@phaethorder.com](mailto:admin@phaethorder.com) for licensing or r
 
 Note: `package.json` may list a different license; the authoritative license for this repository is proprietary.
 
-## Contact
+---
+
+## Contact & Support
 Questions or support: [admin@phaethorder.com](mailto:admin@phaethorder.com).
+
+### Known Issues & Limitations
+- **Bluebook format**: Citations must follow standard Bluebook rules. No support is planned for other formats. 
+- **URLs and other citations**: Supported citation types: (1) federal cases; (2) federal law; (3) state cases; (4) state laws; (5) journals; (6) secondary legal sources (legal encyclopedias, restatements, ALR, treatises). URLs and citation types other than those listed above are not supported. Support for additional citation types is in development. 
+- **_infra_ short citations**: Short citations using _infra_ are not supported. To request this feature, contact [admin@phaethorder.com](mailto:admin@phaethorder.com).  
