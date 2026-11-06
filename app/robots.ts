@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteOrigin = ('https://www.jurischeck.com').replace(/\/+$/, '');
+const siteOrigin = 'https://www.jurischeck.com';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -10,7 +10,7 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
       },
     ],
-    sitemap: `${siteOrigin}/sitemap.xml`,
-    host: siteOrigin,
+    sitemap: 'https://www.jurischeck.com/sitemap.xml',
+    host: 'https://www.jurischeck.com',
   };
 }
