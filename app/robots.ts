@@ -11,6 +11,5 @@ export default function robots(): MetadataRoute.Robots {
       },
     ],
     sitemap: 'https://www.jurischeck.com/sitemap.xml',
-    host: 'https://www.jurischeck.com',
   };
 }
